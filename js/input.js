@@ -19,7 +19,7 @@ LG.Input = (function () {
   var useKeyboard = false;
   var enabled = false;  // gates gameplay input during menus/transitions
 
-  var AXIS_DEAD = 0.18;
+  var AXIS_DEAD = 0.06;   // residual axis dead zone (the stick already has a px one)
 
   function setBool(name, val) {
     if (val && !held[name]) { queue[name] = true; }
@@ -69,6 +69,15 @@ LG.Input = (function () {
   // ---------------- joystick ----------------
   function elPos(el) { var r = el.getBoundingClientRect(); return { x: r.left, y: r.top }; }
 
+  // Full tilt should need a short, comfortable thumb travel — not a long drag
+  // across the whole pad. Dead zone and travel are measured in PIXELS of finger
+  // movement, so the stick feels identical on every screen size.
+  function stickFullRadius(hw) {
+    var T = LG.Config.touch || {};
+    var frac = T.stickFullTilt != null ? T.stickFullTilt : 0.58;
+    return LG.Util.clamp(hw * frac, T.stickFullMin || 34, T.stickFullMax || 84);
+  }
+
   function onJoyDown(e) {
     if (joyActive) return;
     if (!enabled) return;
@@ -77,27 +86,45 @@ LG.Input = (function () {
     if (joystickEl.setPointerCapture && e.pointerId != null) {
       try { joystickEl.setPointerCapture(e.pointerId); } catch (e) {}
     }
-    var zone = joystickEl;
-    var br = zone.getBoundingClientRect();
+    var br = joystickEl.getBoundingClientRect();
     joyOx = e.clientX - br.left;
     joyOy = e.clientY - br.top;
-    knobEl.style.left = joyOx + 'px';
-    knobEl.style.top = joyOy + 'px';
-    knobEl.style.transform = 'translate(-50%,-50%)';
-    JX = 0; JY = 0;
+    // the knob snaps under the thumb; the stick VALUE is left alone so a quick
+    // re-touch continues the run instead of stalling the player for a frame
+    if (knobEl) {
+      knobEl.style.left = joyOx + 'px';
+      knobEl.style.top = joyOy + 'px';
+      knobEl.style.transform = 'translate(-50%,-50%)';
+    }
     useKeyboard = false;
   }
   function onJoyMove(e) {
     if (!joyActive || e.pointerId !== joyId) return;
     var br = joystickEl.getBoundingClientRect();
     var hw = br.width / 2;
-    var dx = (e.clientX - br.left - joyOx) / hw;
-    var dy = (e.clientY - br.top - joyOy) / hw;
-    dx = LG.Util.clamp(dx, -1, 1);
-    dy = LG.Util.clamp(dy, -1, 1);
-    JX = dx; JY = -dy;
-    knobEl.style.left = (joyOx + dx * hw) + 'px';
-    knobEl.style.top = (joyOy - dy * hw) + 'px';
+    var T = LG.Config.touch || {};
+    var dead = T.stickDeadZone != null ? T.stickDeadZone : 7;
+    var fullR = stickFullRadius(hw);
+    var rx = e.clientX - br.left - joyOx;      // px travelled since the touch
+    var ry = e.clientY - br.top - joyOy;
+    var dist = Math.sqrt(rx * rx + ry * ry);
+    var m = 0;
+    if (dist > dead) {
+      m = Math.min(1, (dist - dead) / Math.max(1, fullR - dead));
+      m = m * (1.16 - 0.16 * m);              // gentle ease — snappy, not jumpy
+    }
+    if (dist > 0.001) {
+      var ux = rx / dist, uy = ry / dist;
+      JX = ux * m;
+      JY = -uy * m;
+      if (knobEl) {
+        var travel = Math.min(dist, fullR);   // knob pins at full tilt
+        knobEl.style.left = (joyOx + ux * travel) + 'px';
+        knobEl.style.top = (joyOy + uy * travel) + 'px';
+      }
+    } else {
+      JX = 0; JY = 0;
+    }
   }
   function onJoyUp(e) {
     if (!joyActive || e.pointerId !== joyId) return;
@@ -112,19 +139,22 @@ LG.Input = (function () {
   function bindButtons() {
     var ids = ['pass', 'shoot', 'tackle', 'sprint', 'switch'];
     for (var i = 0; i < ids.length; i++) {
-      var el = document.getElementById('btn-' + ids[i]);
-      if (!el) continue;
-      el.addEventListener('pointerdown', function (name, e) {
-        e.preventDefault(); useKeyboard = false;
-        if (!enabled) return;
-        if (el.setPointerCapture && e.pointerId != null) {
-          try { el.setPointerCapture(e.pointerId); } catch (e) {}
-        }
-        setBool(name, true);
-      }.bind(null, ids[i]));
-      el.addEventListener('pointerup', function (name) { setBool(name, false); }.bind(null, ids[i]));
-      el.addEventListener('pointercancel', function (name) { setBool(name, false); }.bind(null, ids[i]));
-      el.addEventListener('pointerleave', function (name) { setBool(name, false); }.bind(null, ids[i]));
+      (function (name, btn) {
+        if (!btn) return;
+        btn.addEventListener('pointerdown', function (e) {
+          e.preventDefault(); useKeyboard = false;
+          if (!enabled) return;
+          if (btn.setPointerCapture && e.pointerId != null) {
+            try { btn.setPointerCapture(e.pointerId); } catch (err) {}
+          }
+          btn.classList.add('held');
+          setBool(name, true);
+        });
+        var up = function () { btn.classList.remove('held'); setBool(name, false); };
+        btn.addEventListener('pointerup', up);
+        btn.addEventListener('pointercancel', up);
+        btn.addEventListener('pointerleave', up);
+      })(ids[i], document.getElementById('btn-' + ids[i]));
     }
     // the special ability button uses a different DOM id (special-btn)
     var sp = document.getElementById('special-btn');

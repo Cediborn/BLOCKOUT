@@ -29,17 +29,43 @@ LG.Config = {
     gravity: -17,
     bounce: 0.6,            // ground bounce coefficient (low = rolls)
     airDrag: 0.994,
-    groundDrag: 0.96,       // rolling friction per frame (0.96^60 ≈ 0.086)
-    maxBallSpeed: 34,
-    shootPower: 23,         // base shot
+    groundDrag: 0.984,      // rolling friction per frame (0.984^60 ≈ 0.38) — a pass now
+                            // rolls roughly as far as its speed in m/s, so a 15m pass still
+                            // has legs when it arrives instead of dying halfway
+    maxBallSpeed: 36,
+    shootPower: 27,         // base shot — a real strike, clearly stronger than a pass
     passPower: 15.5,
     dribbleRadius: 0.85,    // ball rides in front of the carrier
+
+    playerAccel: 52,        // how hard a player chases their desired velocity
+    stopBoost: 1.8,         // extra bite when the stick is released (crisp stops)
+
+    sprintDrain: 0.2,       // stamina / second while sprinting (tactical, not punishing)
+    sprintRecover: 0.24,    // stamina / second while not sprinting
+    sprintMul: 1.6,         // pace boost (multiplier above maxSpeed)
+
+    tackleRange: 2.4,       // max distance to engage a ball carrier
+    tackleBallRange: 2.5,   // tackler must be reaching the BALL, not just the body
+    tackleRearBlock: 0.04,  // rear-poke success is essentially disabled (both sides)
+    tackleBumpStun: 0.12,   // a failed challenge is a bump, not a freeze
+
+    // shot power curve: a tap is a controlled finish, full charge is a strike
+    shootChargeRate: 2.8,   // charge per second while SHOOT is held
+    shotPowerTap: 0.42,
+    shotPowerFull: 1.0,
+
+    passReceiveSpeed: 24,   // the intended receiver can control a pass up to this speed
+    looseBallControl: 16.5, // speed under which anyone can take a loose ball
+    passIntentTime: 1.5,    // how long a pass "belongs" to its intended receiver
   },
 
   ai: {
     thinkInterval: 0.18,
     shotMinDistance: 13,
     perfectPassChance: 0.5,
+    // defenders slow to a jockey within this radius so they contain instead of
+    // full-sprinting through the attacker every frame
+    containRange: 3.2,
   },
 
   keeper: {
@@ -51,6 +77,8 @@ LG.Config = {
     distributeDelay: 0.9,
     rxnWindow: 0.5,     // reference time for a "comfortable" reaction
     collectSpeed: 10.0, // loose balls slower than this are collected, faster saved
+    diveSpeed: 4.2,     // lateral dive pace — a keeper's stretch, not an outfield sprint
+    readSpread: 3.0,    // how far a keeper's read of a corner-bound shot can be off (m)
   },
 
   camera: {
@@ -63,6 +91,11 @@ LG.Config = {
 
   touch: {
     shootThreshold: 0.55,   // hold to charge, shoot when released past this
+    // virtual stick feel: full tilt needs a short, comfortable finger travel
+    stickDeadZone: 7,       // px before the stick registers at all
+    stickFullTilt: 0.58,    // fraction of the joystick half-width that = full tilt
+    stickFullMin: 34,       // px floor for full tilt
+    stickFullMax: 84,       // px ceiling for full tilt
   },
 };
 

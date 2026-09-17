@@ -44,9 +44,13 @@ LG.AIBrain.prototype = {
       me.want.x = 0; me.want.z = 0;
     }
 
-    // sprint when chasing or attacking the goal
+    // sprint when chasing or attacking goal
     var sprint = false;
-    if (M.possessionTeam !== me.team && this.isClosestChaser()) sprint = true;
+    if (M.possessionTeam !== me.team && this.isClosestChaser()) {
+      var cCarrier = M.ownerPlayer();
+      var cDist = cCarrier ? me.distTo(cCarrier.x, cCarrier.z) : me.distTo(ball.x, ball.z);
+      sprint = cDist > (LG.Config.ai.containRange || 3.2); // sprint to close down, jog to contain
+    }
     if (me.hasBall && me.team === M.possessionTeam) sprint = (M.distToGoal(me) > 8 && Math.random() < 0.4 ? true : false);
     me.want.sprint = sprint;
   },
@@ -120,7 +124,8 @@ LG.AIBrain.prototype = {
         var notTooDeep = dGoal > 10;                      // no need to pass right at the goal
         if (strong || (underHeat && pass.score > 0.4) || fedUp) {
           if (notTooDeep || pass.score > 0.95) {
-            M.passTo(me, pass.player, { lead: true });
+            var passErr = pressure * (1 - me.stats.pass / 12) * 0.35;
+            M.passTo(me, pass.player, { lead: true, error: passErr });
             this.actionCd = 0.7;
             this.dribbleT = 0.15;
             return;
@@ -244,25 +249,40 @@ LG.AIBrain.prototype = {
     var carrier = M.ownerPlayer();
 
     if (this.isClosestChaser()) {
-      // chase & tackle
+      // containment & tackle: approach goalside/shoulder instead of brainless rear-sprinting
       var tx, tz;
       if (carrier) {
-        tx = carrier.x; tz = carrier.z;
+        var d = me.distTo(carrier.x, carrier.z);
+        // anticipation: meet the attacker where they are GOING, so a quick
+        // carrier cannot simply out-run the challenge every time
+        var lead = Math.min(0.5, d / Math.max(me.maxSpeed, 1) * 0.55);
+        var cx = carrier.x + carrier.vx * lead;
+        var cz = carrier.z + carrier.vz * lead;
+        // containment point: sit goalside of the carrier, on the ball side
+        var gDx = myGoal.x - cx, gDz = myGoal.z - cz;
+        var gLen = Math.sqrt(gDx * gDx + gDz * gDz) || 1;
+        var stand = Math.min(1.15, 0.45 + d * 0.28);
+        tx = cx + (gDx / gLen) * stand;
+        tz = cz + (gDz / gLen) * stand;
+        this.moveTarget = { x: U.clamp(tx, -12, 12), z: U.clamp(tz, -21, 21) };
+
+        // only challenge when actually in range — and tryTackle refuses to
+        // hand over the ball for a challenge from behind
+        if (this.actionCd <= 0 && d < 2.1) {
+          M.tryTackle(me);
+          this.actionCd = 0.9;
+        }
       } else {
         tx = ball.x; tz = ball.z;
-      }
-      this.moveTarget = { x: tx, z: tz };
-      var d = me.distTo(tx, tz);
-      if (this.actionCd <= 0 && d < 2.25 && carrier) {
-        M.tryTackle(me);
-        this.actionCd = 1.0;
-      } else if (this.actionCd <= 0 && d < 2.25 && !carrier) {
-        // any loose ball in reach is worth claiming
-        M.tryTackle(me);
-        this.actionCd = 0.8;
+        this.moveTarget = { x: tx, z: tz };
+        var db = me.distTo(tx, tz);
+        if (this.actionCd <= 0 && db < 2.25) {
+          M.tryTackle(me);
+          this.actionCd = 0.8;
+        }
       }
     } else {
-      // cover the most dangerous attacker: goalside between a marked opp and goal
+      // cover passing lanes & dangerous attackers: position between carrier & mark
       var mark = null, mind = 1e9;
       var opps = M.teamPlayers(1 - me.team);
       for (var i = 0; i < opps.length; i++) {
@@ -271,7 +291,12 @@ LG.AIBrain.prototype = {
         var dGoal = M.distToGoal(o);
         if (dGoal < mind && !o.hasBall) { mind = dGoal; mark = o; }
       }
-      if (mark) {
+      if (mark && carrier) {
+        // cut the passing lane between carrier & receiver, leaning goalside
+        var lx = (carrier.x + mark.x * 2 + myGoal.x) / 4;
+        var lz = (carrier.z + mark.z * 2 + myGoal.z) / 4;
+        this.moveTarget = { x: U.clamp(lx, -11.5, 11.5), z: U.clamp(lz, -20.5, 20.5) };
+      } else if (mark) {
         var mx = (mark.x + myGoal.x) / 2 + (U.rand() - 0.5) * 1.4;
         var mz = (mark.z + myGoal.z) / 2 + (U.rand() - 0.5) * 1.4;
         this.moveTarget = { x: U.clamp(mx, -11.5, 11.5), z: U.clamp(mz, -20.5, 20.5) };

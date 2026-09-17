@@ -112,7 +112,14 @@ LG.Audio = (function () {
 
   // ---------- game sounds ----------
   var S = {
-    kick: function (p) { thump(120, 0.16, 0.5); noiseHit(0.08, 0.22, 700); blip(160, 0.06, 'triangle', 0.12, 0, 70); },
+    // velocity-aware strike: a soft pass-control touch is a light tap, a
+    // full-power shot is a heavy crack — the two never sound the same
+    kick: function (p) {
+      var pw = UI.clamp(p != null ? p : 0.6, 0, 1);
+      thump(105 + pw * 70, 0.09 + pw * 0.13, 0.26 + pw * 0.36);
+      noiseHit(0.05 + pw * 0.07, 0.12 + pw * 0.2, 520 + pw * 980);
+      blip(150 + pw * 140, 0.05, 'triangle', 0.07 + pw * 0.11, 0, 60);
+    },
     pass: function () { thump(300, 0.07, 0.22); blip(620, 0.05, 'triangle', 0.1, 0, 400); },
     tackle: function () { noiseHit(0.16, 0.4, 300, 0, 'lowpass'); thump(90, 0.22, 0.5); },
     ballBounce: function (v) { var d = UI.clamp(v, 0, 1); thump(140, 0.06, 0.06 + d * 0.2); },

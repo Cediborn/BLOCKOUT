@@ -37,6 +37,34 @@ LG.KeeperBrain.prototype = {
     return LG.Util.clamp(z, line - sign * LG.Config.keeper.depth, line + sign * LG.Config.keeper.stance + sign * 0.1);
   },
 
+  // Move toward a point with a speed CAP (mv = want * maxSpeed), so a keeper
+  // can stretch but never sprint like an outfield player.
+  moveToward: function (tx, tz, reach) {
+    var me = this.p;
+    var U = LG.Util;
+    var dx = tx - me.x, dz = tz - me.z;
+    var d = Math.sqrt(dx * dx + dz * dz);
+    var cap = Math.min(1, (reach || me.maxSpeed) / me.maxSpeed);
+    var s = Math.min(1, d / 0.3);
+    me.want.x = U.clamp(dx * 2.5, -1, 1) * cap * s;
+    me.want.z = U.clamp(dz * 2.5, -1, 1) * cap * s;
+    return d;
+  },
+
+  // A keeper reads a shot, they do not compute it. The read is stable for the
+  // whole kick (derived from the kick sequence), so the dive is a commitment —
+  // and it is scaled by how far the shot is from the keeper: a shot straight at
+  // them is read perfectly, a shot to the corner is a guess.
+  readError: function (ball, px) {
+    var K = LG.Config.keeper;
+    var seq = (ball._kickSeq || 0) + this.p.team * 7 + this.p.idx * 13;
+    var h = Math.sin(seq * 12.9898) * 43758.5453;
+    h = h - Math.floor(h);
+    var raw = (h - 0.5) * 2;                                  // -1..1
+    var confidence = Math.min(1, Math.abs(px || 0) / 2.0);    // unsure about corners
+    return raw * (K.readSpread || 1.5) * confidence;
+  },
+
   update: function (dt) {
     var me = this.p;
     var M = LG.Match;
@@ -73,13 +101,10 @@ LG.KeeperBrain.prototype = {
     var th = typeof M.keeperThreat === 'function' ? M.keeperThreat(me) : null;
     if (th) {
       this.state = 'save';
-      var tx = this.clampZoneX(th.px);
+      var tx = this.clampZoneX(th.px + this.readError(ball, th.px));
       var tz = this.clampZoneZ(th.pz);
-      var dd = me.distTo(tx, tz);
-      var sp = Math.min(1, dd > 0.2 ? dd / 1.1 : 1);
-      me.want.x = (tx - me.x) * 3 * sp;
-      me.want.z = (tz - me.z) * 3 * sp;
-      me.want.sprint = dd > 0.5;
+      this.moveToward(tx, tz, LG.Config.keeper.diveSpeed || 4.2);
+      me.want.sprint = false;
       // face the ball
       var ddx = ball.x - me.x, ddz = ball.z - me.z;
       if (ddx * ddx + ddz * ddz > 0.04) me.facing = Math.atan2(ddx, ddz);
@@ -95,21 +120,19 @@ LG.KeeperBrain.prototype = {
         x: this.clampZoneX(ball.x),
         z: this.clampZoneZ((this.line() - this.sign() * Math.max(0.05, inFront))),
       };
-      var cd = me.distTo(this.moveTarget.x, this.moveTarget.z);
-      var csp = Math.min(1, cd > 0.2 ? cd / 1.2 : 1);
-      me.want.x = (this.moveTarget.x - me.x) * 2.2 * csp;
-      me.want.z = (this.moveTarget.z - me.z) * 2.2 * csp;
+      var cd = this.moveToward(this.moveTarget.x, this.moveTarget.z);
       me.want.sprint = cd > 1.2;
       return;
     }
 
     // ---------------- default: track the ball along the goal mouth ----------------
     this.state = 'track';
-    var tx2 = this.clampZoneX(ball.x);
+    // narrow the angle instead of mirroring the ball: standing exactly on the
+    // ball's line turned the keeper into a wall that no placed shot could pass
+    var tx2 = this.clampZoneX(ball.x * 0.55);
     var tz2 = this.clampZoneZ(this.line() - this.sign() * LG.Config.keeper.stance);
     this.moveTarget = { x: tx2, z: tz2 };
-    me.want.x = U.clamp((tx2 - me.x) / 1.4, -1, 1) * 1.2;
-    me.want.z = U.clamp((tz2 - me.z) / 1.4, -1, 1) * 1.2;
+    this.moveToward(tx2, tz2, me.maxSpeed * 0.6);   // stay set, don't scamper
     me.want.sprint = false;
   },
 
@@ -155,6 +178,7 @@ LG.KeeperBrain.prototype = {
       if (m === me || m.isGoalkeeper) continue;
       var d = m.distTo(me.x, me.z);
       if (d < 1.5) continue;                       // too close to hit a useful pass
+      if (!M.lineClear(me, m)) continue;           // defender on the distribution lane
       var space = this.crowdOf(m);                 // nearest opponent distance
       var open = U.clamp((space - 1.9) / 1.6, 0, 1);
       var forward = (m.z - me.z) * (goal.z > 0 ? 1 : -1);
@@ -181,6 +205,7 @@ LG.KeeperBrain.prototype = {
     var P = LG.Config.physics;
     M.release(me);
     M.ball.kick((dx / dd) * P.passPower * 1.5, 1.6, (dz / dd) * P.passPower * 1.5);
+    me.kickAnim = 1;
     M.ball.lastKicker = me;
     M.ball.kickT = 0.3;
     LG.Particles.dust(me.x, me.z, 2);

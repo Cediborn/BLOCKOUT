@@ -252,6 +252,10 @@ placeKickoff: function () {
 
     if (this.ball.noPkT > 0) this.ball.noPkT -= dt;
     if (this.ball.kickT > 0) this.ball.kickT -= dt;
+    if (this.ball.intendedT > 0) {
+      this.ball.intendedT -= dt;
+      if (this.ball.intendedT <= 0) this.ball.intendedReceiver = null;
+    }
     if (this.ball._guided && this.ball._guided.target && this.ball._guided.target.hasBall) this.ball._guided = null;
 
     if (this.slowOwner) {
@@ -361,7 +365,7 @@ placeKickoff: function () {
 
     // shoot: charge while held, fire on release
     if (inp.down('shoot')) {
-      if (h.hasBall) h.shotCharge = Math.min(1, h.shotCharge + dt * 2.4);
+      if (h.hasBall) h.shotCharge = Math.min(1, h.shotCharge + dt * (LG.Config.physics.shootChargeRate || 2.8));
       h.wasShooting = true;
     } else if (h.wasShooting) {
       this.fireHumanShot(h);
@@ -370,9 +374,56 @@ placeKickoff: function () {
     }
   },
 
+  // Aim-based passing: the pass goes where the player is pointing. Direction
+  // dominates the score, so "I pointed at that player" always holds — it is
+  // never a lottery between the mathematically nearest options.
   humanPass: function (h) {
-    var t = this.bestHumanPass(h);
-    if (t) this.passTo(h, t.player, { lead: true });
+    var t = this.directionalPassTarget(h, h.aimDir());
+    if (!t) t = this.bestHumanPass(h);
+    if (t) {
+      var press = this.pressure(h, 3.2);
+      var err = press * (1 - h.stats.pass / 12) * 0.45;
+      this.passTo(h, t.player, { lead: true, error: err });
+    }
+  },
+
+  directionalPassTarget: function (h, aim) {
+    var U = LG.Util;
+    var goal = this.enemyGoal(h.team);
+    aim = aim || h.aimDir();
+    var dirX = aim.x, dirZ = aim.z;
+    var mates = this.teamPlayers(h.team);
+    var best = null, fallback = null, i, m;
+    for (i = 0; i < mates.length; i++) {
+      m = mates[i];
+      if (m === h || m.isGoalkeeper) continue;
+      var d = m.distTo(h.x, h.z);
+      if (d < 0.9) continue;                        // a mate on our toes isn't a pass
+      var tx = m.x - h.x, tz = m.z - h.z;
+      var td = Math.sqrt(tx * tx + tz * tz) || 1;
+      var dot = (tx * dirX + tz * dirZ) / td;       // alignment with the aim line
+      if (dot < 0.2) continue;                      // never force a blind back-pass
+      var forward = (m.z - h.z) * (goal.z > 0 ? 1 : -1);
+      var open = this.openness(m, 1 - h.team, 2.3);
+      var score = dot * 0.75 + open * 0.15 + U.clamp(forward * 0.04, -0.15, 0.25) - d * 0.012;
+      if (!fallback || d < fallback.d) fallback = { player: m, score: score, d: d };
+      if (!best || score > best.score) best = { player: m, score: score, d: d };
+    }
+    // direction is king; only fall back to "nearest mate" when nothing at all
+    // is anywhere near the aim line (dot >= 0.2 gracefully covers 78° cones)
+    return best || fallback;
+  },
+
+  // 0..1 how much a player is being closed down (shared by human + AI passes)
+  pressure: function (p, radius) {
+    var opps = this.opponents(p);
+    var min = 1e9;
+    for (var i = 0; i < opps.length; i++) {
+      var d = opps[i].distTo(p.x, p.z);
+      if (d < min) min = d;
+    }
+    if (min > radius) return 0;
+    return Math.min(1, (radius - min) / radius);
   },
 
   bestHumanPass: function (h) {
@@ -410,8 +461,10 @@ placeKickoff: function () {
     var U = LG.Util;
     var ball = this.ball;
     var perfect = LG.Abilities.isPerfectPassReady(src);
-    var speed = perfect ? 21 : LG.Config.physics.passPower;
-    // optional lead: aim where a moving receiver will be when the ball arrives
+    var d = src.distTo(target.x, target.z);
+    // contextual power: quick for short, stronger for long — no input gymnastics
+    var speed = perfect ? 22 : U.clamp(9.5 + d * 0.6, 9.5, LG.Config.physics.passPower * 1.25);
+    if (opts && opts.power) speed *= opts.power;
     var px = target.x, pz = target.z;
     if (opts && opts.lead) {
       var dx0 = target.x - src.x, dz0 = target.z - src.z;
@@ -421,11 +474,23 @@ placeKickoff: function () {
       pz = target.z + target.vz * tArr;
     }
     var sx = px - src.x, sz = pz - src.z;
-    var d = Math.sqrt(sx * sx + sz * sz) || 1;
+    var dd = Math.sqrt(sx * sx + sz * sz) || 1;
+    // pressure error rotates the direction slightly — predictable, no magic
+    if (opts && opts.error) {
+      var err = U.clamp(opts.error, 0, 0.7) * (perfect ? 0.15 : 1);
+      var ang = Math.atan2(sx, sz) + (Math.random() - 0.5) * 2 * err;
+      sx = Math.sin(ang) * dd;
+      sz = Math.cos(ang) * dd;
+    }
     if (perfect) LG.Abilities.consumePerfectPass(src);
     this.release(src);
-    ball.kick((sx / d) * speed, perfect ? 0 : 2.5, (sz / d) * speed);
+    ball.kick((sx / dd) * speed, perfect ? 0 : 2.2, (sz / dd) * speed);
+    src.kickAnim = 1;
     if (perfect) ball._guided = { target: target, settle: 0 };
+    // the pass BELONGS to its receiver for a moment: they can take it cleanly
+    // even at pace, while everyone else still has to knock it down
+    ball.intendedReceiver = target;
+    ball.intendedT = LG.Config.physics.passIntentTime || 1.5;
     ball.lastKicker = src;
     ball.kickT = 0.3;
     this.award(src, 'pass', 0.1);
@@ -439,13 +504,16 @@ placeKickoff: function () {
     var U = LG.Util;
     var ball = this.ball;
     var perfect = LG.Abilities.isPowerShotReady(p);
-    var gx = goal.x + (U.rand() - 0.5) * 1.2 * (1 - p.stats.shoot / 12);
+    // spread across the whole mouth: good shooters pick their spot, weaker ones
+    // spray it around the goalkeeper instead of always hitting the middle
+    var gx = goal.x + (U.rand() - 0.5) * 2.3 * (1 - p.stats.shoot / 12);
     var gz = goal.z + (U.rand() - 0.5) * 1.2 * (1 - p.stats.shoot / 12);
     var dx = gx - p.x, dz = gz - p.z;
     var d = Math.sqrt(dx * dx + dz * dz) || 1;
     var sp = perfect ? LG.Config.physics.maxBallSpeed * 0.98 : LG.Config.physics.shootPower * power * (0.8 + p.stats.shoot * 0.04);
     this.release(p);
     ball.kick((dx / d) * sp, perfect ? 0.3 : 0.5 + power * 0.5, (dz / d) * sp);
+    p.kickAnim = 1;
     ball.lastKicker = p;
     ball.kickT = 0.3;
     if (perfect) LG.Abilities.consumePowerShot(p);
@@ -465,6 +533,7 @@ placeKickoff: function () {
     var d = Math.sqrt(dx * dx + dz * dz) || 1;
     this.release(p);
     this.ball.kick((dx / d) * LG.Config.physics.maxBallSpeed, 0.35, (dz / d) * LG.Config.physics.maxBallSpeed);
+    p.kickAnim = 1;
     this.ball.lastKicker = p;
     this.ball.kickT = 0.4;
     this.award(p, 'shot', 0.12);
@@ -477,24 +546,56 @@ placeKickoff: function () {
     var U = LG.Util;
     var goal = this.enemyGoal(h.team);
     if (h.hasBall) {
-      var power = U.lerp(0.35, 1, charge);
+      var R = LG.Config;
+      var P = R.physics;
+      var C = R.court;
+      // tap = controlled finish, full charge = a genuine strike. The spread is
+      // wide enough that the two really do feel different.
+      var power = U.lerp(P.shotPowerTap || 0.42, P.shotPowerFull || 1, charge);
       var perfect = LG.Abilities.isPowerShotReady(h);
-      var dx = goal.x - h.x, dz = goal.z - h.z;
-      var d = Math.sqrt(dx * dx + dz * dz) || 1;
-      var a = perfect ? 0.85 : (0.75 + h.stats.shoot * 0.03);
-      a *= power;
-      var sp = perfect ? LG.Config.physics.maxBallSpeed * 0.96 : LG.Config.physics.shootPower * a * 1.15;
-      var aimErr = (1 - h.stats.shoot / 12) * (0.25 * (1 - power) + 0.15);
-      dx += (U.rand() - 0.5) * aimErr * d;
-      dz += (U.rand() - 0.5) * aimErr * d;
-      var dd = Math.sqrt(dx * dx + dz * dz) || 1;
+      // aim: the live stick/body direction, projected onto the goal line, so the
+      // shot picks out a post or the middle instead of drifting at the keeper
+      var aim = h.aimDir();
+      var dirX = aim.x, dirZ = aim.z;
+      var gz = goal.z;
+      var gx = goal.x;
+      // aiming into the attacking half projects onto the goal line and the
+      // result is clamped to the mouth, so "aim at the right post" lands on the
+      // right post instead of being nudged back at the keeper
+      if (dirZ * (goal.z > 0 ? 1 : -1) > 0.12) {
+        var t = (gz - h.z) / dirZ;
+        if (t > 0) {
+          gx = U.clamp(h.x + dirX * t, -C.goalWidth / 2 * 0.95, C.goalWidth / 2 * 0.95);
+        }
+      }
+      var dx = gx - h.x, dzl = gz - h.z;
+      var d = Math.sqrt(dx * dx + dzl * dzl) || 1;
+      var a = perfect ? 0.97 : (0.82 + h.stats.shoot * 0.03);
+      var sp = perfect ? P.maxBallSpeed * 0.97 : P.shootPower * 1.08 * a * (0.55 + power * 0.62);
+      // running shots carry the player's momentum and stay on the aim line
+      dx += h.vx * 0.22;
+      dzl += h.vz * 0.22;
+      var dd = Math.sqrt(dx * dx + dzl * dzl) || 1;
+      // accuracy: good shooters & calm feet are tidy; pressure adds wobble
+      var aimErr = (1 - h.stats.shoot / 12) * (0.045 + power * 0.1) + this.pressure(h, 3.0) * 0.09;
+      var ang = Math.atan2(dx, dzl) + (U.rand() - 0.5) * 2 * aimErr;
+      var sx = Math.sin(ang) * dd, szl = Math.cos(ang) * dd;
       this.release(h);
-      this.ball.kick((dx / dd) * sp, (0.25 + power * 0.35), (dz / dd) * sp);
+      this.ball.kick((sx / dd) * sp, (0.18 + power * 0.26), (szl / dd) * sp);
+      h.kickAnim = 1;
       this.ball.lastKicker = h;
       this.ball.kickT = 0.35;
       if (perfect) LG.Abilities.consumePowerShot(h);
       this.award(h, 'shot', 0.12);
-      if (power > 0.8) { this.shakeEffect(0.25, 0.3); this.camera && this.camera.pulse(0.4); }
+      // shot feedback: a real strike reads louder and heavier than a pass,
+      // without throwing the camera around
+      if (power > 0.72) {
+        this.shakeEffect(0.22, 0.24);
+        this.camera && this.camera.pulse(0.32);
+      }
+      if (power > 0.85 || perfect) {
+        LG.Particles.speedLines(h.x, 0.5, h.z, sx / dd, szl / dd, 0xffffff, power > 0.95 ? 10 : 6);
+      }
       this.bus.emit('shoot', { player: h, power: power, perfect: perfect });
     } else {
       // kick a nearby loose ball toward goal
@@ -512,6 +613,7 @@ placeKickoff: function () {
       var gx = goal.x - ball.x, gz = goal.z - ball.z;
       var gd = Math.sqrt(gx * gx + gz * gz) || 1;
       ball.kick((gx / gd) * 10, 1.2, (gz / gd) * 10);
+      p.kickAnim = 1;
       ball.lastKicker = p;
       ball.kickT = 0.2;
       this.bus.emit('shoot', { player: p, power: 0.4 });
@@ -519,65 +621,96 @@ placeKickoff: function () {
   },
 
   // ------------------------------------------------------------
+  // TACKLING — rewards reaching the BALL from a legitimate angle.
+  // Shared by the human and the AI: no asymmetric rules anywhere.
   tryTackle: function (p) {
     if (p.tackleCd > 0) return;
     p.tackleCd = 0.5;
     var U = LG.Util;
+    var P = LG.Config.physics;
     var opps = this.opponents(p);
-    var victim = null, bestD = 1e9;
-    var RANGE = 2.3;
+    var ball = this.ball;
+    var bx = ball.x, bz = ball.z;
+    var victim = null, bestD = 1e9, bestDb = 1e9;
+    var RANGE = P.tackleRange || 2.4;
+    var BRANGE = P.tackleBallRange || 2.5;
+    var dbToBall = p.distTo(bx, bz);
     for (var i = 0; i < opps.length; i++) {
       var o = opps[i];
       var d = o.distTo(p.x, p.z);
-      // arcade-friendly: any close opponent can be challenged, tighter battles
-      // still win the ball more often (see angle/chance below)
-      if (d < RANGE && d < bestD) { bestD = d; victim = o; }
+      // must be within reach of BOTH the carrier and the ball
+      if (d < RANGE && dbToBall < BRANGE && d < bestD) { bestD = d; bestDb = dbToBall; victim = o; }
     }
     LG.Particles.dust(p.x, p.z, 3);
     LG.Audio.sfx.tackle();
 
     if (victim) {
-      // direction check: tackling into the carrier is rewarded, but a perfectly
-      // perpendicular/lean challenge is still a contest (no pixel-perfect needed)
-      var dvx = victim.x - p.x, dvz = victim.z - p.z;
+      var dvx = victim.x - p.x, dvz = victim.z - p.z;   // tackler -> carrier
       var dd = Math.sqrt(dvx * dvx + dvz * dvz) || 1;
-      var face = (dvx / dd) * Math.sin(p.facing) + (dvz / dd) * Math.cos(p.facing);
-      var angleMul = U.lerp(0.62, 1.18, Math.max(-0.3, Math.min(1, face))); // behind you is harder
-      var closeMul = U.clamp(1.18 - bestD * 0.16, 0.85, 1.18);              // closer = stronger
-      var chance = (0.68 + (p.stats.defense - victim.stats.dribble) * 0.05) * angleMul * closeMul;
-      chance = U.clamp(chance, 0.45, 0.96);
+      // 1) is the challenge actually going THROUGH the ball?  face ~ +1 when
+      // the lunging direction points at the ball.
+      var bdx = bx - p.x, bdz = bz - p.z;
+      var bd = Math.sqrt(bdx * bdx + bdz * bdz) || 1;
+      var face = (bdx / bd) * Math.sin(p.facing) + (bdz / bd) * Math.cos(p.facing);
+      var angleMul = U.lerp(0.4, 1.3, Math.max(-0.5, Math.min(1, face)));
+      var closeMul = U.clamp(1.15 - bestDb * 0.16, 0.85, 1.15);
+      var chance = (0.66 + (p.stats.defense - victim.stats.dribble) * 0.04) * angleMul * closeMul;
 
-      // goalkeepers in possession are protected: a lunging striker may still
-      // win the odd 50/50, but the keeper keeps the ball a huge majority
+      // 2) WHERE is the challenge coming from? Front = the tackler is on the
+      // ball side of the carrier (great tackle). Rear = the tackler is behind
+      // the carrier, away from the ball: no clean steal, only a bump. The ball
+      // (carried in front of the body) is the reference, so this stays correct
+      // even when the carrier is standing still with a stale facing.
+      var fx = bx - victim.x, fz = bz - victim.z;
+      var fl = Math.sqrt(fx * fx + fz * fz);
+      var rear;
+      if (fl > 0.05) {
+        rear = ((victim.x - p.x) * (fx / fl) + (victim.z - p.z) * (fz / fl)) / dd;
+      } else {
+        var vDirX = Math.sin(victim.facing), vDirZ = Math.cos(victim.facing);
+        rear = (dvx * vDirX + dvz * vDirZ) / dd;
+      }
+      if (rear > 0.25) {
+        // from behind: possession is never simply handed over
+        chance = Math.min(chance, P.tackleRearBlock || 0.04);
+      } else if (rear < -0.2) {
+        chance *= 1.15;            // meeting the carrier head-on is a fair fight
+      }
+      chance = U.clamp(chance, 0.04, 0.96);
+
+      // goalkeepers in possession are protected
       if (victim.isGoalkeeper && victim.distributeT > 0) chance = Math.min(chance, 0.18);
 
-      if (victim.hasBall && Math.random() < chance) {
-        // won the ball -> pop it loose back toward the tackler's momentum
-        // so the challenge is rewarded naturally (NOT toward the victim)
+      var won = victim.hasBall && Math.random() < chance;
+      if (won) {
         victim.hasBall = false;
         this.possessionTeam = -1;
         this.ball.owner = null;
         this.ball.lastKicker = p;
-        this.ball.kickT = 0.2;
-        // previous carrier cannot instantly scoop it back
+        this.ball.kickT = 0.18;
         this.ball.noPk = victim;
-        this.ball.noPkT = 0.45;
+        this.ball.noPkT = 0.4;
+        this.ball.intendedReceiver = null;
+        // short, contestable knock — NOT a teleport
         var kdx = p.x - victim.x, kdz = p.z - victim.z;
         var kd = Math.sqrt(kdx * kdx + kdz * kdz) || 1;
         var jitter = (this.t || 0) * 17.3 + victim.idx * 4.1;
-        this.ball.kick((kdx / kd) * 5.2 + Math.cos(jitter) * 1.2, 2.3 + (U.rand() - 0.3) * 0.6, (kdz / kd) * 5.2 + Math.sin(jitter) * 1.2);
+        this.ball.kick((kdx / kd) * 4.4 + Math.cos(jitter) * 1.4, 1.2 + (U.rand() - 0.3) * 0.4, (kdz / kd) * 4.4 + Math.sin(jitter) * 1.4);
+        victim.stun = Math.max(victim.stun, 0.35);
         this.award(p, 'tackle', 0.16);
         this.gainMetersQuickly(p, 0.02);
         this.bus.emit('tackleWin', { src: p, victim: victim });
+      } else {
+        // a failed challenge is contact, not a freeze: the carrier stumbles for
+        // a moment and play keeps flowing
+        victim.stun = Math.max(victim.stun, P.tackleBumpStun || 0.12);
       }
-      victim.stun = Math.max(victim.stun, 0.5);
-      victim.stomp = 0.32;
-      LG.Particles.burst(victim.x, 0.8, victim.z, 0xffeecc, 14, 4, 4);
-      LG.Particles.ring(victim.x, victim.z, 0xfff3c0, 3.4, 0.4);
+      victim.stomp = Math.max(victim.stomp, won ? 0.3 : 0.14);
+      LG.Particles.burst(victim.x, 0.8, victim.z, 0xffeecc, won ? 12 : 6, 4, 4);
+      if (won) LG.Particles.ring(victim.x, victim.z, 0xfff3c0, 3.2, 0.4);
     } else {
-      // lunge at a loose ball
-      var bd = p.distTo(this.ball.x, this.ball.z);
-      if (bd < 2.2 && !this.ball.owner) {
+      var bd2 = p.distTo(bx, bz);
+      if (bd2 < 2.0 && !ball.owner) {
         this.tryIntercept(p);
       }
     }
@@ -676,6 +809,7 @@ placeKickoff: function () {
 
     var i, p, d;
     var R;
+    var P = LG.Config.physics;
     for (i = 0; i < this.all.length; i++) {
       p = this.all[i];
       if (p.hasBall) continue;
@@ -687,7 +821,12 @@ placeKickoff: function () {
         if (ball.owner) continue;      // already moving with an owner elsewhere (shouldn't happen)
         if (ball.lastKicker === p && ball.kickT > 0) continue;  // self-hit protection
         var speed = ball.speed();
-        if (speed < 16.5) {
+        // the player a pass was aimed at takes it cleanly even when it is
+        // travelling fast; anyone else has to knock a hard ball down first
+        var limit = (ball.intendedReceiver === p)
+          ? (P.passReceiveSpeed || 24)
+          : (P.looseBallControl || 16.5);
+        if (speed < limit) {
           this.possess(ball, p);
           return;
         } else {
@@ -703,6 +842,8 @@ placeKickoff: function () {
 
   possess: function (ball, p) {
     if (p.hasBall) return;
+    ball.intendedReceiver = null;
+    ball.intendedT = 0;
     var before = this.possessionTeam;
     var fromOpponent = (before === 1 - p.team);
     var fromLoose = (before === -1 && this.state === 'PLAY');
@@ -811,7 +952,9 @@ placeKickoff: function () {
     var hard = U.clamp((sp - 12) / 20, 0, 1);
     var centered = U.clamp(1 - Math.abs(th.px) / (gw * 1.15), 0.15, 1);
     var agility = U.clamp(1.4 - Math.abs(gk.x - th.px) * 0.38, 0.15, 1);
-    var chance = (0.55 + reaction * 0.32) * (0.5 + centered * 0.4) * (0.5 + agility * 0.35) - hard * 0.3;
+    // Reflex roll on top of the keeper's physical block: placed shots beat the
+    // keeper, a shot straight at him does not, and pace always helps the shooter
+    var chance = (0.42 + reaction * 0.26) * (0.5 + centered * 0.4) * (0.5 + agility * 0.35) - hard * 0.1;
     return U.clamp(chance, 0.05, 0.92);
   },
 
@@ -843,7 +986,8 @@ placeKickoff: function () {
     var line = this.gkLine(gk);
     var sign = gk.team === 0 ? 1 : -1;
     var K = LG.Config.keeper;
-    gk._saveSig = null; // fresh roll for the next kick
+    // NOTE: the save roll is NOT re-armed here. One roll per kick (see the sig
+    // in updateKeepers) — re-rolling every frame turned every shot into a save.
 
     // fast shots + lucky parries knock it clear instead of a clean catch
     if (th.sp > 19 || Math.random() < 0.3) {
@@ -1068,24 +1212,28 @@ placeKickoff: function () {
       if (p === cur || p.isGoalkeeper) continue;
       var sc = 0;
       var dBall = p.distTo(ball.x, ball.z);
+      // time-to-reach beats raw distance: a quick teammate on a slightly longer
+      // path is a more useful pick than a slow one standing beside the ball
+      var pace = Math.max(1, p.maxSpeed * (p.stamina > 0.15 ? 1 : 0.85));
+      var tReach = dBall / pace;
 
       if (this.possessionTeam === 1) {
-        // DEFENDING: get on the threat — closest to the carrier/ball wins,
+        // DEFENDING: get on the threat — soonest to the carrier/ball wins,
         // lightly biased goalside so we don't abandon the goal line.
         var dangerX = (carrier && carrier.team === 1) ? carrier.x : ball.x;
         var dangerZ = (carrier && carrier.team === 1) ? carrier.z : ball.z;
-        sc = -p.distTo(dangerX, dangerZ);
+        sc = -(p.distTo(dangerX, dangerZ) / pace) * 1.8;
         sc -= p.distTo(goalMine.x, goalMine.z) * 0.08;
       } else if (this.possessionTeam === 0) {
         // ATTACKING: grab the carrier right away, otherwise an open, advanced
         // player already heading toward goal.
         if (p.hasBall) sc += 50;
-        sc -= dBall * 0.5;
+        sc -= tReach * 2.4;
         sc += this.openness(p, 1, 2.6) * 6;
         sc += (goalEnemy.z > 0 ? p.z : -p.z) * 0.4;  // ahead = better
       } else {
-        // LOOSE BALL: closest teammate to the ball is the obvious pick.
-        sc = -dBall;
+        // LOOSE BALL: whoever can actually get there first is the pick.
+        sc = -tReach * 4;
       }
 
       if (sc > bscore) { bscore = sc; best = p; }

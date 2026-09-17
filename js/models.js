@@ -214,7 +214,7 @@ LG.Models = (function () {
     };
   }
 
-  function animateChar(m, running, phase, speed01) {
+  function animateChar(m, running, phase, speed01, kick01) {
     if (!m.limbs) return;
     var legSwing = running ? 1 : 0;
     var amp = 0.55 * legSwing * (0.5 + 0.5 * speed01);
@@ -223,6 +223,20 @@ LG.Models = (function () {
     m.limbs.armL.rotation.x = -Math.sin(phase) * amp * 0.8;
     m.limbs.armR.rotation.x = Math.sin(phase) * amp * 0.8;
     m.body.position.y = running ? Math.abs(Math.sin(phase)) * 0.03 : 0;
+
+    // strike pose: plant the standing leg and whip the kicking leg through, so
+    // a shot reads as a shot even before the ball leaves the boot
+    if (kick01 > 0) {
+      var swing = Math.sin((1 - kick01) * Math.PI);
+      m.limbs.legR.rotation.x = -1.2 * swing;
+      m.limbs.legL.rotation.x = 0.35 * swing;
+      m.limbs.armL.rotation.x = -0.75 * swing;
+      m.limbs.armR.rotation.x = 0.5 * swing;
+      m.body.rotation.x = 0.16 * swing;
+      m.body.position.y = 0.02 * swing;
+    } else if (m.body.rotation.x) {
+      m.body.rotation.x = 0;
+    }
   }
 
   // ------------------------------------------------------------

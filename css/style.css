@@ -258,23 +258,32 @@ html, body {
   border: 2px solid rgba(255,255,255,0.28);
   font-size: clamp(11px, 2.4vmin, 15px);
   font-family: inherit;
+  font-weight: bold;
   letter-spacing: 0.04em;
   color: #fff;
-  background: linear-gradient(180deg, rgba(255,255,255,0.16), rgba(255,255,255,0.06));
-  text-shadow: 0 2px 2px rgba(0,0,0,0.5);
+  background: linear-gradient(180deg, rgba(255,255,255,0.18), rgba(255,255,255,0.06));
+  text-shadow: 0 2px 2px rgba(0,0,0,0.6);
   cursor: pointer;
   touch-action: none;
-  transition: transform 0.08s ease, filter 0.15s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  transition: transform 0.08s ease, filter 0.12s ease;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-#actions button:active, #actions button.held { transform: scale(0.9); filter: brightness(1.5); }
-#btn-tackle { grid-column: 1; grid-row: 1; border-color: rgba(255,77,94,0.5); }
-#btn-shoot  { grid-column: 2; grid-row: 1; border-color: rgba(53,224,255,0.5); }
-#btn-sprint { grid-column: 3; grid-row: 1; border-color: rgba(255,182,46,0.5); }
-#btn-pass   { grid-column: 1; grid-row: 2; border-color: rgba(98,255,138,0.5); }
-#btn-switch { grid-column: 2; grid-row: 2; border-color: rgba(180,160,255,0.5); }
+#actions button:active, #actions button.held { transform: scale(0.91); filter: brightness(1.6); }
+#actions button.primary {
+  border-width: 3px;
+  font-size: clamp(12px, 2.7vmin, 17px);
+  background: linear-gradient(180deg, rgba(255,255,255,0.28), rgba(255,255,255,0.1));
+}
+#btn-tackle { grid-column: 1; grid-row: 1; border-color: rgba(255,77,94,0.6); }
+#btn-shoot  { grid-column: 2; grid-row: 1; border-color: rgba(53,224,255,0.85); box-shadow: 0 0 12px rgba(53,224,255,0.25); }
+#btn-sprint { grid-column: 3; grid-row: 1; border-color: rgba(255,182,46,0.6); }
+#btn-pass   { grid-column: 1; grid-row: 2; border-color: rgba(98,255,138,0.85); box-shadow: 0 0 12px rgba(98,255,138,0.25); }
+#btn-switch { grid-column: 2; grid-row: 2; border-color: rgba(180,160,255,0.6); }
 
 /* ---------- special ability ---------- */
 #special-wrap {
@@ -524,9 +533,15 @@ html, body {
   #scoreboard { top: calc(clamp(8px,2.2vmin,18px) + env(safe-area-inset-top, 0px)); }
 }
 
+/* touch devices get bigger targets: thumbs are not pixels */
+@media (pointer: coarse) {
+  :root { --btn-size: clamp(58px, 13vmin, 82px); }
+  #actions { gap: clamp(10px, 2.4vmin, 16px); }
+  #joystick-zone { width: 38vmin; height: 38vmin; max-width: 210px; max-height: 210px; }
+}
+
 /* small screens: keep buttons tappable but not cramped */
 @media (max-width: 700px) {
-  :root { --btn-size: clamp(48px, 13vmin, 64px); }
   #actions { gap: clamp(8px, 2vmin, 12px); }
   .help-list { font-size: 12px; }
 }

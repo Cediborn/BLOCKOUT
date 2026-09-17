@@ -83,10 +83,12 @@ LG.Ball.prototype = {
       // rolling friction
       this.vx *= Math.pow(P.groundDrag, dt * 60);
       this.vz *= Math.pow(P.groundDrag, dt * 60);
+    } else {
+      // only a ball that is genuinely in the air loses the extra air drag —
+      // applying both at once made every pass die halfway to its target
+      this.vx *= Math.pow(P.airDrag, dt * 60);
+      this.vz *= Math.pow(P.airDrag, dt * 60);
     }
-    // high bounces slow a touch in air
-    this.vx *= Math.pow(P.airDrag, dt * 60);
-    this.vz *= Math.pow(P.airDrag, dt * 60);
 
     // ----- fences (outside the goal mouths) -----
     var inHomeMouth = Math.abs(this.x) < gw && this.z < -halfL;

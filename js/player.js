@@ -13,8 +13,8 @@ LG.Player = function (def, team, idx) {
   this.stats = def.stats;
 
   this.maxSpeed = 5.0 + this.stats.speed * 0.34;
-  this.accel = 30;
-  this.sprintMul = 1.55;
+  this.accel = LG.Config.physics.playerAccel || 52;   // responsive: no skating, no drag
+  this.sprintMul = LG.Config.physics.sprintMul || 1.55;
 
   var wide = (def.body && def.body.wide) || 1;
   this.radius = 0.42 * wide;
@@ -39,6 +39,7 @@ LG.Player = function (def, team, idx) {
   this.tackleCd = 0;
   this.stun = 0;
   this.stomp = 0;           // small jump effect on tackle hit
+  this.kickAnim = 0;        // 1 -> 0 strike pose timer (set whenever we kick)
   this.immovable = false;   // WALL ability
 
   this.isHuman = false;
@@ -80,12 +81,25 @@ LG.Player.prototype.update = function (dt) {
   this.tackleCd = Math.max(0, this.tackleCd - dt);
   this.stun = Math.max(0, this.stun - dt);
   this.stomp = Math.max(0, this.stomp - dt);
+  this.kickAnim = Math.max(0, this.kickAnim - dt * 5);
 
   // sprint / stamina
+  var P = LG.Config.physics;
   var wantsSprint = this.want.sprint && this.active && this.active.type === 'WALL' ? false : this.want.sprint;
-  var sprinting = wantsSprint && this.stamina > 0.02 && Math.abs(this.want.x) + Math.abs(this.want.z) > 0.01;
-  if (sprinting) this.stamina = Math.max(0, this.stamina - dt * 0.32);
-  else this.stamina = Math.min(1, this.stamina + dt * 0.14);
+  var moving = Math.abs(this.want.x) + Math.abs(this.want.z) > 0.01;
+  // empty the tank and you jog until you have recovered a little — no flickering
+  // between sprint and walk, and never a speed penalty below normal pace
+  if (this._sprintLocked && this.stamina > 0.45) this._sprintLocked = false;
+  var canSprint = this._sprintLocked ? false : this.stamina > 0.02;
+  var sprinting = wantsSprint && moving && canSprint;
+  if (sprinting) {
+    this.stamina = Math.max(0, this.stamina - dt * (P.sprintDrain || 0.2));
+    if (this.stamina <= 0.02) this._sprintLocked = true;
+  } else {
+    // stamina comes back slower while you keep mashing SPRINT
+    var regen = (wantsSprint && moving) ? 0.5 : 1;
+    this.stamina = Math.min(1, this.stamina + dt * (P.sprintRecover || 0.22) * regen);
+  }
   this.sprinting = sprinting;
 
   // desired velocity
@@ -94,8 +108,10 @@ LG.Player.prototype.update = function (dt) {
 
   if (this.immovable) { mv = 0; mz = 0; }
 
-  // acceleration toward desired
-  var k = Math.min(1, dt * this.accel / this.maxSpeed);
+  // acceleration toward desired: DIRECT input response, but released sticks
+  // brake harder so the player plants instead of gliding past the ball.
+  var accelRate = this.accel * (moving ? 1 : (P.stopBoost || 1.8));
+  var k = Math.min(1, dt * accelRate / this.maxSpeed);
   this.vx = U.lerp(this.vx, mv, k);
   this.vz = U.lerp(this.vz, mz, k);
 
@@ -118,18 +134,19 @@ LG.Player.prototype.update = function (dt) {
     this.z = U.clamp(this.z, -halfL, halfL);
   }
 
-  // autorotate via movement dir
+  // autorotate via movement dir — fast turn so the body (and the ball) points
+  // where the player is heading without feeling sluggish
   var sp = this.vx * this.vx + this.vz * this.vz;
   if (sp > 0.04) {
     var target = Math.atan2(this.vx, this.vz);
     // facing is rotation.y of the model; character model faces +Z at rot 0
-    this.facing = U.angleLerp(this.facing, target, Math.min(1, dt * 14));
+    this.facing = U.angleLerp(this.facing, target, Math.min(1, dt * 16));
   }
 
   this.phase += dt * (2.2 + sp * 0.55);
   var speedFrac = Math.min(1, Math.sqrt(sp) / this.maxSpeed);
 
-  LG.Models.animateChar(this.model, speedFrac > 0.08, this.phase, speedFrac);
+  LG.Models.animateChar(this.model, speedFrac > 0.08, this.phase, speedFrac, this.kickAnim);
 
   this.model.group.position.set(this.x, this.y, this.z);
   this.model.group.rotation.y = this.facing;
@@ -169,6 +186,17 @@ LG.Player.prototype.update = function (dt) {
 
 LG.Player.prototype.faceBallLoose = function () {
   // slight lean toward loose ball while idle-ish
+};
+
+// The direction this player is ACTUALLY asking to go right now, in world space.
+// Live stick/keys beat the smoothed body rotation, so a pass or shot leaves in
+// the direction the player is pointing instead of where the model happened to
+// be turning a moment ago. AI players write the same `want` fields.
+LG.Player.prototype.aimDir = function () {
+  var mx = this.want.x, mz = this.want.z;
+  var m = Math.sqrt(mx * mx + mz * mz);
+  if (m > 0.25) return { x: mx / m, z: mz / m };
+  return { x: Math.sin(this.facing), z: Math.cos(this.facing) };
 };
 
 // ---------- ability ----------
