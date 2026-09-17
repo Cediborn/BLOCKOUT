@@ -13,6 +13,15 @@
   <div id="vignette"></div>
   <div id="flash"></div>
 
+  <!-- mobile portrait rotate-phone overlay -->
+  <div id="rotate-overlay" class="hidden">
+    <div class="rot-box">
+      <div class="rot-glyph">↻</div>
+      <div class="rot-title">ROTATE YOUR PHONE</div>
+      <div class="rot-sub">landscape required to play</div>
+    </div>
+  </div>
+
   <!-- ================= HUD ================= -->
   <div id="coin-chip" class="hidden"><span class="coin"></span><span id="coin-amnt">0</span></div>
   <button id="pause-btn" class="hidden" title="Pause">II</button>
@@ -41,8 +50,9 @@
     <div id="actions">
       <button id="btn-tackle">TACKLE</button>
       <button id="btn-shoot">SHOOT</button>
-      <button id="btn-pass">PASS</button>
       <button id="btn-sprint">SPRINT</button>
+      <button id="btn-pass">PASS</button>
+      <button id="btn-switch">SWITCH</button>
     </div>
     <div id="special-wrap">
       <button id="special-btn"><div class="fill"></div><span class="lbl">SPECIAL</span></button>
@@ -86,13 +96,14 @@
       <div class="row-btns" style="margin-top:18px">
         <div class="help-list">
           <div>🕹️ <b>MOVE</b> — Arrow Keys (or left joystick on mobile)</div>
-          <div>💨 <b>PACE / SPRINT</b> — hold [W] (or Shift)</div>
-          <div>⚡ <b>SHOOT</b> — [S] hold to power, release to fire (or K)</div>
-          <div>🔗 <b>PASS</b> — [A] (or Space / J)</div>
-          <div>🛡️ <b>DEFEND / TACKLE</b> — [D] (or L / C) — challenge the ball carrier</div>
+          <div>💨 <b>PACE / SPRINT</b> — hold [W]</div>
+          <div>⚡ <b>SHOOT</b> — [S] hold to power, release to fire</div>
+          <div>🔗 <b>PASS</b> — [I]</div>
+          <div>🛡️ <b>DEFEND / TACKLE</b> — [D] — challenge the ball carrier</div>
+          <div>🔄 <b>SWITCH PLAYER</b> — [X] — jump to the best teammate</div>
           <div>🌟 <b>SPECIAL</b> — [Q] when the meter is full</div>
-          <div>🔄 <b>SWAP PLAYER</b> — [E / Tab]</div>
           <div>🏁 First to the most goals when the clock hits zero wins.</div>
+          <div style="opacity:0.65">📱 Mobile: joystick moves, on-screen buttons do the rest.</div>
         </div>
       </div>
       <div class="row-btns">

@@ -27,6 +27,7 @@ LG.MatchManager = function (opts) {
 
   this.howEarned = { pass: 0, shot: 0, tackle: 0, goal: 0, time: 0 };
   this.spectatorsReached = false;
+  this._autoSwitchT = 0;       // cooldown so automatic switching never fights manual X
 
   this.buildRosters();
   this.sceneHooks = {};
@@ -69,15 +70,25 @@ LG.MatchManager.prototype = {
       p.ai = p.isHuman ? null : new LG.AIBrain(p);
     }
 
-    // attach rings
+    // attach rings — a clean circular selection ring: thin annulus flat on the
+    // ground + a small chevron that points the active player's heading.
     var ringM = new THREE.MeshBasicMaterial({ color: 0x35e0ff, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false });
-    var ringG = new THREE.RingGeometry(0.62, 0.8, 28);
+    var ringG = new THREE.RingGeometry(0.66, 0.8, 48);
+    var tickM = new THREE.MeshBasicMaterial({ color: 0xdfffff, transparent: true, opacity: 1, side: THREE.DoubleSide, depthWrite: false });
+    var tickG = new THREE.ConeGeometry(0.11, 0.2, 3);
     for (i = 0; i < this.all.length; i++) {
-      var r = new THREE.Mesh(ringG, ringM.clone());
-      r.rotation.x = -Math.PI / 2;
-      r.position.y = 0.045;
-      r.visible = false;
-      this.all[i].ring = r;
+      var sel = new THREE.Group();
+      var ann = new THREE.Mesh(ringG, ringM.clone());
+      ann.rotation.x = -Math.PI / 2;
+      ann.position.y = 0.045;
+      sel.add(ann);
+      var tick = new THREE.Mesh(tickG, tickM);
+      tick.rotation.x = Math.PI / 2;   // flat on ground, tip pointing forward
+      tick.position.set(0, 0.045, 0.73);
+      sel.add(tick);
+      sel.visible = false;
+      sel.userData = { ann: ann, tick: tick };
+      this.all[i].ring = sel;
       // aura sprite for abilities
       var auraTex = LG.Util.makeCanvasTexture(function (g, w, h) {
         var grd = g.createRadialGradient(w / 2, h / 2, 2, w / 2, h / 2, w / 2);
@@ -194,6 +205,8 @@ LG.MatchManager.prototype = {
       this.slowOwner.t -= dt;
       if (this.slowOwner.t <= 0) this.slowOwner = null;
     }
+
+    if (this._autoSwitchT > 0) this._autoSwitchT = Math.max(0, this._autoSwitchT - dt);
 
     switch (this.state) {
       case 'KICKOFF':
@@ -632,11 +645,23 @@ LG.MatchManager.prototype = {
 
   possess: function (ball, p) {
     if (p.hasBall) return;
+    var before = this.possessionTeam;
+    var fromOpponent = (before === 1 - p.team);
+    var fromLoose = (before === -1 && this.state === 'PLAY');
     p.hasBall = true;
     ball.owner = p;
     this.possessionTeam = p.team;
     this.gainMetersQuickly(p, 0); // no-op
     this.bus.emit('possession', { player: p });
+
+    // AUTOMATIC SWITCH: when HOME wins the ball back from the opponent (or
+    // scoops a loose ball in open play), jump human control straight onto the
+    // new carrier so counterattacks feel responsive. Ordinary home<->home
+    // passes keep possessionTeam unchanged (before === 0) and never yank
+    // control, and the cooldown stops auto-switch from fighting manual X.
+    if (p.team === 0 && p !== this.active && this._autoSwitchT <= 0) {
+      if (fromOpponent || fromLoose) this.activatePlayer(p, true);
+    }
   },
 
   placeBallOnCarrier: function (p, dt) {
@@ -830,16 +855,15 @@ LG.MatchManager.prototype = {
     if (LG.HUD && LG.HUD.toast) LG.HUD.toast(msg, dur);
   },
 
-  // transfer human control to `next` (teammate swap) — AI takes over the old one
-  switchPlayer: function () {
-    if (!this.home.length) return;
-    var mates = this.home;
-    var idx = Math.max(0, mates.indexOf(this.active));
-    var next = mates[(idx + 1) % mates.length];
+  // ------------------------------------------------ PLAYER SWITCHING
+  // Make `next` the human-controlled player; AI takes over everyone else.
+  activatePlayer: function (next, isAuto) {
+    if (!next || !this.home.length) return;
+    if (this.active === next) return;
     this.active = next;
     var i, m;
-    for (i = 0; i < mates.length; i++) {
-      m = mates[i];
+    for (i = 0; i < this.home.length; i++) {
+      m = this.home[i];
       m.isHuman = (m === this.active);
       if (m.isHuman) { m.ai = null; }
       else if (!m.ai) { m.ai = new LG.AIBrain(m); }
@@ -847,7 +871,58 @@ LG.MatchManager.prototype = {
       if (!m.isHuman) { m.want.x = 0; m.want.z = 0; m.want.sprint = false; }
       m.setSelected(m === this.active);
     }
-    this.bus.emit('switchPlayer', { player: this.active });
+    // a cooldown (longer after auto) stops automatic switching from ping-ponging
+    // control right back; a manual switch also suppresses auto for a beat.
+    this._autoSwitchT = isAuto ? 1.4 : 0.8;
+    this.bus.emit('switchPlayer', { player: this.active, auto: !!isAuto });
+  },
+
+  // Manual switch (X / E / Tab / mobile SWITCH): pick the most useful teammate
+  // for the current situation instead of cycling blindly.
+  switchPlayer: function () {
+    if (!this.home.length) return;
+    var cur = this.active;
+    var ball = this.ball;
+    var carrier = this.ownerPlayer();
+    var goalEnemy = this.enemyGoal(0);    // home = team 0
+    var goalMine = this.myGoal(0);
+    var best = null, bscore = -1e9;
+    var i;
+
+    for (i = 0; i < this.home.length; i++) {
+      var p = this.home[i];
+      if (p === cur) continue;
+      var sc = 0;
+      var dBall = p.distTo(ball.x, ball.z);
+
+      if (this.possessionTeam === 1) {
+        // DEFENDING: get on the threat — closest to the carrier/ball wins,
+        // lightly biased goalside so we don't abandon the goal line.
+        var dangerX = (carrier && carrier.team === 1) ? carrier.x : ball.x;
+        var dangerZ = (carrier && carrier.team === 1) ? carrier.z : ball.z;
+        sc = -p.distTo(dangerX, dangerZ);
+        sc -= p.distTo(goalMine.x, goalMine.z) * 0.08;
+      } else if (this.possessionTeam === 0) {
+        // ATTACKING: grab the carrier right away, otherwise an open, advanced
+        // player already heading toward goal.
+        if (p.hasBall) sc += 50;
+        sc -= dBall * 0.5;
+        sc += this.openness(p, 1, 2.6) * 6;
+        sc += (goalEnemy.z > 0 ? p.z : -p.z) * 0.4;  // ahead = better
+      } else {
+        // LOOSE BALL: closest teammate to the ball is the obvious pick.
+        sc = -dBall;
+      }
+
+      if (sc > bscore) { bscore = sc; best = p; }
+    }
+
+    if (!best) {
+      // fallback: next in lineup
+      var idx = Math.max(0, this.home.indexOf(cur));
+      best = this.home[(idx + 1) % this.home.length];
+    }
+    this.activatePlayer(best, false);
   },
 
   showToastInit: function (el) { /* hud owns toasts */ },

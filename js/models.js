@@ -257,53 +257,96 @@ LG.Models = (function () {
   }
 
   // ------------------------------------------------------------
-  // GOAL (small street goals with wire nets)
-  // The frame sits ON the goal line (local z=0) and every net panel hangs
-  // BEHIND it (negative local z) so the opening always faces the field.
+  // GOAL — proper little football goal: posts + crossbar + a real
+  // nylon net (visible horizontal & vertical strands) hanging BEHIND
+  // the frame. Frame sits on the goal line (local z = 0); every net
+  // panel reaches from the opening back to z = -goalDepth, so the
+  // mouth always faces the field and the net extends into the pocket.
   // ------------------------------------------------------------
   function buildGoal(color) {
     var C = LG.Config.court;
     var g = new THREE.Group();
     var gw = C.goalWidth / 2;      // 2.6 half … full 5.2
-    var gh = C.goalHeight;
-    var gd = C.goalDepth;
-    var postM = new THREE.MeshStandardMaterial({ color: 0xd9dee6, metalness: 0.75, roughness: 0.35 });
-    var netM = new THREE.MeshBasicMaterial({ color: 0x8c8fa0, transparent: true, opacity: 0.5, side: THREE.DoubleSide, wireframe: true });
-    var baseM = new THREE.MeshStandardMaterial({ color: 0x1b2027, roughness: 0.9 });
+    var gh = C.goalHeight;         // 1.9
+    var gd = C.goalDepth;          // 1.8
 
-    var mk = function (w, h, d, x, y, z) {
-      var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), postM);
-      m.position.set(x, y, z);
-      m.castShadow = true;
-      g.add(m);
-    };
-    mk(0.12, gh, 0.12, -gw, gh / 2, 0);
-    mk(0.12, gh, 0.12, gw, gh / 2, 0);
-    mk(0.12, 0.12, 0.12, -gw, gh, 0);
-    mk(0.12, 0.12, 0.12, gw, gh, 0);
-    mk(gw * 2 + 0.12, 0.14, 0.12, 0, gh, 0); // crossbar
-    // ground base plates make the goal-line and pocket read from the street view
+    var postM = new THREE.MeshStandardMaterial({ color: 0xd9dee6, metalness: 0.75, roughness: 0.35 });
+    var netM = new THREE.LineBasicMaterial({ color: 0xdde1ea, transparent: true, opacity: 0.62, depthWrite: false });
+    var baseM = new THREE.MeshStandardMaterial({ color: 0x1b2027, roughness: 0.9 });
+    var strutM = new THREE.MeshStandardMaterial({ color: 0xb9bfc9, metalness: 0.55, roughness: 0.5 });
+
+    // frame: two posts + crossbar — the mouth faces the pitch (+z)
+    var postL = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, gh, 12), postM);
+    postL.position.set(-gw, gh / 2, 0);
+    postL.castShadow = true;
+    g.add(postL);
+    var postR = postL.clone();
+    postR.position.x = gw;
+    g.add(postR);
+    var cross = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, gw * 2, 12), postM);
+    cross.rotation.z = Math.PI / 2;
+    cross.position.set(0, gh, 0);
+    cross.castShadow = true;
+    g.add(cross);
+
+    // ground base plates so the goal line + pocket read from street level
     var baseL = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.06, gd), baseM);
     baseL.position.set(-gw + 0.06, 0.03, -gd / 2); g.add(baseL);
     var baseR = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.06, gd), baseM);
     baseR.position.set(gw - 0.06, 0.03, -gd / 2); g.add(baseR);
 
-    // net panels — all pinned to the frame line (z=0) and reaching back to z=-gd
-    var netGeoX = new THREE.BoxGeometry(gw * 2, gh, gd);
-    var netGeoZ = new THREE.BoxGeometry(gd, gh, gh);
-    var back = new THREE.Mesh(netGeoX, netM);
-    back.position.set(0, gh / 2, -gd / 2);
+    // grid-panel builder: a genuine net (vertical + horizontal strands)
+    var NET_STEP = 0.28;
+    function netGrid(pw, ph, step) {
+      var pts = [];
+      var x, y;
+      for (x = -pw / 2; x <= pw / 2 + 1e-4; x += step) {
+        pts.push(new THREE.Vector3(x, 0, 0), new THREE.Vector3(x, ph, 0));
+      }
+      for (y = step; y <= ph + 1e-4; y += step) {
+        pts.push(new THREE.Vector3(-pw / 2, y, 0), new THREE.Vector3(pw / 2, y, 0));
+      }
+      var geo = new THREE.BufferGeometry().setFromPoints(pts);
+      return new THREE.LineSegments(geo, netM);
+    }
+
+    // back net, pinned behind the goal line
+    var back = netGrid(gw * 2, gh, NET_STEP);
+    back.position.set(0, 0, -gd);
     g.add(back);
-    var sideL = new THREE.Mesh(netGeoZ, netM);
-    sideL.position.set(-gw, gh / 2, -gd / 2);
+    // side nets (inward-facing pockets)
+    var sideL = netGrid(gd, gh, NET_STEP);
+    sideL.rotation.y = Math.PI / 2;
+    sideL.position.set(-gw, 0, -gd / 2);
     g.add(sideL);
-    var sideR = new THREE.Mesh(netGeoZ, netM);
-    sideR.position.set(gw, gh / 2, -gd / 2);
+    var sideR = sideL.clone();
+    sideR.position.x = gw;
     g.add(sideR);
-    var top = new THREE.Mesh(new THREE.PlaneGeometry(gw * 2, gd), netM);
+    // top net
+    var top = netGrid(gw * 2, gd, NET_STEP);
     top.rotation.x = Math.PI / 2;
     top.position.set(0, gh, -gd / 2);
     g.add(top);
+
+    // thin support struts shaping the pocket (frame -> back corners)
+    function strut(x1, y1, z1, x2, y2, z2) {
+      var dx = x2 - x1, dy = y2 - y1, dz = z2 - z1;
+      var len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+      var m = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, len, 6), strutM);
+      m.position.set((x1 + x2) / 2, (y1 + y2) / 2, (z1 + z2) / 2);
+      var a = new THREE.Vector3(dx / len, dy / len, dz / len);
+      m.quaternion.copy(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), a));
+      m.castShadow = true;
+      return m;
+    }
+    g.add(strut(-gw, 0, 0, -gw, 0, -gd));
+    g.add(strut(gw, 0, 0, gw, 0, -gd));
+    g.add(strut(-gw, gh, 0, -gw, gh, -gd));
+    g.add(strut(gw, gh, 0, gw, gh, -gd));
+    g.add(strut(-gw, gh, -gd, gw, gh, -gd));
+    g.add(strut(-gw, 0, -gd, gw, 0, -gd));
+    g.add(strut(-gw, 0, -gd, -gw, gh, -gd));
+    g.add(strut(gw, 0, -gd, gw, gh, -gd));
 
     return g;
   }

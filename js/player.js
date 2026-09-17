@@ -154,12 +154,14 @@ LG.Player.prototype.update = function (dt) {
 
   if (!this.hasBall) this.faceBallLoose();
 
-  // ring pulse
+  // selection ring: keeps its true circular shape, hugs the ground under the
+  // player, chevron points the heading, and only the opacity pulses so it
+  // reads as a crisp marker instead of a wobbling blob.
   if (this.ring) {
-    this.ring.position.set(this.x, 0.04, this.z);
-    var sc = 1 + Math.sin(this.phase * 1.6) * 0.12;
-    this.ring.scale.set(sc, sc, 1);
-    this.ring.rotation.y += dt * 1.5;
+    this.ring.position.set(this.x, 0, this.z);
+    this.ring.rotation.y = this.facing;
+    var ann = this.ring.userData ? this.ring.userData.ann : null;
+    if (ann && ann.material) ann.material.opacity = 0.78 + Math.sin(this.phase * 2.2) * 0.18;
   }
 };
 

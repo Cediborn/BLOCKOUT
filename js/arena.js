@@ -6,6 +6,7 @@ var LG = window.LG = window.LG || {};
 
 LG.Arena = (function () {
   var C = LG.Config.court;
+  var U = LG.Util;
   var root = null;
   var anims = [];
 
@@ -112,45 +113,63 @@ LG.Arena = (function () {
     return g;
   }
 
+  // Painted lines are drawn onto a canvas whose pixel-resolution mirrors the
+  // court slab 1:1 (identical pixels-per-world-unit on both axes, so the
+  // canvas aspect == the pitch aspect). Every coordinate is derived from the
+  // real court dimensions:
+  //   - pitch length  = C.length (44)  -> goal lines at z = +-22
+  //   - pitch width   = C.width  (26)
+  //   - world center  = (0, 0)         -> the exact midpoint between goal lines
+  // A world-space circle drawn here is a true circle on the pitch (no stretch),
+  // and the halfway line lands EXACTLY at z = 0 under the kickoff spot.
   function courtLines() {
-    var tl = LG.Util.makeCanvasTexture(function (c, w, h) {
-      c.clearRect(0, 0, w, h);
+    var ps = 16; // pixels per world unit (16px == 1 world unit, both axes)
+    var w = Math.round(C.width * ps), h = Math.round(C.length * ps);
+    var halfW = C.width / 2, halfL = C.length / 2;
+    var tl = LG.Util.makeCanvasTexture(function (c, cw, ch) {
+      c.clearRect(0, 0, cw, ch);
+      // world -> canvas.  Canvas row 0 is the NORTH goal (z = -halfL) and
+      // row h is the SOUTH goal (z = +halfL) matching the court slab UVs.
+      var px = function (x) { return (x + halfW) * ps; };
+      var py = function (z) { return (halfL + z) * ps; };
+      var midX = px(0), midY = py(0); // true world center (0,0)
+      var ins = 2.0 * ps;             // keep paint just inside the slab edge
+
       c.strokeStyle = 'rgba(224,226,220,0.82)';
       c.lineWidth = 3;
-      var hw = w * 0.5;
-      // border
-      c.strokeRect(2, 2, w - 4, h - 4);
-      // half line
-      c.beginPath(); c.moveTo(2, hw); c.lineTo(w - 2, hw); c.stroke();
-      // center circle
-      c.beginPath(); c.arc(hw, hw, w * 0.09, 0, 7); c.stroke();
-      // goal area boxes
-      c.strokeRect(w * 0.40, 2, w * 0.20, w * 0.10);
-      c.strokeRect(w * 0.40, h - w * 0.10 - 2, w * 0.20, w * 0.10);
-      // center spot
-      c.beginPath(); c.arc(hw, hw, 2.4, 0, 7); c.fillStyle = 'rgba(224,226,220,0.82)'; c.fill();
 
-      // worn paint: chip random notches out of the lines so it looks repainted-over
-      function chipRect(x, y, rw, rh) { c.clearRect(x, y, rw, rh); }
-      var i;
-      for (i = 0; i < 46; i++) {
-        var t = Math.random();
+      // outer boundary == the two goal lines at z = +-halfL
+      c.strokeRect(ins, ins, cw - ins * 2, ch - ins * 2);
+      // halfway line: world z == 0 -> exactly between the goal lines
+      c.beginPath(); c.moveTo(ins, midY); c.lineTo(cw - ins, midY); c.stroke();
+
+      // center circle + spot, dead-center on the halfway line
+      c.beginPath(); c.arc(midX, midY, 3.2 * ps, 0, 7); c.stroke();
+      c.beginPath(); c.arc(midX, midY, 0.42 * ps, 0, 7);
+      c.fillStyle = 'rgba(224,226,220,0.82)'; c.fill();
+
+      // goal-area boxes, symmetric on both ends against the real goal lines
+      var gb = { w: 5.2, d: 4.0 };
+      c.strokeRect(px(-gb.w / 2), py(-halfL), gb.w * ps, gb.d * ps);            // north
+      c.strokeRect(px(-gb.w / 2), py(halfL) - gb.d * ps, gb.w * ps, gb.d * ps); // south
+
+      // worn paint: chip random notches along the halfway line & circle rim
+      for (var i = 0; i < 42; i++) {
+        var cwx, cwz, chipA;
         if (Math.random() < 0.5) {
-          // along rectangle edges
-          var edge = Math.random();
-          var ex, ey;
-          if (edge < 0.25) { ex = 2 + t * (w - 4); ey = 2; }
-          else if (edge < 0.5) { ex = 2 + t * (w - 4); ey = h - 2; }
-          else if (edge < 0.75) { ex = 2; ey = 2 + t * (h - 4); }
-          else { ex = w - 2; ey = 2 + t * (h - 4); }
-          chipRect(ex - 4, ey - 2, 8, 4);
+          cwx = (Math.random() * 2 - 1) * (halfW - ins / ps - 2);
+          cwz = 0;
         } else {
-          var ang = Math.random() * 6.283;
-          var r = w * 0.09 * Math.random();
-          chipRect(hw + Math.cos(ang) * r - 4, hw + Math.sin(ang) * r - 2, 8, 4);
+          chipA = Math.random() * 6.283;
+          var rr = 3.2 * (0.75 + Math.random() * 0.4);
+          cwx = Math.cos(chipA) * rr;
+          cwz = Math.sin(chipA) * rr;
         }
+        var chcx = px(cwx), chcy = py(cwz);
+        c.clearRect(chcx - 5, chcy - 2, 10, 4);
+        if (Math.random() < 0.3) c.clearRect(chcx - 2, chcy - 5, 4, 10);
       }
-    }, 512, 360);
+    }, w, h);
     tl.repeat.set(1, 1);
     var plane = new THREE.Mesh(new THREE.PlaneGeometry(C.width, C.length), new THREE.MeshBasicMaterial({ map: tl, transparent: true, depthWrite: false }));
     plane.rotation.x = -Math.PI / 2;

@@ -12,6 +12,14 @@
   var selectedId = 'blaze';
   var bgT = 0;
   var clock = { t: 0 };
+  var isMobile = false;
+
+  var IS_MOBILE = (function () {
+    var t = 'ontouchstart' in window;
+    var p = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    var ua = /Mobi|Android|iPhone|iPad|iPod|BlackBerry|Windows Phone/i.test(navigator.userAgent || '');
+    return t || p || ua;
+  })();
 
   // ---------------- init ----------------
   function init() {
@@ -39,6 +47,26 @@
     buildSelectGrid();
 
     window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+
+    if (IS_MOBILE) {
+      isMobile = true;
+      // push into landscape + fullscreen on the first gesture, and keep the
+      // rotate-phone overlay honest if the user flips back to portrait.
+      var orientOnce = function () {
+        try {
+          var so = screen.orientation || {};
+          if (so.lock && so.lock.call) so.lock('landscape').catch(function () {});
+        } catch (e) {}
+        var fs = document.documentElement;
+        if (fs.requestFullscreen) fs.requestFullscreen().catch(function () {});
+        else if (fs.webkitRequestFullscreen) fs.webkitRequestFullscreen();
+        window.removeEventListener('pointerdown', orientOnce);
+      };
+      window.addEventListener('pointerdown', orientOnce);
+      // show the rotate overlay immediately if already in portrait
+      requestAnimationFrame(updateRotate);
+    }
 
     // audio unlock on first gesture
     var unlockOnce = function () { LG.Audio.unlock(); window.removeEventListener('pointerdown', unlockOnce); };
@@ -69,11 +97,20 @@
     scene.add(sun);
   }
 
+  function updateRotate() {
+    if (!isMobile) return;
+    var el = document.getElementById('rotate-overlay');
+    if (!el) return;
+    var portrait = window.innerHeight > window.innerWidth;
+    el.classList.toggle('hidden', !portrait);
+  }
+
   function onResize() {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    updateRotate();
   }
 
   // ---------------- events ----------------

@@ -33,11 +33,11 @@ LG.Input = (function () {
       case 'ArrowLeft': return 'left';
       case 'ArrowRight': return 'right';
       case 'KeyW': case 'ShiftLeft': case 'ShiftRight': return 'sprint';
-      case 'KeyA': case 'Space': case 'KeyJ': return 'pass';
+      case 'KeyI': case 'KeyA': case 'Space': case 'KeyJ': return 'pass';
       case 'KeyS': case 'KeyK': return 'shoot';
       case 'KeyD': case 'KeyL': case 'KeyC': return 'tackle';
       case 'KeyQ': return 'special';
-      case 'KeyE': case 'Tab': return 'switch';
+      case 'KeyX': case 'KeyE': case 'Tab': return 'switch';
       case 'KeyP': case 'Escape': return 'pause';
       case 'KeyR': return 'rematch';
     }
@@ -74,6 +74,9 @@ LG.Input = (function () {
     if (!enabled) return;
     joyActive = true;
     joyId = e.pointerId;
+    if (joystickEl.setPointerCapture && e.pointerId != null) {
+      try { joystickEl.setPointerCapture(e.pointerId); } catch (e) {}
+    }
     var zone = joystickEl;
     var br = zone.getBoundingClientRect();
     joyOx = e.clientX - br.left;
@@ -107,13 +110,16 @@ LG.Input = (function () {
   }
 
   function bindButtons() {
-    var ids = ['pass', 'shoot', 'tackle', 'sprint'];
+    var ids = ['pass', 'shoot', 'tackle', 'sprint', 'switch'];
     for (var i = 0; i < ids.length; i++) {
       var el = document.getElementById('btn-' + ids[i]);
       if (!el) continue;
       el.addEventListener('pointerdown', function (name, e) {
         e.preventDefault(); useKeyboard = false;
         if (!enabled) return;
+        if (el.setPointerCapture && e.pointerId != null) {
+          try { el.setPointerCapture(e.pointerId); } catch (e) {}
+        }
         setBool(name, true);
       }.bind(null, ids[i]));
       el.addEventListener('pointerup', function (name) { setBool(name, false); }.bind(null, ids[i]));
@@ -188,7 +194,7 @@ LG.Input = (function () {
 
   return {
     init: init, update: update, reset: reset, setEnabled: setEnabled,
-    pressed: pressed, down: down, moveVec: moveVec,
+    pressed: pressed, down: down, moveVec: moveVec, keyMap: keyMap,
     isUsingKeyboard: function () { return useKeyboard; },
   };
 })();
