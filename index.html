@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<title>BLOCK OUT — Street Football</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <canvas id="game-canvas"></canvas>
+  <div id="vignette"></div>
+  <div id="flash"></div>
+
+  <!-- ================= HUD ================= -->
+  <div id="coin-chip" class="hidden"><span class="coin"></span><span id="coin-amnt">0</span></div>
+  <button id="pause-btn" class="hidden" title="Pause">II</button>
+
+  <div id="scoreboard" class="hidden">
+    <div class="team home">
+      <span class="label" id="home-label">HOME</span>
+      <span class="score" id="home-score">0</span>
+    </div>
+    <span class="vs">—</span>
+    <div class="clock" id="clock">2:00</div>
+    <span class="vs">—</span>
+    <div class="team away">
+      <span class="label" id="away-label">AWAY</span>
+      <span class="score" id="away-score">0</span>
+    </div>
+  </div>
+
+  <div id="announce"></div>
+  <div id="aim-hint">TAP TO FIRE</div>
+  <div id="toast" class="toast"></div>
+
+  <!-- bottom controls -->
+  <div id="controls" class="hidden">
+    <div id="joystick-zone"><div id="joy-base"><div id="joy-knob"></div></div></div>
+    <div id="actions">
+      <button id="btn-tackle">TACKLE</button>
+      <button id="btn-shoot">SHOOT</button>
+      <button id="btn-pass">PASS</button>
+      <button id="btn-sprint">SPRINT</button>
+    </div>
+    <div id="special-wrap">
+      <button id="special-btn"><div class="fill"></div><span class="lbl">SPECIAL</span></button>
+      <div id="special-name"></div>
+    </div>
+  </div>
+
+  <!-- ================= OVERLAYS ================= -->
+  <!-- Main menu -->
+  <div id="menu-overlay" class="overlay">
+    <div class="panel">
+      <div class="title-xl"><span class="t1">BLOCK</span> <span class="t2">OUT</span></div>
+      <div class="subtitle">3V3 STREET FOOTBALL</div>
+      <div class="row-btns">
+        <button id="btn-play" class="big-btn">KICK OFF</button>
+        <button id="btn-how" class="big-btn gold" style="min-width:150px">HOW TO PLAY</button>
+      </div>
+      <div class="row-btns" id="menu-recs" style="margin-top:14px; gap:8px; font-size:12px; opacity:0.75; letter-spacing:0.12em">
+        <span>🏆 QUICK MATCH 3V3</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Character select -->
+  <div id="select-overlay" class="overlay hidden">
+    <div class="panel">
+      <div class="title-xl" style="font-size:clamp(30px,7vmin,54px)"><span class="t1">PICK</span> <span class="t2">YOUR STAR</span></div>
+      <div class="subtitle" style="margin-top:10px;font-size:12px">YOUR TWO RUNNING MATES JOIN AUTOMATICALLY. OPPONENTS ARE A RANDOM SQUAD.</div>
+      <div id="char-grid" class="char-grid"></div>
+      <div class="row-btns">
+        <button id="btn-back" class="big-btn" style="min-width:150px; background:linear-gradient(180deg,#9aa6b8,#5d6a7d); box-shadow:0 6px 0 #3c4757">BACK</button>
+        <button id="btn-start-match" class="big-btn gold" style="min-width:240px">START MATCH</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- How to play -->
+  <div id="how-overlay" class="overlay hidden">
+    <div class="panel">
+      <div class="title-xl" style="font-size:clamp(30px,7vmin,54px)"><span class="t1">HOW</span> <span class="t2">TO PLAY</span></div>
+      <div class="row-btns" style="margin-top:18px">
+        <div class="help-list">
+          <div>🕹️ <b>MOVE</b> — Arrow Keys (or left joystick on mobile)</div>
+          <div>💨 <b>PACE / SPRINT</b> — hold [W] (or Shift)</div>
+          <div>⚡ <b>SHOOT</b> — [S] hold to power, release to fire (or K)</div>
+          <div>🔗 <b>PASS</b> — [A] (or Space / J)</div>
+          <div>🛡️ <b>DEFEND / TACKLE</b> — [D] (or L / C) — challenge the ball carrier</div>
+          <div>🌟 <b>SPECIAL</b> — [Q] when the meter is full</div>
+          <div>🔄 <b>SWAP PLAYER</b> — [E / Tab]</div>
+          <div>🏁 First to the most goals when the clock hits zero wins.</div>
+        </div>
+      </div>
+      <div class="row-btns">
+        <button id="btn-how-back" class="big-btn" style="min-width:150px; background:linear-gradient(180deg,#9aa6b8,#5d6a7d); box-shadow:0 6px 0 #3c4757">BACK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pause -->
+  <div id="pause-overlay" class="overlay hidden">
+    <div class="panel pause-panel">
+      <h2 style="color:#fff;text-shadow:0 4px 0 rgba(0,0,0,0.4)">PAUSED</h2>
+      <div class="row-btns">
+        <button id="btn-resume" class="big-btn">RESUME</button>
+        <button id="btn-quit-menu" class="big-btn" style="background:linear-gradient(180deg,#9aa6b8,#5d6a7d);box-shadow:0 6px 0 #3c4757">QUIT TO MENU</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results -->
+  <div id="result-overlay" class="overlay hidden">
+    <div class="panel">
+      <div class="result-title" id="result-title">MATCH WON</div>
+      <div class="result-score"><span class="rs" id="res-home">3</span> : <span class="ra" id="res-away">1</span></div>
+      <div class="result-coins" id="res-coins"><span class="coin"></span><span id="res-coins-n">+0</span></div>
+      <div class="row-btns">
+        <button id="btn-rematch" class="big-btn gold">REMATCH</button>
+        <button id="btn-result-menu" class="big-btn" style="background:linear-gradient(180deg,#9aa6b8,#5d6a7d);box-shadow:0 6px 0 #3c4757">MAIN MENU</button>
+      </div>
+      <div class="ko">+ COINS UNLOCK MORE STARS</div>
+    </div>
+  </div>
+
+  <script src="lib/three.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/util.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/progression.js"></script>
+  <script src="js/input.js"></script>
+  <script src="js/particles.js"></script>
+  <script src="js/models.js"></script>
+  <script src="js/ball.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/arena.js"></script>
+  <script src="js/abilities.js"></script>
+  <script src="js/ai.js"></script>
+  <script src="js/camera.js"></script>
+  <script src="js/match.js"></script>
+  <script src="js/hud.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
