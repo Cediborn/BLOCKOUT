@@ -58,6 +58,10 @@ LG.MatchManager.prototype = {
     }
     var team1 = this.teamOf(oppIds.map(function (id) { return LG.byId(id); }), 1);
 
+    // one dedicated goalkeeper per team (outfield stays 3v3)
+    team0.push(this.makeGoalkeeper(0));
+    team1.push(this.makeGoalkeeper(1));
+
     this.home = team0;
     this.away = team1;
     this.all = team0.concat(team1);
@@ -66,8 +70,7 @@ LG.MatchManager.prototype = {
 
     var i;
     for (i = 0; i < this.all.length; i++) {
-      var p = this.all[i];
-      p.ai = p.isHuman ? null : new LG.AIBrain(p);
+      this.ensureAI(this.all[i]);
     }
 
     // attach rings — a clean circular selection ring: thin annulus flat on the
@@ -115,6 +118,36 @@ LG.MatchManager.prototype = {
       p.isHuman = false;
       return p;
     });
+  },
+
+  // Guarded AI attachment: a goalkeeper always gets the dedicated keeper
+  // brain, outfield players get the normal match brain, humans get none.
+  ensureAI: function (p) {
+    if (p.isHuman) { p.ai = null; return; }
+    if (!p.ai) {
+      p.ai = p.isGoalkeeper ? new LG.KeeperBrain(p) : new LG.AIBrain(p);
+    }
+  },
+
+  // Goalkeeper roster definition — a functionally-distinct "keeper" role
+  // with a high-visibility kit (gloves via def.body.gloves).
+  makeGoalkeeper: function (team) {
+    var def = {
+      id: team === 0 ? 'guard' : 'wall',
+      name: team === 0 ? 'GUARD' : 'WALL',
+      role: 'GOALKEEPER',
+      emoji: '🧤',
+      stats: { speed: 5, shoot: 4, pass: 8, dribble: 3, defense: 9, stamina: 8 },
+      ability: null,
+      body: { wide: 1.15, tall: 1.06, gloves: team === 0 ? 0xffffff : 0x1a1e26 },
+      palette: team === 0 ?
+        { skin: 0xd99f72, hair: 0x20242c, shirt: 0x2ee65a, trim: 0xffffff, pants: 0x141a12, shoe: 0x171c14 } :
+        { skin: 0x8a5a3c, hair: 0x1d2026, shirt: 0xffa62e, trim: 0x2b1500, pants: 0x23201a, shoe: 0x181c22 },
+    };
+    var p = new LG.Player(def, team, 3);
+    p.isHuman = false;
+    p.isGoalkeeper = true;
+    return p;
   },
 
   // ------------------------------------------------------------
@@ -167,29 +200,49 @@ LG.MatchManager.prototype = {
     LG.Audio.sfx.matchStart();
   },
 
-  placeKickoff: function () {
+placeKickoff: function () {
     var halfW = LG.Config.court.width / 2 - 0.6;
-    var i;
+    var i, p, pos;
     var homePos = [[0, 9], [-6, 13], [6, 13]];
     var awayPos = [[0, -9], [-6, -13], [6, -13]];
-    for (i = 0; i < 3; i++) {
-      this.home[i].x = LG.Util.clamp(homePos[i][0], -halfW + 0.4, halfW - 0.4);
-      this.home[i].z = homePos[i][1];
-      this.home[i].vx = this.home[i].vz = 0;
-      this.home[i].stamina = 1;
-      this.home[i].model.group.position.set(this.home[i].x, 0, this.home[i].z);
+    for (i = 0; i < this.home.length; i++) {
+      p = this.home[i];
+      if (p.isGoalkeeper) { this.repositionGoalkeeper(p); continue; }
+      pos = homePos[i % homePos.length];
+      p.x = LG.Util.clamp(pos[0], -halfW + 0.4, halfW - 0.4);
+      p.z = pos[1];
+      p.vx = p.vz = 0;
+      p.stamina = 1;
+      p.model.group.position.set(p.x, 0, p.z);
     }
-    for (i = 0; i < 3; i++) {
-      this.away[i].x = LG.Util.clamp(awayPos[i][0], -halfW + 0.4, halfW - 0.4);
-      this.away[i].z = awayPos[i][1];
-      this.away[i].vx = this.away[i].vz = 0;
-      this.away[i].model.group.position.set(this.away[i].x, 0, this.away[i].z);
+    for (i = 0; i < this.away.length; i++) {
+      p = this.away[i];
+      if (p.isGoalkeeper) { this.repositionGoalkeeper(p); continue; }
+      pos = awayPos[i % awayPos.length];
+      p.x = LG.Util.clamp(pos[0], -halfW + 0.4, halfW - 0.4);
+      p.z = pos[1];
+      p.vx = p.vz = 0;
+      p.stamina = 1;
+      p.model.group.position.set(p.x, 0, p.z);
     }
     this.ball.reset(0, 0);
     this.possessionTeam = -1;
     this.owner = null;
     this.slowOwner = null;
     this.bus.emit('kickoff', { match: this });
+  },
+
+  // Reset a goalkeeper to their own goal mouth, facing the field.
+  repositionGoalkeeper: function (p) {
+    var halfL = LG.Config.court.length / 2;
+    p.x = 0;
+    p.z = p.team === 0 ? halfL - 0.8 : -halfL + 0.8;
+    p.vx = p.vz = 0;
+    p.facing = p.team === 0 ? Math.PI : 0;   // toward the field
+    p.stamina = 1;
+    p.distributeT = 0;
+    p.model.group.position.set(p.x, p.y, p.z);
+    p.model.group.rotation.y = p.facing;
   },
 
   // ------------------------------------------------------------
@@ -231,6 +284,7 @@ LG.MatchManager.prototype = {
         if (this.clock <= 0) { this.endMatch(); return; }
         this.resolvePossession();
         this.ball.step(dt, this.arena);
+        this.updateKeepers(dt);    // goalkeepers save/parry BEFORE the goal check
         this.checkGoal();
         this.ticks(dt);
         break;
@@ -328,7 +382,7 @@ LG.MatchManager.prototype = {
     var best = null;
     for (var i = 0; i < mates.length; i++) {
       var m = mates[i];
-      if (m === h) continue;
+      if (m === h || m.isGoalkeeper) continue;
       var d = m.distTo(h.x, h.z);
       var forward = (m.z - h.z) * (goal.z > 0 ? 1 : -1);
       var open = this.openness(m, 1 - h.team, 2.3);
@@ -492,6 +546,10 @@ LG.MatchManager.prototype = {
       var closeMul = U.clamp(1.18 - bestD * 0.16, 0.85, 1.18);              // closer = stronger
       var chance = (0.68 + (p.stats.defense - victim.stats.dribble) * 0.05) * angleMul * closeMul;
       chance = U.clamp(chance, 0.45, 0.96);
+
+      // goalkeepers in possession are protected: a lunging striker may still
+      // win the odd 50/50, but the keeper keeps the ball a huge majority
+      if (victim.isGoalkeeper && victim.distributeT > 0) chance = Math.min(chance, 0.18);
 
       if (victim.hasBall && Math.random() < chance) {
         // won the ball -> pop it loose back toward the tackler's momentum
@@ -659,7 +717,7 @@ LG.MatchManager.prototype = {
     // new carrier so counterattacks feel responsive. Ordinary home<->home
     // passes keep possessionTeam unchanged (before === 0) and never yank
     // control, and the cooldown stops auto-switch from fighting manual X.
-    if (p.team === 0 && p !== this.active && this._autoSwitchT <= 0) {
+    if (p.team === 0 && p !== this.active && !p.isGoalkeeper && this._autoSwitchT <= 0) {
       if (fromOpponent || fromLoose) this.activatePlayer(p, true);
     }
   },
@@ -706,6 +764,118 @@ LG.MatchManager.prototype = {
       ball.x += ball.vx * dt;
       ball.z += ball.vz * dt;
     }
+  },
+
+  // ------------------------------------------------------------
+  // GOALKEEPERS — shot detection, saves, parries
+  // ------------------------------------------------------------
+
+  // signed goal-line the keeper defends (team0 defends +z, team1 defends -z)
+  gkLine: function (gk) {
+    var halfL = LG.Config.court.length / 2;
+    return gk.team === 0 ? halfL : -halfL;
+  },
+
+  // Is an inbound, unowned ball realistically threatening this keeper's goal?
+  // Returns prediction data {px, pz, dist0, sp} or null.  dist0 is the signed
+  // distance to the line (>=0 in front, small negative = just past it).
+  keeperThreat: function (gk) {
+    var ball = this.ball;
+    var C = LG.Config.court;
+    var K = LG.Config.keeper;
+    if (!ball || ball.owner) return null;
+    var line = this.gkLine(gk);
+    var sign = gk.team === 0 ? 1 : -1;
+    var vzT = ball.vz * sign;
+    if (vzT < 1.0) return null;                          // not heading this way (yet)
+    var dist0 = (line - ball.z) * sign;                  // front of the line = positive
+    if (dist0 > K.seeDist) return null;                  // too early to react
+    if (dist0 < -K.saveWindow) return null;              // fully over the line = goal
+    if (ball.y > C.goalHeight + 0.05) return null;       // over the bar
+    var tt = Math.max(0, dist0) / vzT;
+    var px = ball.x + ball.vx * tt;
+    if (Math.abs(px) > C.goalWidth / 2 + 1.4) return null; // heading wide
+    var pz = line - sign * 0.1;
+    return { px: px, pz: pz, dist0: dist0, sp: ball.speed3() };
+  },
+
+  // 0..1 save likelihood — harder/placed shots and closer shots beat the
+  // keeper more often.  Rerolled once per kick, not per frame.
+  keeperSaveChance: function (gk, th) {
+    var U = LG.Util;
+    var C = LG.Config.court;
+    var K = LG.Config.keeper;
+    var gw = C.goalWidth / 2;
+    var sp = th.sp;
+    var reaction = U.clamp(th.dist0 / Math.max(sp, 6) / K.rxnWindow, 0, 1);
+    var hard = U.clamp((sp - 12) / 20, 0, 1);
+    var centered = U.clamp(1 - Math.abs(th.px) / (gw * 1.15), 0.15, 1);
+    var agility = U.clamp(1.4 - Math.abs(gk.x - th.px) * 0.38, 0.15, 1);
+    var chance = (0.55 + reaction * 0.32) * (0.5 + centered * 0.4) * (0.5 + agility * 0.35) - hard * 0.3;
+    return U.clamp(chance, 0.05, 0.92);
+  },
+
+  // Per-frame keeper pass: run save prediction + one-shot save roll.
+  // A keeper already holding the ball skips this (he is distributing).
+  updateKeepers: function (dt) {
+    var ball = this.ball;
+    var i, gk;
+    for (i = 0; i < this.all.length; i++) {
+      gk = this.all[i];
+      if (!gk.isGoalkeeper || gk.hasBall) continue;
+      var th = this.keeperThreat(gk);
+      if (!th) continue;
+      // one save roll per kick (shooter + kick sequence) so a keeper can't
+      // "win the lottery" by rolling multiple frames on the same shot
+      var sig = (ball.lastKicker ? 'p' + ball.lastKicker.idx + '.' + ball.lastKicker.team : 'n') + '-' + (ball._kickSeq || 0);
+      if (gk._saveSig !== sig) { gk._saveSig = sig; gk._saveRoll = Math.random(); }
+      if (gk._saveRoll < this.keeperSaveChance(gk, th)) {
+        this.doKeeperSave(gk, th);
+      }
+    }
+  },
+
+  // Stop the shot at the mouth: catch (possess → distribute) or parry wide.
+  doKeeperSave: function (gk, th) {
+    var U = LG.Util;
+    var ball = this.ball;
+    var C = LG.Config.court;
+    var line = this.gkLine(gk);
+    var sign = gk.team === 0 ? 1 : -1;
+    var K = LG.Config.keeper;
+    gk._saveSig = null; // fresh roll for the next kick
+
+    // fast shots + lucky parries knock it clear instead of a clean catch
+    if (th.sp > 19 || Math.random() < 0.3) {
+      ball._guided = null;
+      ball.lastKicker = gk;                       // own-goal protection for the parry
+      if (ball.noPk !== gk) { ball.noPk = ball.lastKicker; ball.noPkT = 0.5; }
+      ball.x = U.clamp(ball.x, -C.goalWidth / 2, C.goalWidth / 2);
+      ball.z = line - sign * 0.12;
+      ball.y = ball.r;
+      ball.vy = 1.5 + Math.random() * 0.8;
+      ball.vx = (Math.random() - 0.5) * 5;
+      ball.vz = -sign * (6 + Math.random() * 3.5);   // back out toward the field
+      ball.mesh.position.set(ball.x, ball.y, ball.z);
+      this.possessionTeam = -1;
+    } else {
+      // clean catch: freeze, hold, then distribute
+      ball._guided = null;
+      ball.x = U.clamp(ball.x, -C.goalWidth / 2, C.goalWidth / 2);
+      ball.z = line - sign * 0.07;
+      ball.y = ball.r;
+      ball.vx = ball.vy = ball.vz = 0;
+      ball.mesh.position.set(ball.x, ball.y, ball.z);
+      gk.distributeT = K.distributeDelay;
+      this.possess(ball, gk);
+    }
+
+    // visible/audible feedback for the save
+    LG.Particles.ring(ball.x, ball.z, 0xffffff, 4, 0.5);
+    LG.Particles.dust(ball.x, ball.z, 3.2);
+    LG.Audio.sfx.tackle();
+    this.shakeEffect(0.2, 0.22);
+    this.bus.emit('keeperSave', { gk: gk, parry: !gk.hasBall });
   },
 
   // ------------------------------------------------------------
@@ -816,7 +986,9 @@ LG.MatchManager.prototype = {
     var opps = this.teamPlayers(threatTeam);
     var score = 1;
     for (var i = 0; i < opps.length; i++) {
-      var d = opps[i].distTo(p.x, p.z);
+      var o = opps[i];
+      if (o.isGoalkeeper) continue;   // a keeper sitting in goal isn't pressure
+      var d = o.distTo(p.x, p.z);
       if (d < radius) score -= (radius - d) / radius * 0.5;
     }
     return Math.max(0.1, score);
@@ -829,6 +1001,7 @@ LG.MatchManager.prototype = {
     if (len2 < 0.01) return true;
     for (var i = 0; i < opps.length; i++) {
       var o = opps[i];
+      if (o.isGoalkeeper) continue;
       var t = ((o.x - ax) * (bx - ax) + (o.z - az) * (bz - az)) / len2;
       t = LG.Util.clamp(t, 0, 1);
       var cx = ax + (bx - ax) * t, cz = az + (bz - az) * t;
@@ -859,14 +1032,15 @@ LG.MatchManager.prototype = {
   // Make `next` the human-controlled player; AI takes over everyone else.
   activatePlayer: function (next, isAuto) {
     if (!next || !this.home.length) return;
+    if (next.isGoalkeeper) return;          // the human never takes the keeper
     if (this.active === next) return;
     this.active = next;
     var i, m;
     for (i = 0; i < this.home.length; i++) {
       m = this.home[i];
-      m.isHuman = (m === this.active);
+      m.isHuman = (m === this.active) && !m.isGoalkeeper;
       if (m.isHuman) { m.ai = null; }
-      else if (!m.ai) { m.ai = new LG.AIBrain(m); }
+      else { this.ensureAI(m); }
       // clear leftover inputs so the old human doesn't drift from stale intents
       if (!m.isHuman) { m.want.x = 0; m.want.z = 0; m.want.sprint = false; }
       m.setSelected(m === this.active);
@@ -891,7 +1065,7 @@ LG.MatchManager.prototype = {
 
     for (i = 0; i < this.home.length; i++) {
       var p = this.home[i];
-      if (p === cur) continue;
+      if (p === cur || p.isGoalkeeper) continue;
       var sc = 0;
       var dBall = p.distTo(ball.x, ball.z);
 
@@ -918,9 +1092,13 @@ LG.MatchManager.prototype = {
     }
 
     if (!best) {
-      // fallback: next in lineup
+      // fallback: next OUTFIELD player in lineup (never the keeper)
       var idx = Math.max(0, this.home.indexOf(cur));
-      best = this.home[(idx + 1) % this.home.length];
+      var k, nxt;
+      for (k = 1; k <= this.home.length; k++) {
+        nxt = this.home[(idx + k) % this.home.length];
+        if (!nxt.isGoalkeeper) { best = nxt; break; }
+      }
     }
     this.activatePlayer(best, false);
   },
@@ -930,13 +1108,13 @@ LG.MatchManager.prototype = {
   // ------------------------------------------------------------
   selectActive: function () {
     if (!this.home.length) return;
-    if (!this.active) this.active = this.home[0];
+    if (!this.active || this.active.isGoalkeeper) this.active = this.home[0];
     var i, m;
     for (i = 0; i < this.home.length; i++) {
       m = this.home[i];
-      m.isHuman = (m === this.active);
+      m.isHuman = (m === this.active) && !m.isGoalkeeper;
       if (m.isHuman) { m.ai = null; }
-      else if (!m.ai) { m.ai = new LG.AIBrain(m); }
+      else { this.ensureAI(m); }
       m.setSelected(m === this.active);
     }
     this.bus.emit('switchPlayer', { player: this.active });

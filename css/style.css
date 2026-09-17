@@ -183,6 +183,9 @@ html, body {
   box-shadow: 0 0 6px rgba(53,224,255,0.7);
 }
 .tag.team-away .tdot { background: var(--hud-red); box-shadow: 0 0 6px rgba(255,77,94,0.7); }
+.tag.tag-gk { border-style: dashed; }
+.tag.tag-gk .tdot { background: #ffe14d; box-shadow: 0 0 6px rgba(255,225,77,0.8); }
+.tag.tag-gk .tname { font-size: 0.72em; letter-spacing: 0.05em; }
 .tag.tag-me { border-color: rgba(53,224,255,0.65); background: rgba(8,18,30,0.85); }
 .tag.carrier { border-color: var(--hud-amber); }
 .tag.carrier .tname { color: var(--hud-amber); }

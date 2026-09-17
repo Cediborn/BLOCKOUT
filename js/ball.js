@@ -30,6 +30,7 @@ LG.Ball.prototype = {
     this.noPk = null;
     this.noPkT = 0;
     this.atRest = true;
+    this._kickSeq = (this._kickSeq || 0) + 1;   // invalidate old keeper save rolls
     if (this.mesh) this.mesh.position.set(this.x, this.y, this.z);
   },
 
@@ -37,6 +38,7 @@ LG.Ball.prototype = {
   speed3: function () { return Math.sqrt(this.vx * this.vx + this.vy * this.vy + this.vz * this.vz); },
 
   kick: function (vx, vy, vz) {
+    this._kickSeq = (this._kickSeq || 0) + 1;
     var max = LG.Config.physics.maxBallSpeed;
     var m = Math.sqrt(vx * vx + vy * vy + vz * vz);
     if (m > max) { vx *= max / m; vy *= max / m; vz *= max / m; }

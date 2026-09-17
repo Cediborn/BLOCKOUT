@@ -42,7 +42,9 @@ LG.Player = function (def, team, idx) {
   this.immovable = false;   // WALL ability
 
   this.isHuman = false;
+  this.isGoalkeeper = false;  // dedicated keeper — never human-controlled
   this.ai = null;
+  this.distributeT = 0;       // keeper hold time before distributing possession
 
   // per-frame intents (written by controller/AI)
   this.want = { x: 0, z: 0, sprint: false, pass: false, shoot: false, tackle: false, special: false };
@@ -171,7 +173,7 @@ LG.Player.prototype.faceBallLoose = function () {
 
 // ---------- ability ----------
 LG.Player.prototype.fillMeter = function (amount) {
-  if (this.meterFull || this.active) return;
+  if (this.isGoalkeeper || this.meterFull || this.active) return;
   this.meter = Math.min(1, this.meter + amount);
   if (this.meter >= 1) {
     this.meterFull = true;

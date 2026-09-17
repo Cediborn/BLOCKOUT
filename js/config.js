@@ -42,6 +42,17 @@ LG.Config = {
     perfectPassChance: 0.5,
   },
 
+  keeper: {
+    seeDist: 8.5,       // start diving when a loose ball is this close to the goal line
+    saveWindow: 0.18,   // how far beyond the line a shot can still be clawed back
+    depth: 5.2,         // how far in front of their goal the keeper may roam
+    halfW: 4.4,         // lateral movement zone (goal mouth 2.6 + margin)
+    stance: 0.55,       // how far off the line the keeper stands when idle
+    distributeDelay: 0.9,
+    rxnWindow: 0.5,     // reference time for a "comfortable" reaction
+    collectSpeed: 10.0, // loose balls slower than this are collected, faster saved
+  },
+
   camera: {
     height: 30,
     distance: 25,

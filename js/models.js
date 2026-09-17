@@ -129,6 +129,8 @@ LG.Models = (function () {
     var trimM = mat(pal.trim, 'trim');
     var pantsM = mat(pal.pants, 'pants');
     var shoeM = mat(pal.shoe, 'shoe');
+    // goalkeepers wear padded gloves (set via def.body.gloves color)
+    var armM = (def.body && def.body.gloves) ? mat(def.body.gloves, 'gloves') : skinM;
 
     // legs (pivot at hip)
     var legLg = new THREE.Group();
@@ -167,16 +169,16 @@ LG.Models = (function () {
     // arms (pivots at shoulder)
     var armLg = new THREE.Group();
     armLg.position.set(0.32 * wide, 1.0 * tall, 0);
-    armLg.add(boxO(skinM, 0.11 * wide, 0.46, 0.11, 0, -0.26, 0));
-    var fistL = new THREE.Mesh(new THREE.SphereGeometry(0.1 * wide, 6, 6), skinM);
+    armLg.add(boxO(armM, 0.11 * wide, 0.46, 0.11, 0, -0.26, 0));
+    var fistL = new THREE.Mesh(new THREE.SphereGeometry(0.1 * wide, 6, 6), armM);
     fistL.position.set(0, -0.52, 0);
     armLg.add(fistL);
     body.add(armLg);
 
     var armRg = new THREE.Group();
     armRg.position.set(-0.32 * wide, 1.0 * tall, 0);
-    armRg.add(boxO(skinM, 0.11 * wide, 0.46, 0.11, 0, -0.26, 0));
-    var fistR = new THREE.Mesh(new THREE.SphereGeometry(0.1 * wide, 6, 6), skinM);
+    armRg.add(boxO(armM, 0.11 * wide, 0.46, 0.11, 0, -0.26, 0));
+    var fistR = new THREE.Mesh(new THREE.SphereGeometry(0.1 * wide, 6, 6), armM);
     fistR.position.set(0, -0.52, 0);
     armRg.add(fistR);
     body.add(armRg);

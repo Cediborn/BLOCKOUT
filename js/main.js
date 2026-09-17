@@ -214,6 +214,12 @@
 
     bus.on('perfectPass', function () { LG.HUD.toast('LASER PASS', 800); });
 
+    bus.on('keeperSave', function (e) {
+      var me = (match.home || []).indexOf(e.gk) >= 0;
+      if (me) { LG.HUD.toast(e.parry ? 'GUARD PUNCHES IT OUT!' : 'GUARD GRABS IT!', 1200); LG.HUD.flash('rgba(120,255,150,0.14)', 180); }
+      else { LG.HUD.toast(e.parry ? 'WHAT A PARADE!' : 'KEEPER CLAIMS IT!', 1200); }
+    });
+
     bus.on('switchPlayer', function () {
       LG.HUD.updateSpecial(match.active);
     });

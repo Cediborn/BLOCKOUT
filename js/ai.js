@@ -58,6 +58,7 @@ LG.AIBrain.prototype = {
     var players = M.teamPlayers(team);
     var closest = null, cd = 1e9;
     for (var i = 0; i < players.length; i++) {
+      if (players[i].isGoalkeeper) continue;   // the keeper never chases
       var d = players[i].distTo(ball.x, ball.z);
       if (d < cd) { cd = d; closest = players[i]; }
     }
@@ -74,6 +75,7 @@ LG.AIBrain.prototype = {
     if (len2 < 4) return true;
     for (var i = 0; i < opps.length; i++) {
       var o = opps[i];
+      if (o.isGoalkeeper) continue;   // the keeper is the target, not a blocker
       var t = ((o.x - ax) * (bx - ax) + (o.z - az) * (bz - az)) / len2;
       t = LG.Util.clamp(t, 0, 1);
       var cx = ax + (bx - ax) * t, cz = az + (bz - az) * t;
@@ -191,7 +193,7 @@ LG.AIBrain.prototype = {
     var best = null;
     for (var i = 0; i < mates.length; i++) {
       var t = mates[i];
-      if (t === me) continue;
+      if (t === me || t.isGoalkeeper) continue;
       var d = t.distTo(me.x, me.z);
       if (d < 1.6) continue;                       // too close = no value to a pass
       if (!M.lineClear(me, t)) continue;           // defender on the lane
@@ -265,7 +267,7 @@ LG.AIBrain.prototype = {
       var opps = M.teamPlayers(1 - me.team);
       for (var i = 0; i < opps.length; i++) {
         var o = opps[i];
-        if (o === carrier) continue;
+        if (o === carrier || o.isGoalkeeper) continue;   // never mark the keeper
         var dGoal = M.distToGoal(o);
         if (dGoal < mind && !o.hasBall) { mind = dGoal; mark = o; }
       }

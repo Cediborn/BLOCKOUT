@@ -70,7 +70,7 @@ LG.HUD = (function () {
     for (i = 0; i < all.length; i++) {
       var p = all[i];
       var el = document.createElement('div');
-      el.className = 'tag' + (p.team === 0 ? ' team-home' : ' team-away') + (p.isHuman ? ' tag-me' : p.team === 0 ? ' tag-mate' : ' tag-opp');
+      el.className = 'tag' + (p.team === 0 ? ' team-home' : ' team-away') + (p.isHuman ? ' tag-me' : p.team === 0 ? ' tag-mate' : ' tag-opp') + (p.isGoalkeeper ? ' tag-gk' : '');
       el.id = 'tag-' + p.id + '-' + p.team;
       // only the controlled player carries a full tag (name + stamina);
       // everyone else gets a compact chip to keep the screen clean
