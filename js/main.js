@@ -119,11 +119,22 @@
     var bus = LG.eventBus;
 
     bus.on('playRequested', function () {
-      // difficulty comes first: it is the one choice that changes the match
+      UIState = 'sides';
+      showOverlay('menu-overlay', false);
+      showOverlay('sides-overlay', true);
+    });
+
+    bus.on('sidesConfirmed', function () {
       UIState = 'diff';
       refreshDifficultyUI();
-      showOverlay('menu-overlay', false);
+      showOverlay('sides-overlay', false);
       showOverlay('diff-overlay', true);
+    });
+
+    bus.on('sidesBackRequested', function () {
+      UIState = 'menu';
+      showOverlay('sides-overlay', false);
+      showOverlay('menu-overlay', true);
     });
 
     bus.on('difficultyRequested', function (e) {
@@ -139,9 +150,9 @@
     });
 
     bus.on('difficultyBackRequested', function () {
-      UIState = 'menu';
+      UIState = 'sides';
       showOverlay('diff-overlay', false);
-      showOverlay('menu-overlay', true);
+      showOverlay('sides-overlay', true);
     });
 
     bus.on('howRequested', function () {
@@ -154,8 +165,6 @@
     });
 
     bus.on('menuBackRequested', function () {
-      // back from character select returns to the difficulty step so the level
-      // stays adjustable up to the moment the match starts
       UIState = 'diff';
       refreshDifficultyUI();
       showOverlay('select-overlay', false);
@@ -349,7 +358,7 @@
     document.getElementById('scoreboard').classList.toggle('hidden', !on);
     document.getElementById('pause-btn').classList.toggle('hidden', !on);
     document.getElementById('coin-chip').classList.toggle('hidden', false);
-    var overlays = ['menu-overlay', 'diff-overlay', 'select-overlay', 'how-overlay', 'pause-overlay', 'result-overlay'];
+    var overlays = ['menu-overlay', 'sides-overlay', 'diff-overlay', 'select-overlay', 'how-overlay', 'pause-overlay', 'result-overlay'];
     for (var i = 0; i < overlays.length; i++) document.getElementById(overlays[i]).classList.add('hidden');
   }
 

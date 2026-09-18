@@ -71,13 +71,33 @@
   <div id="menu-overlay" class="overlay">
     <div class="panel">
       <div class="title-xl"><span class="t1">BLOCK</span> <span class="t2">OUT</span></div>
-      <div class="subtitle">3V3 + GOALKEEPERS</div>
       <div class="row-btns">
         <button id="btn-play" class="big-btn">KICK OFF</button>
         <button id="btn-how" class="big-btn gold" style="min-width:150px">HOW TO PLAY</button>
       </div>
-      <div class="row-btns" id="menu-recs" style="margin-top:14px; gap:8px; font-size:12px; opacity:0.75; letter-spacing:0.12em">
-        <span>🏆 QUICK MATCH 3V3</span>
+    </div>
+  </div>
+
+  <!-- Select sides -->
+  <div id="sides-overlay" class="overlay hidden">
+    <div class="panel">
+      <div class="title-xl" style="font-size:clamp(26px,6.4vmin,50px)"><span class="t1">SELECT</span> <span class="t2">SIDES</span></div>
+      <div class="diff-row" style="margin-top:28px">
+        <div class="side-card">
+          <div class="side-emoji">⚽</div>
+          <div class="side-label">HOME</div>
+          <div class="side-sub">YOU</div>
+        </div>
+        <div class="side-vs">VS</div>
+        <div class="side-card">
+          <div class="side-emoji">🔥</div>
+          <div class="side-label">AWAY</div>
+          <div class="side-sub">ROGUE</div>
+        </div>
+      </div>
+      <div class="row-btns">
+        <button id="btn-sides-back" class="big-btn" style="min-width:150px; background:linear-gradient(180deg,#9aa6b8,#5d6a7d); box-shadow:0 6px 0 #3c4757">BACK</button>
+        <button id="btn-sides-go" class="big-btn gold" style="min-width:240px">CONTINUE</button>
       </div>
     </div>
   </div>
@@ -86,22 +106,18 @@
   <div id="diff-overlay" class="overlay hidden">
     <div class="panel">
       <div class="title-xl" style="font-size:clamp(26px,6.4vmin,50px)"><span class="t1">SELECT</span> <span class="t2">DIFFICULTY</span></div>
-      <div class="subtitle" style="margin-top:10px;font-size:12px">CHANGES HOW THE ROGUE SQUAD THINKS — NOT HOW FAST THEY RUN.</div>
+      <div class="subtitle" style="margin-top:10px;font-size:12px">CHANGES HOW THE OPPONENTS THINK.</div>
       <div class="diff-row">
         <button class="diff-btn" id="diff-easy">
           <span class="dl">EASY</span>
-          <span class="dd">Loose marking, slow reactions, sloppy passes.<br>Room to learn the game.</span>
         </button>
         <button class="diff-btn selected" id="diff-medium">
           <span class="dl">MEDIUM</span>
-          <span class="dd">Balanced and competitive.<br>Solid marking, honest mistakes.</span>
         </button>
         <button class="diff-btn" id="diff-hard">
           <span class="dl">HARD</span>
-          <span class="dd">Sharp, aggressive, quick to punish.<br>Better decisions — never cheats.</span>
         </button>
       </div>
-      <div id="diff-note" class="diff-note"></div>
       <div class="row-btns">
         <button id="btn-diff-back" class="big-btn" style="min-width:150px; background:linear-gradient(180deg,#9aa6b8,#5d6a7d); box-shadow:0 6px 0 #3c4757">BACK</button>
         <button id="btn-diff-go" class="big-btn gold" style="min-width:240px">CONTINUE</button>
@@ -113,7 +129,6 @@
   <div id="select-overlay" class="overlay hidden">
     <div class="panel">
       <div class="title-xl" style="font-size:clamp(30px,7vmin,54px)"><span class="t1">PICK</span> <span class="t2">YOUR STAR</span></div>
-      <div class="subtitle" style="margin-top:10px;font-size:12px">YOUR TWO RUNNING MATES JOIN AUTOMATICALLY. OPPONENTS ARE A RANDOM SQUAD.</div>
       <div id="diff-chip" class="diff-chip">DIFFICULTY: MEDIUM</div>
       <div id="char-grid" class="char-grid"></div>
       <div class="row-btns">

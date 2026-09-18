@@ -465,6 +465,23 @@ html, body {
 .diff-note { margin-top: 16px; font-size: 11px; letter-spacing: 0.2em; color: var(--hud-amber); min-height: 16px; }
 .diff-chip { margin-top: 10px; font-size: 11px; letter-spacing: 0.26em; color: var(--hud-cyan); opacity: 0.85; }
 
+/* select sides */
+.side-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 20px;
+  border-radius: 16px;
+  background: rgba(255,255,255,0.05);
+  border: 2px solid rgba(255,255,255,0.14);
+  min-width: 180px;
+}
+.side-emoji { font-size: 36px; }
+.side-label { font-size: clamp(20px, 4.5vmin, 30px); letter-spacing: 0.18em; color: var(--hud-cyan); text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+.side-vs { font-size: clamp(18px, 4vmin, 28px); letter-spacing: 0.2em; color: rgba(255,255,255,0.35); align-self: center; }
+.side-sub { font-size: 11px; letter-spacing: 0.2em; opacity: 0.6; }
+
 /* results */
 .result-score {
   font-size: clamp(46px, 12vmin, 96px);
