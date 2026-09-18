@@ -53,20 +53,9 @@
 
     if (IS_MOBILE) {
       isMobile = true;
-      // push into landscape + fullscreen on the first gesture, and keep the
-      // rotate-phone overlay honest if the user flips back to portrait.
-      var orientOnce = function () {
-        try {
-          var so = screen.orientation || {};
-          if (so.lock && so.lock.call) so.lock('landscape').catch(function () {});
-        } catch (e) {}
-        var fs = document.documentElement;
-        if (fs.requestFullscreen) fs.requestFullscreen().catch(function () {});
-        else if (fs.webkitRequestFullscreen) fs.webkitRequestFullscreen();
-        window.removeEventListener('pointerdown', orientOnce);
-      };
-      window.addEventListener('pointerdown', orientOnce);
-      // show the rotate overlay immediately if already in portrait
+      // the rotate-phone overlay is driven from the loop, so it can never get
+      // stuck over the menus (resize/orientationchange alone are unreliable on
+      // phones, and a stuck overlay makes every button untappable)
       requestAnimationFrame(updateRotate);
     }
 
@@ -99,12 +88,41 @@
     scene.add(sun);
   }
 
+  var lastPortrait = null;
   function updateRotate() {
     if (!isMobile) return;
     var el = document.getElementById('rotate-overlay');
     if (!el) return;
     var portrait = window.innerHeight > window.innerWidth;
+    if (portrait === lastPortrait) return;      // only touch the DOM on a real flip
+    lastPortrait = portrait;
     el.classList.toggle('hidden', !portrait);
+  }
+
+  // Landscape + fullscreen, requested when the match actually starts. Doing this
+  // on the first stray pointerdown looked harmless on desktop but on a phone the
+  // viewport resize it triggers re-lays out the page mid-tap, so the press was
+  // swallowed and the button never fired: exactly one press of KICK OFF did
+  // nothing. Starting a match is a user gesture too, so it is still allowed.
+  function enterLandscape() {
+    if (!isMobile) return;
+    if (document.fullscreenElement || document.webkitFullscreenElement) return;
+    try {
+      var fs = document.documentElement;
+      if (fs.requestFullscreen) {
+        fs.requestFullscreen().then(function () { lockLandscape(); }).catch(function () {});
+      } else if (fs.webkitRequestFullscreen) {
+        fs.webkitRequestFullscreen();
+        lockLandscape();
+      }
+    } catch (e) {}
+  }
+
+  function lockLandscape() {
+    try {
+      var so = screen.orientation || {};
+      if (so.lock && so.lock.call) so.lock('landscape').catch(function () {});
+    } catch (e) {}
   }
 
   function onResize() {
@@ -319,6 +337,7 @@
   // ---------------- match lifecycle ----------------
   function startMatch(playerId) {
     selectedId = playerId;
+    enterLandscape();
     LG.Input.reset();
     if (match) {
       clearMatchFromScene();
@@ -554,6 +573,7 @@
     LG.Input.setEnabled(UIState === 'match');
     LG.Input.update(now);
     bgT += dt;
+    updateRotate();
 
     if (UIState === 'match') {
       match.update(dt);
@@ -579,10 +599,28 @@
     renderer.render(scene, camera);
   }
 
-  // PWA service worker registration
+  // PWA service worker registration. A phone that has already run an older
+  // worker keeps being served the OLD game out of its cache with no way to see
+  // the fix, so: never serve the worker script from HTTP cache, force an update
+  // check on every load, and when a new worker takes over reload once (only in
+  // the menu, at most once per session) so the fresh build actually lands.
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', function() {
-      navigator.serviceWorker.register('./service-worker.js').catch(function() {});
+    window.addEventListener('load', function () {
+      var hadController = !!navigator.serviceWorker.controller;
+      var reloaded = false;
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (!hadController || reloaded) return;
+        if (window.LGMain && window.LGMain.getState() !== 'menu') return;
+        try {
+          if (sessionStorage.getItem('blockout.swReload')) return;
+          sessionStorage.setItem('blockout.swReload', '1');
+        } catch (e) { return; }
+        reloaded = true;
+        location.reload();
+      });
+      navigator.serviceWorker.register('./service-worker.js', { updateViaCache: 'none' })
+        .then(function (reg) { reg.update(); })
+        .catch(function () {});
     });
   }
 

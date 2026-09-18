@@ -1,33 +1,39 @@
 // ============================================================
 // SERVICE WORKER — PWA offline support for BLOCK OUT
 // Caches the application shell and static assets.
+//
+// Network-first: while the phone is online it always gets the current build,
+// with the cache used only as an offline fallback. The previous cache-first
+// version pinned every phone that had already loaded once to the code in its
+// cache, so a shipped fix never reached mobile at all. Bump CACHE_NAME with
+// every release — that is what makes installed clients pick the new files up.
 // ============================================================
 
-var CACHE_NAME = 'blockout-v1';
+var CACHE_NAME = 'blockout-v2';
 var ASSETS = [
-  '/',
-  '/index.html',
-  '/css/style.css',
-  '/manifest.json',
-  '/js/config.js',
-  '/js/difficulty.js',
-  '/js/util.js',
-  '/js/audio.js',
-  '/js/progression.js',
-  '/js/input.js',
-  '/js/particles.js',
-  '/js/models.js',
-  '/js/ball.js',
-  '/js/player.js',
-  '/js/arena.js',
-  '/js/abilities.js',
-  '/js/ai.js',
-  '/js/keeper.js',
-  '/js/camera.js',
-  '/js/match.js',
-  '/js/hud.js',
-  '/js/main.js',
-  '/lib/three.min.js'
+  './',
+  './index.html',
+  './css/style.css',
+  './manifest.json',
+  './js/config.js',
+  './js/difficulty.js',
+  './js/util.js',
+  './js/audio.js',
+  './js/progression.js',
+  './js/input.js',
+  './js/particles.js',
+  './js/models.js',
+  './js/ball.js',
+  './js/player.js',
+  './js/arena.js',
+  './js/abilities.js',
+  './js/ai.js',
+  './js/keeper.js',
+  './js/camera.js',
+  './js/match.js',
+  './js/hud.js',
+  './js/main.js',
+  './lib/three.min.js'
 ];
 
 // Install: pre-cache the application shell
@@ -58,33 +64,31 @@ self.addEventListener('activate', function (event) {
   );
 });
 
-// Fetch: cache-first strategy for static assets, network-first for others
+// Fetch: network-first, falling back to the cache when offline
 self.addEventListener('fetch', function (event) {
-  // Skip non-GET requests
-  if (event.request.method !== 'GET') return;
+  var req = event.request;
+
+  // Skip non-GET requests and anything cross-origin
+  if (req.method !== 'GET') return;
+  var url;
+  try { url = new URL(req.url); } catch (e) { return; }
+  if (url.origin !== self.location.origin) return;
 
   event.respondWith(
-    caches.match(event.request).then(function (cached) {
-      if (cached) return cached;
-
-      return fetch(event.request).then(function (response) {
-        // Don't cache bad responses
-        if (!response || response.status !== 200) return response;
-
-        // Only cache same-origin requests
-        if (event.request.url.indexOf(self.location.origin) !== 0) return response;
-
+    fetch(req).then(function (response) {
+      if (response && response.status === 200 && response.type === 'basic') {
         var clone = response.clone();
         caches.open(CACHE_NAME).then(function (cache) {
-          cache.put(event.request, clone);
+          cache.put(req, clone);
         });
-        return response;
-      }).catch(function () {
-        // Offline fallback for navigation requests
-        if (event.request.mode === 'navigate') {
-          return caches.match('/index.html');
-        }
-        return new Response('', { status: 503 });
+      }
+      return response;
+    }).catch(function () {
+      // Offline: serve the cached copy, or the shell for a navigation
+      return caches.match(req).then(function (cached) {
+        if (cached) return cached;
+        if (req.mode === 'navigate') return caches.match('./index.html');
+        return new Response('', { status: 503, statusText: 'offline' });
       });
     })
   );
