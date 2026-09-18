@@ -35,6 +35,14 @@ LG.Config = {
     maxBallSpeed: 36,
     shootPower: 27,         // base shot — a real strike, clearly stronger than a pass
     passPower: 15.5,
+    // A pass must actually REACH its target. Rolling friction eats ~half the
+    // ball's speed per second, so a single fixed power died short of anything
+    // past ~20m (which is exactly why keeper distribution never arrived). The
+    // launch speed is solved from the distance instead:
+    //   speed = dist * passSpeedPerM + passSpeedBase
+    passSpeedPerM: 1.15,
+    passSpeedBase: 2.6,
+    passSpeedMin: 6.5,
     dribbleRadius: 0.85,    // ball rides in front of the carrier
 
     playerAccel: 52,        // how hard a player chases their desired velocity
@@ -68,6 +76,71 @@ LG.Config = {
     containRange: 3.2,
   },
 
+  // ------------------------------------------------------------
+  // DIFFICULTY — one centralized table.
+  // Every AI / keeper decision that should change with the selected level
+  // reads from here (js/difficulty.js owns the selector and the team mapping),
+  // so tuning never means hunting for scattered `if (easy)` checks.
+  //
+  // 1.0 == the balanced baseline: MEDIUM plays exactly like the long-standing
+  // tuning. Below 1 is looser/weaker/slower, above 1 is sharper. None of these
+  // values touch raw physics — no extra sprint speed, no magnetised ball, no
+  // teleporting — they only change decisions, reactions, spacing and accuracy.
+  // ------------------------------------------------------------
+  difficulty: {
+    easy: {
+      label: 'EASY',
+      blurb: 'ROGUE SQUAD PLAYS LOOSE — SLOW REACTIONS, SLOPPY PASSES.',
+      reactionTime: 1.8,          // multiplier on how often the AI re-thinks
+      decisionDelay: 1.7,         // multiplier on the gap between AI actions
+      passAccuracy: 0.5,          // divides pass error: lower = wilder passes
+      shotAccuracy: 0.4,          // divides shot spread: lower = wilder shots
+      tackleAccuracy: 0.5,        // multiplier on the chance a challenge lands
+      interceptionAbility: 0.4,   // how quickly they read a change of possession
+      pressingIntensity: 0.45,    // how tightly defenders press the carrier
+      playerSwitchSpeed: 0.45,    // how fast the chase is handed to a teammate
+      goalkeeperReaction: 0.55,   // keeper's read of a shot + dive speed
+      goalkeeperSaveAbility: 0.6, // multiplier on the save roll
+      attackingAggression: 0.6,   // shot appetite + how high support runs
+      defensiveAggression: 0.5,   // how far up the covering defenders push
+      mistakeRate: 0.22,          // how often a visibly poor choice is made
+    },
+    medium: {
+      label: 'MEDIUM',
+      blurb: 'BALANCED — SOLID MARKING, HONEST MISTAKES, FAIR PHYSICS.',
+      reactionTime: 1.0,
+      decisionDelay: 1.0,
+      passAccuracy: 1.0,
+      shotAccuracy: 1.0,
+      tackleAccuracy: 1.0,
+      interceptionAbility: 1.0,
+      pressingIntensity: 1.0,
+      playerSwitchSpeed: 1.0,
+      goalkeeperReaction: 1.0,
+      goalkeeperSaveAbility: 1.0,
+      attackingAggression: 1.0,
+      defensiveAggression: 1.0,
+      mistakeRate: 0.06,
+    },
+    hard: {
+      label: 'HARD',
+      blurb: 'SHARP AND AGGRESSIVE — NO CHEATS, JUST BETTER DECISIONS.',
+      reactionTime: 0.72,
+      decisionDelay: 0.72,
+      passAccuracy: 1.35,
+      shotAccuracy: 1.2,
+      tackleAccuracy: 1.1,
+      interceptionAbility: 1.3,
+      pressingIntensity: 1.35,
+      playerSwitchSpeed: 1.5,
+      goalkeeperReaction: 1.3,
+      goalkeeperSaveAbility: 1.2,
+      attackingAggression: 1.25,
+      defensiveAggression: 1.3,
+      mistakeRate: 0.015,
+    },
+  },
+
   keeper: {
     seeDist: 8.5,       // start diving when a loose ball is this close to the goal line
     saveWindow: 0.18,   // how far beyond the line a shot can still be clawed back
@@ -75,6 +148,9 @@ LG.Config = {
     halfW: 4.4,         // lateral movement zone (goal mouth 2.6 + margin)
     stance: 0.55,       // how far off the line the keeper stands when idle
     distributeDelay: 0.9,
+    commitDist: 4.5,    // how close the ball must be for the reflex roll to arm —
+                        // a FIXED distance, so a level only changes skill and never
+                        // the timing of the roll
     rxnWindow: 0.5,     // reference time for a "comfortable" reaction
     collectSpeed: 10.0, // loose balls slower than this are collected, faster saved
     diveSpeed: 4.2,     // lateral dive pace — a keeper's stretch, not an outfield sprint

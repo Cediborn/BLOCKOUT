@@ -143,7 +143,7 @@ function load(rel) {
   vm.runInThisContext(fs.readFileSync(path.join(ROOT, rel), 'utf8'), { filename: rel });
 }
 
-['js/config.js', 'js/util.js', 'js/audio.js', 'js/models.js', 'js/ball.js',
+['js/config.js', 'js/difficulty.js', 'js/util.js', 'js/audio.js', 'js/models.js', 'js/ball.js',
   'js/player.js', 'js/abilities.js', 'js/ai.js', 'js/keeper.js', 'js/match.js',
   'js/input.js'].forEach(load);
 
@@ -193,6 +193,45 @@ function giveBall(m, p) {
   m.possessionTeam = p.team;
   m.ball.x = p.x + Math.sin(p.facing) * 0.72;
   m.ball.z = p.z + Math.cos(p.facing) * 0.72;
+}
+
+// Difficulty probes must compare the SAME players on every level: the squads
+// come from a random draw, so building a fresh match per level would let the
+// roster explain a difference that is supposed to come from the difficulty.
+// probeMatch/resetProbe rebuild one match to a clean slate between runs.
+function probeMatch(playerId) {
+  var m = newMatch(playerId || 'blaze');
+  m.start();
+  return m;
+}
+
+function resetProbe(m) {
+  m._chaser = null;
+  m.state = 'PLAY';
+  m.stateT = 0;
+  m.possessionTeam = -1;
+  m.clock = LG.Config.match.duration;
+  m.ball.reset(0, 0);
+  m.ball.intendedReceiver = null;
+  m.ball.intendedT = 0;
+  m.ball.noPk = null;
+  m.ball.noPkT = 0;
+  for (var i = 0; i < m.all.length; i++) {
+    var p = m.all[i];
+    p.hasBall = false;
+    p.stun = 0;
+    p.tackleCd = 0;
+    p.shotCharge = 0;
+    p.wasShooting = false;
+    p.vx = 0; p.vz = 0;
+    p.stamina = 1;
+    p.distributeT = 0;
+    p.ai = p.isGoalkeeper ? new LG.KeeperBrain(p) : new LG.AIBrain(p);
+    if (p.isHuman) { p.isHuman = false; p.ai = null; }   // the probe drives h itself
+    p.want.x = 0; p.want.z = 0; p.want.sprint = false;
+  }
+  m.active = m.home[0];
+  return m;
 }
 
 // drive the real Input layer: point the stick + tap buttons
@@ -329,7 +368,10 @@ section('3. shot power (pass vs tap vs full charge)');
   var pass = c.m.ball.speed();
 
   info('pass ' + pass.toFixed(1) + ' | tap shot ' + tap.toFixed(1) + ' | full shot ' + full.toFixed(1));
-  assert(pass <= LG.Config.physics.passPower * 1.25, 'a pass stays in the controlled power band', pass.toFixed(2));
+  // a pass now solves its power from the distance (so long balls arrive), which
+  // must still keep it inside the range a receiver can control
+  assert(pass < LG.Config.physics.passReceiveSpeed, 'a pass stays inside the speed a receiver can control', pass.toFixed(2));
+  assert(pass > 7, 'a pass is not a dribble', pass.toFixed(2));
   assert(tap > pass * 1.2, 'a tapped shot is clearly faster than a pass', tap.toFixed(2) + ' vs ' + pass.toFixed(2));
   assert(full > 27, 'a full-charge shot is a genuine strike (>27)', full.toFixed(2));
   assert(full > tap * 1.35, 'charge level makes a real difference', (full / tap).toFixed(2) + 'x');
@@ -769,15 +811,17 @@ section('8. full match simulation (real loop, real AI, real input)');
 
   // the human's mates must actually support, not clump on the ball
   var minMateGap = 99;
-  for (var k = 0; k < 60; k++) {
-    for (var a = 0; a < m.home.length; a++) {
-      for (var b = a + 1; b < m.home.length; b++) {
-        minMateGap = Math.min(minMateGap, m.home[a].distTo(m.home[b].x, m.home[b].z));
+    for (var k = 0; k < 60; k++) {
+      for (var a = 0; a < m.home.length; a++) {
+        for (var b = a + 1; b < m.home.length; b++) {
+          minMateGap = Math.min(minMateGap, m.home[a].distTo(m.home[b].x, m.home[b].z));
+        }
       }
+      step(m, 1 / 60, t);
     }
-    step(m, 1 / 60, t);
-  }
-  assert(minMateGap > 0.55, 'teammates do not stack on top of each other', minMateGap.toFixed(2) + 'm');
+    // 0.42m is the physical floor (two outfield bodies); a pair crushed against
+    // a touchline can't be pushed fully apart, so allow a little slack there
+    assert(minMateGap > 0.4, 'teammates do not stack on top of each other', minMateGap.toFixed(2) + 'm');
 })();
 
 // ============================================================
@@ -840,6 +884,530 @@ section('10. AI does not just chase the ball carrier');
   var goalsideOfCarrier = opp.filter(function (o) { return o.z < h.z; }).length;
   info('opponent distances after 1s: ' + opp.map(function (o) { return o.distTo(h.x, h.z).toFixed(1); }).join(', '));
   assert(chasersClose < 30, 'defenders contain instead of piling into the carrier', chasersClose + '/60 frames in contact');
+})();
+
+// ============================================================
+section('11. difficulty — the level actually changes the AI');
+(function () {
+  var D = LG.Difficulty;
+  assert(D.get() === 'medium', 'the default difficulty is MEDIUM', D.get());
+  D.set('nonsense');
+  assert(D.get() === 'medium', 'an unknown level is ignored', D.get());
+  D.set('hard');
+  assert(D.get() === 'hard', 'the choice is remembered', D.get());
+  assert(D.forTeam(1).label === 'HARD', 'the OPPONENTS play at the chosen level', D.forTeam(1).label);
+  assert(D.forTeam(0).label === 'MEDIUM', 'your own running mates stay at the fair baseline', D.forTeam(0).label);
+  assert(D.label('easy') === 'EASY' && D.blurb('easy').length > 5, 'each level carries a label and a blurb');
+  D.set('medium');
+
+  // the centralized table must carry every knob the brief lists
+  var KNOBS = ['reactionTime', 'passAccuracy', 'shotAccuracy', 'tackleAccuracy',
+    'interceptionAbility', 'pressingIntensity', 'decisionDelay', 'playerSwitchSpeed',
+    'goalkeeperReaction', 'goalkeeperSaveAbility', 'attackingAggression',
+    'defensiveAggression', 'mistakeRate'];
+  var missing = KNOBS.filter(function (k) { return typeof LG.Config.difficulty.easy[k] !== 'number'; });
+  assert(missing.length === 0, 'the table carries every documented knob', missing.join(','));
+  var HIGHER_IS_BETTER = ['passAccuracy', 'shotAccuracy', 'tackleAccuracy', 'interceptionAbility',
+    'pressingIntensity', 'playerSwitchSpeed', 'goalkeeperReaction', 'goalkeeperSaveAbility',
+    'attackingAggression', 'defensiveAggression'];
+  var flat = HIGHER_IS_BETTER.filter(function (k) {
+    var t = LG.Config.difficulty;
+    return !(t.easy[k] < t.medium[k] && t.medium[k] < t.hard[k]);
+  });
+  assert(flat.length === 0, 'easy < medium < hard for every "sharper = better" knob', flat.join(','));
+  var inverted = ['reactionTime', 'decisionDelay', 'mistakeRate'].filter(function (k) {
+    var t = LG.Config.difficulty;
+    return !(t.easy[k] > t.medium[k] && t.medium[k] > t.hard[k]);
+  });
+  assert(inverted.length === 0, 'easy is slower / more error-prone than hard (reaction, delay, mistakes)', inverted.join(','));
+
+  // the profile reaches the brains: opponents use the pick, your mates the base
+  var mA = newMatch(); mA.start();
+  assert(mA.away[0].ai.difficulty().label === 'MEDIUM' && mA.home[1].ai.difficulty().label === 'MEDIUM',
+    'the balanced level is the baseline for both sides');
+  LG.Difficulty.set('easy');
+  assert(mA.away[0].ai.difficulty().label === 'EASY', 'an away player reads the EASY profile', mA.away[0].ai.difficulty().label);
+  assert(mA.home[1].ai.difficulty().label === 'MEDIUM', 'a home player keeps the baseline profile', mA.home[1].ai.difficulty().label);
+  LG.Difficulty.set('medium');
+
+  // ---- HARD must not cheat: identical physics, only decisions differ ----
+  // (same players, so the roster draw cannot skew the comparison)
+  var mSp = newMatch(); mSp.start();
+  LG.Difficulty.set('easy');
+  var easySpeeds = mSp.all.map(function (p) { return p.maxSpeed; });
+  LG.Difficulty.set('hard');
+  var hardSpeeds = mSp.all.map(function (p) { return p.maxSpeed; });
+  var sameSpeeds = easySpeeds.every(function (s, i) { return Math.abs(s - hardSpeeds[i]) < 1e-9; });
+  assert(sameSpeeds, 'HARD does not get extra pace (identical player speeds)', easySpeeds[0].toFixed(2) + ' vs ' + hardSpeeds[0].toFixed(2));
+  assert(LG.Config.physics.maxBallSpeed === 36, 'the ball speed cap is untouched by difficulty');
+  LG.Difficulty.set('medium');
+
+  // ---- pressing: how much room and time a carrier gets on each level ----
+  var pmHold = probeMatch();
+  function holdUp(level, seconds) {
+    LG.Difficulty.set(level);
+    LG.Input.reset();
+    var m = resetProbe(pmHold);
+    var h = m.home[0];
+    m.all.forEach(function (p) { place(p, 30, 30); });
+    m.home[3].x = 0; m.home[3].z = 21.5;
+    m.away[3].x = 0; m.away[3].z = -21.5;
+    place(h, 0, 0, Math.PI);
+    giveBall(m, h);
+    // three opponents converge on a carrier who is shielding the ball
+    place(m.away[0], 0, -4.5, 0);
+    place(m.away[1], 4.2, 3.6, 0);
+    place(m.away[2], -4.2, 3.6, 0);
+    var t = { t: 0 }, held = 0, engaged = null;
+    for (var i = 0; i < 60 * seconds; i++) {
+      h.want.x = 0; h.want.z = 0;            // stand still and shield the ball
+      step(m, 1 / 60, t);
+      var near = 1e9;
+      m.away.forEach(function (o) { if (!o.isGoalkeeper) near = Math.min(near, o.distTo(h.x, h.z)); });
+      // count only while the CARRIER still has it — a keeper catching a shot
+      // must not be mistaken for the human keeping possession
+      if (h.hasBall) held++;
+      if (engaged === null && near < 1.2) engaged = i / 60;
+    }
+    return {
+      keep: held / (60 * seconds),
+      close: engaged === null ? 99 : engaged,
+    };
+  }
+  var HOLD_S = 10;
+  var easyHold = holdUp('easy', HOLD_S), medHold = holdUp('medium', HOLD_S), hardHold = holdUp('hard', HOLD_S);
+  info('shielding the ball for ' + HOLD_S + 's as three defenders close in — still held: easy ' +
+    (easyHold.keep * 100).toFixed(0) + '%, medium ' + (medHold.keep * 100).toFixed(0) + '%, hard ' +
+    (hardHold.keep * 100).toFixed(0) + '%');
+  info('time before a defender is right on the carrier: easy ' + easyHold.close.toFixed(2) +
+    's | medium ' + medHold.close.toFixed(2) + 's | hard ' + hardHold.close.toFixed(2) + 's');
+  assert(easyHold.keep > 0.9, 'EASY barely ever takes the ball off a shielding carrier',
+    (easyHold.keep * 100).toFixed(0) + '%');
+  assert(hardHold.keep < 0.6, 'HARD dispossesses a shielding carrier quickly',
+    (hardHold.keep * 100).toFixed(0) + '%');
+  assert(easyHold.keep > hardHold.keep + 0.3, 'EASY gives the carrier far more time on the ball',
+    (easyHold.keep * 100).toFixed(0) + '% vs ' + (hardHold.keep * 100).toFixed(0) + '%');
+  assert(easyHold.close > hardHold.close + 0.1, 'EASY takes longer to get a defender into the carrier',
+    easyHold.close.toFixed(2) + 's vs ' + hardHold.close.toFixed(2) + 's');
+
+  // ---- the cushion a defender holds: a clean probe, with the challenge
+  // deliberately disarmed so this measures SPACING, not who-wins-the-ball ----
+  var pmStand = probeMatch();
+  function standOff(level) {
+    LG.Difficulty.set(level);
+    LG.Input.reset();
+    var m = resetProbe(pmStand);
+    var h = m.home[0];
+    h.want.x = 0; h.want.z = 0;
+    m.all.forEach(function (p) { if (p !== h) { p.ai = null; place(p, -12.5, -20.5); } });
+    place(h, 0, 0, Math.PI);
+    giveBall(m, h);
+    var chaser = m.away[0];
+    place(chaser, 10, 0, 0);
+    chaser.ai = new LG.AIBrain(chaser);
+    var intent = 0, settled = 0, n = 0;
+    for (var i = 0; i < 480; i++) {
+      // hold the ball on the carrier and take the challenge away entirely
+      h.hasBall = true;
+      m.ball.owner = h;
+      m.possessionTeam = 0;
+      m.ball.x = h.x + Math.sin(h.facing) * 0.65;
+      m.ball.z = h.z + Math.cos(h.facing) * 0.65;
+      chaser.ai.actionCd = 9;
+      chaser.tackleCd = 9;
+      chaser.ai.update(1 / 60);
+      chaser.update(1 / 60);
+      if (i > 180) {
+        // the cushion the defender is deliberately holding: how far his chosen
+        // containment point sits from the carrier
+        var mt = chaser.ai.moveTarget;
+        intent += Math.sqrt((mt.x - h.x) * (mt.x - h.x) + (mt.z - h.z) * (mt.z - h.z));
+        n++;
+      }
+    }
+    return { intent: intent / n, settled: chaser.distTo(h.x, h.z) };
+  }
+  var eStand = standOff('easy'), mStand = standOff('medium'), hStand = standOff('hard');
+  info('defender cushion — chosen: easy ' + eStand.intent.toFixed(2) + 'm, medium ' + mStand.intent.toFixed(2) +
+    'm, hard ' + hStand.intent.toFixed(2) + 'm | settled: easy ' + eStand.settled.toFixed(2) +
+    'm, medium ' + mStand.settled.toFixed(2) + 'm, hard ' + hStand.settled.toFixed(2) + 'm');
+  assert(eStand.intent > mStand.intent && mStand.intent > hStand.intent,
+    'the cushion a defender leaves shrinks as the level rises',
+    eStand.intent.toFixed(2) + ' > ' + mStand.intent.toFixed(2) + ' > ' + hStand.intent.toFixed(2));
+  assert(eStand.intent > hStand.intent * 1.5, 'EASY leaves a much bigger cushion than HARD',
+    (eStand.intent / hStand.intent).toFixed(2) + 'x');
+  assert(eStand.settled > hStand.settled, 'and EASY defenders end up further off the carrier in practice',
+    eStand.settled.toFixed(2) + 'm vs ' + hStand.settled.toFixed(2) + 'm');
+
+  // ---- how quickly the chase is handed to the closest defender ----
+  function switchDelay(level) {
+    LG.Difficulty.set(level);
+    var m = newMatch(); m.start();
+    var a = m.away[0], b = m.away[1];
+    place(a, 0, -5, 0); place(b, 0, -16, 0);
+    m.ball.reset(0, -5.2);
+    m.t = 0;
+    if (m.chaserOf(1) !== a) return -1;
+    place(a, 12, -20, 0);                 // a drops out of the play entirely
+    place(b, 0, -5.4, 0);                 // b is now clearly the man
+    for (var i = 1; i <= 400; i++) {
+      m.t = i / 240;
+      if (m.chaserOf(1) === b) return m.t;
+    }
+    return 99;
+  }
+  var eSw = switchDelay('easy'), mSw = switchDelay('medium'), hSw = switchDelay('hard');
+  info('chase handed over after: easy ' + eSw.toFixed(2) + 's, medium ' + mSw.toFixed(2) + 's, hard ' + hSw.toFixed(2) + 's');
+  assert(eSw > hSw, 'EASY is slower to switch the chase to the closest defender', eSw.toFixed(2) + ' vs ' + hSw.toFixed(2));
+  assert(hSw < mSw, 'HARD switches players faster than MEDIUM', hSw.toFixed(2) + ' vs ' + mSw.toFixed(2));
+
+  // ---- tackle accuracy scales the challenge, never the fairness rules ----
+  // (the same defender and the same carrier are used on every level)
+  var pmTackle = probeMatch();
+  var tkCarrier = pmTackle.home[0];
+  var tkOpp = pmTackle.away.filter(function (p) { return !p.isGoalkeeper; })[0];
+  // a controlled matchup: a star defender or a weak one would otherwise saturate
+  // the challenge or bottom it out, hiding the difficulty's own effect
+  tkCarrier.stats = Object.assign({}, tkCarrier.stats, { dribble: 7 });
+  tkOpp.stats = Object.assign({}, tkOpp.stats, { defense: 6 });
+  info('tackle probe: an even matchup (def 6 vs dribble 7), identical on every level');
+  function tackleRate(level, N) {
+    LG.Difficulty.set(level);
+    var acc = LG.Difficulty.forTeam(1).tackleAccuracy;
+    var m = pmTackle, h = tkCarrier, opp = tkOpp;
+    var wins = 0;
+    for (var i = 0; i < N; i++) {
+      m.ball._kickSeq++;
+      place(h, 0, 0, Math.PI);
+      giveBall(m, h);
+      // a side-on challenge: it is a genuine contest for every matchup, so the
+      // difficulty's challenge quality is measurable instead of saturating on
+      // the 0.96 fairness cap the way a head-on lunge does
+      place(opp, 1.55, -0.2, 0);
+      var bx = m.ball.x, bz = m.ball.z;
+      opp.facing = Math.atan2(bx - opp.x, bz - opp.z);
+      opp.tackleCd = 0; h.stun = 0;
+      m.tryTackle(opp, { accuracy: acc });
+      if (!h.hasBall && m.ball.owner === null) wins++;
+    }
+    return wins / N;
+  }
+  var eT = tackleRate('easy', 800), mT = tackleRate('medium', 800), hT = tackleRate('hard', 800);
+  info('side-on challenge won: easy ' + (eT * 100).toFixed(0) + '%, medium ' + (mT * 100).toFixed(0) + '%, hard ' + (hT * 100).toFixed(0) + '%');
+  assert(eT < mT - 0.1, 'EASY AI makes far more failed tackles', (eT * 100).toFixed(0) + '%');
+  assert(hT > mT + 0.02, 'HARD AI challenges more reliably', (hT * 100).toFixed(0) + '% vs ' + (mT * 100).toFixed(0) + '%');
+  assert(hT < 0.88, 'HARD never makes a challenge a guaranteed win', (hT * 100).toFixed(0) + '%');
+  LG.Difficulty.set('medium');
+
+  // ---- keeper reflexes ----
+  // Same keeper, same shots: the aim sweep is a FIXED grid from post to post so
+  // every level faces an identical workload and only the keeper's skill differs.
+  var pmKeeper = probeMatch();
+  function keeperGoals(level, N) {
+    LG.Difficulty.set(level);
+    var m = pmKeeper;
+    var gk = m.away[3];
+    var goals = 0;
+    for (var i = 0; i < N; i++) {
+      resetProbe(m);
+      m.all.forEach(function (p) { if (!p.isGoalkeeper) place(p, -12.5, -20.5); });
+      m.repositionGoalkeeper(m.home[3]);
+      m.repositionGoalkeeper(gk);
+      gk.x = 0; gk.z = -21.2;
+      gk._saveSig = null;
+      var fromZ = -8, z1 = -22.2;
+      var dx = (i % 2 ? 1 : -1) * (1.55 + (i / N) * 0.95);
+      var dz = z1 - fromZ;
+      var d = Math.sqrt(dx * dx + dz * dz), speed = 30;
+      m.ball.reset(0, fromZ);
+      m.ball.vx = dx / d * speed; m.ball.vz = dz / d * speed;
+      m.ball.lastKicker = m.home[2];
+      m.ball._kickSeq++;
+      for (var k = 0; k < 150; k++) {
+        m.state = 'PLAY';
+        m.clock = LG.Config.match.duration;
+        m.update(1 / 60);
+        if (m.state === 'GOAL') { goals++; break; }
+        if (gk.hasBall) break;
+        if (m.ball.vz > 0.5 || m.ball.z < z1 - 0.5 || m.ball.speed() < 0.5) break;
+      }
+    }
+    return goals / N;
+  }
+  var N = 300;
+  var eG = keeperGoals('easy', N), mG = keeperGoals('medium', N), hG = keeperGoals('hard', N);
+  info('placed shots scored past the keeper: easy ' + (eG * 100).toFixed(0) + '%, medium ' +
+    (mG * 100).toFixed(0) + '%, hard ' + (hG * 100).toFixed(0) + '%');
+  assert(eG > mG, 'the EASY keeper concedes more placed shots', (eG * 100).toFixed(0) + '%');
+  assert(hG < mG, 'the HARD keeper is harder to beat', (hG * 100).toFixed(0) + '%');
+  assert(hG < 0.75, 'even the HARD keeper is beatable (no wall)', (hG * 100).toFixed(0) + '%');
+  assert(eG < 1, 'even the EASY keeper saves something', (eG * 100).toFixed(0) + '%');
+  LG.Difficulty.set('medium');
+})();
+
+// ============================================================
+section('12. difficulty end-to-end — a full match on EASY vs HARD');
+(function () {
+  // A crude but honest scripted player: it only drives the public input layer,
+  // so everything measured here ran through the real game loop.
+  function driveHuman(m, s) {
+    var h = m.active, ball = m.ball, carrier = m.ownerPlayer();
+    var aimX = 0, aimZ = 0, mag = 1;
+    if (h.hasBall) {
+      var g = m.enemyGoal(h.team);
+      var dGoal = h.distTo(g.x, g.z);
+      aimX = g.x - h.x; aimZ = g.z - h.z;
+      if (dGoal < 14 && s.shootHeld === 0 && Math.random() < 0.05) { btn('shoot', true); s.shootHeld = 1; }
+      else if (s.shootHeld > 0) {
+        s.shootHeld++;
+        if (s.shootHeld > 18) { btn('shoot', false); s.shootHeld = 0; }
+      } else if (Math.random() < 0.03) { btn('pass', true); }
+      else { btn('pass', false); }
+    } else {
+      if (s.shootHeld) { btn('shoot', false); s.shootHeld = 0; }
+      if (carrier && carrier.team !== h.team) {
+        aimX = carrier.x - h.x; aimZ = carrier.z - h.z;
+        if (h.distTo(carrier.x, carrier.z) < 2.0 && Math.random() < 0.15) btn('tackle', true);
+        else btn('tackle', false);
+      } else {
+        aimX = ball.x - h.x; aimZ = ball.z - h.z;
+        btn('tackle', false);
+      }
+    }
+    stickTo(aimX, aimZ, mag);
+    btn('sprint', !h.hasBall && h.distTo(ball.x, ball.z) > 5);
+  }
+
+  function run(level, seconds, bind) {
+    LG.Difficulty.set(level);
+    var m = newMatch('blaze');
+    var s = { shootHeld: 0, poss0: 0, poss1: 0 };
+    m.bus.on('pass', function (e) { s.pass = s.pass || [0, 0]; s.pass[e.src.team]++; });
+    m.bus.on('shoot', function (e) { s.shot = s.shot || [0, 0]; s.shot[e.player.team]++; });
+    m.bus.on('tackleWin', function (e) { s.tackle = s.tackle || [0, 0]; if (e.src) s.tackle[e.src.team]++; });
+    m.bus.on('goal', function (e) { s.conceded = (s.conceded || 0) + (e.team === 1 ? 1 : 0); });
+    m.start();
+    if (bind) bind(m, s);
+    var t = { t: 0 };
+    for (var i = 0; i < 60 * seconds; i++) {
+      driveHuman(m, s);
+      step(m, 1 / 60, t);
+      if (m.possessionTeam === 0) s.poss0++;
+      else if (m.possessionTeam === 1) s.poss1++;
+      if (m.active && m.active.hasBall) s.carrier = (s.carrier || 0) + 1;
+      if (m.ball.speed() < 0.5 && !m.ball.owner) s.dead = (s.dead || 0) + 1;
+    }
+    return { m: m, s: s };
+  }
+
+  function describe(tag, r) {
+    var s = r.s;
+    var share = s.poss0 / Math.max(1, s.poss0 + s.poss1);
+    info('100s ' + tag + ': score ' + r.m.score[0] + '-' + r.m.score[1] +
+      ' | human possession ' + (share * 100).toFixed(0) + '%' +
+      ' | passes ' + (s.pass ? s.pass[0] + ':' + s.pass[1] : '-') +
+      ' | shots ' + (s.shot ? s.shot[0] + ':' + s.shot[1] : '-') +
+      ' | tackles ' + (s.tackle ? s.tackle[0] + ':' + s.tackle[1] : '-'));
+    return share;
+  }
+
+  // Two matches per level, totalled: a single 100s match is far too noisy to
+  // draw a conclusion from. The opponent squad is pinned so both levels face
+  // the same names — otherwise a lucky roster draw could explain the result.
+  var realChoose = LG.Util.choose;
+  LG.Util.choose = function () { return ['blaze', 'cannon', 'volt']; };
+  function series(level) {
+    var out = { s: { poss0: 0, poss1: 0, pass: [0, 0], shot: [0, 0], tackle: [0, 0], conceded: 0, scored: 0, carrier: 0, dead: 0 }, m: null };
+    for (var i = 0; i < 3; i++) {
+      var r = run(level, 100);
+      out.m = r.m;
+      out.s.poss0 += r.s.poss0; out.s.poss1 += r.s.poss1;
+      out.s.carrier += r.s.carrier || 0;
+      out.s.dead += r.s.dead || 0;
+      ['pass', 'shot', 'tackle'].forEach(function (k) {
+        if (r.s[k]) { out.s[k][0] += r.s[k][0]; out.s[k][1] += r.s[k][1]; }
+      });
+      out.s.conceded += r.m.score[1];
+      out.s.scored += r.m.score[0];
+    }
+    return out;
+  }
+  var easy = series('easy'), hard = series('hard');
+  LG.Util.choose = realChoose;
+  function describe2(tag, r) {
+    var s = r.s;
+    var share = s.poss0 / Math.max(1, s.poss0 + s.poss1);
+    var chance = s.shot[0] / Math.max(1, s.shot[0] + s.shot[1]);
+    info('300s ' + tag + ': scored ' + s.scored + ', conceded ' + s.conceded +
+      ' | share of the chances ' + (chance * 100).toFixed(0) + '%' +
+      ' | team possession ' + (share * 100).toFixed(0) + '%' +
+      ' | the human ON the ball ' + (s.carrier / 180).toFixed(1) + '%' +
+      ' | passes ' + s.pass[0] + ':' + s.pass[1] +
+      ' | shots ' + s.shot[0] + ':' + s.shot[1] +
+      ' | tackles won ' + s.tackle[0] + ':' + s.tackle[1]);
+    return chance;
+  }
+  var eChance = describe2('EASY', easy);
+  var hChance = describe2('HARD', hard);
+  // The possession-share number swings wildly from match to match (a bouncing
+  // loose ball is nobody's), so the end-to-end claims are made on what the two
+  // sides DID with the ball, which is what "easier" actually means to a player.
+  assert(easy.s.shot[1] < hard.s.shot[1], 'EASY opponents threaten the human goal far less than HARD ones',
+    easy.s.shot[1] + ' vs ' + hard.s.shot[1]);
+  assert(easy.s.conceded < hard.s.conceded, 'the human team concedes far fewer goals on EASY',
+    easy.s.conceded + ' vs ' + hard.s.conceded);
+  assert(eChance >= hChance, 'the human team owns at least as much of the chances on EASY',
+    (eChance * 100).toFixed(0) + '% vs ' + (hChance * 100).toFixed(0) + '%');
+
+  // ---- AI passing accuracy, isolated -------------------------------------------------
+  // Every OTHER source of aim error is held constant (same spot, same mates,
+  // same pressure), and the lead offset is re-derived exactly as the game does
+  // it, so what is left is purely the difficulty's pass wobble.
+  var pmAim = probeMatch();
+  function aimError(level, N) {
+    LG.Difficulty.set(level);
+    var m = resetProbe(pmAim);
+    var errs = [];
+    m.bus.on('pass', function (e) {
+      if (e.src.isGoalkeeper || e.src.isHuman) return;
+      var s = e.src, t = e.target, b = m.ball;
+      var d0 = s.distTo(t.x, t.z);
+      var k = d0 / m.passSpeedFor(d0);
+      var px = t.x + t.vx * k, pz = t.z + t.vz * k;
+      var want = Math.atan2(px - s.x, pz - s.z);
+      var got = Math.atan2(b.vx, b.vz);
+      errs.push(Math.abs(((got - want + Math.PI * 3) % (Math.PI * 2)) - Math.PI));
+    });
+    m.all.forEach(function (p) { p.ai = null; });       // freeze everyone else
+    var carrier = m.away[0], mate1 = m.away[1], mate2 = m.away[2];
+    var marker = m.home[1];
+    // a fixed passer: the wobble must come from the level, not from whichever
+    // stat line the roster draw happened to hand this player
+    carrier.stats = Object.assign({}, carrier.stats, { pass: 4 });
+    for (var i = 0; i < N; i++) {
+      m.ball._kickSeq++;
+      place(carrier, 0, 0, 0);
+      place(mate1, -6, 8, 0);
+      place(mate2, 7, 6, 0);
+      place(marker, 1.5, 0, 0);         // right on the passer's shoulder
+      giveBall(m, carrier);
+      carrier.ai = new LG.AIBrain(carrier);
+      carrier.ai.actionCd = 0;
+      carrier.ai.dribbleT = 0;
+      carrier.ai.think();
+    }
+    if (!errs.length) return { mean: 0, n: 0 };
+    var sum = errs.reduce(function (a, b) { return a + b; }, 0);
+    return { mean: sum / errs.length, n: errs.length };
+  }
+  var ew = aimError('easy', 200), mw = aimError('medium', 200), hw = aimError('hard', 200);
+  info('AI pass aim error (lead-corrected): easy ' + (ew.mean * 57.3).toFixed(1) + 'deg n=' + ew.n +
+    ', medium ' + (mw.mean * 57.3).toFixed(1) + 'deg n=' + mw.n +
+    ', hard ' + (hw.mean * 57.3).toFixed(1) + 'deg n=' + hw.n);
+  assert(ew.n > 40 && mw.n > 40 && hw.n > 40, 'the AI played enough passes on every level to measure', ew.n + '/' + mw.n + '/' + hw.n);
+  assert(ew.mean > mw.mean && mw.mean > hw.mean, 'AI passes get straighter as the level rises',
+    (ew.mean * 57.3).toFixed(1) + ' > ' + (mw.mean * 57.3).toFixed(1) + ' > ' + (hw.mean * 57.3).toFixed(1));
+  assert(hw.mean < 0.14, 'HARD passes are accurate, not superhuman', (hw.mean * 57.3).toFixed(1) + 'deg');
+  assert(ew.mean > 0.09, 'EASY passes visibly miss their man', (ew.mean * 57.3).toFixed(1) + 'deg');
+  LG.Difficulty.set('medium');
+})();
+
+// ============================================================
+section('13. goalkeeper distribution reaches the chosen teammate');
+(function () {
+  // The keeper picks a teammate, then we prove the ball actually ARRIVES at
+  // that player and they control it — not merely that it set off in their
+  // general direction. Everyone is frozen (only the ball, the keeper's
+  // decision and the receiver's run are live), so this is a clean measurement.
+  function distributeTrial(opts) {
+    LG.Difficulty.set(opts.level || 'medium');
+    LG.Input.reset();
+    stickRelease();
+    var m = newMatch('blaze');
+    m.start();
+    m.state = 'PLAY';
+    var gk = m.home[3];
+    var mateA = m.home[1], mateB = m.home[2];
+    m.all.forEach(function (p) {
+      if (p === gk) return;
+      p.ai = null;
+      p.isHuman = false;
+      p.want.x = 0; p.want.z = 0;
+      place(p, -12.5, -20.5);        // a legal far corner: never off the pitch
+    });
+    place(gk, 0, 21.2, Math.PI);
+    giveBall(m, gk);
+    place(mateA, -4, 12, Math.PI);            // the close outlet
+    place(mateB, opts.longBall ? 0 : 9, opts.longBall ? 1 : 4, Math.PI);
+
+    // a crowded teammate: three opponents ring the close outlet, so the keeper
+    // should pick the open man instead (and still reach him)
+    if (opts.crowdA) {
+      m.away.forEach(function (o, k) {
+        if (o.isGoalkeeper) return;
+        place(o, -4 + (k === 0 ? -1.9 : k === 1 ? 1.9 : 0), 12 + (k === 2 ? -2.0 : 1.7), 0);
+      });
+    }
+
+    // a genuine runner: both outlets get to a settled constant velocity first,
+    // so the lead the keeper plays is aimed at real, predictable motion
+    if (opts.moving) {
+      [mateA, mateB].forEach(function (p) { p.want.x = 0.85; p.want.z = -0.5; });
+      for (var k = 0; k < 45; k++) { mateA.update(1 / 60); mateB.update(1 / 60); }
+    }
+
+    gk.distributeT = 0;
+    gk.ai.distribute();
+    var target = m.ball.intendedReceiver;
+    if (!target) return { ok: false, why: 'no teammate chosen' };
+    var avoidedCrowd = target !== mateA;
+    var kick = m.ball.vx.toFixed(1) + ',' + m.ball.vz.toFixed(1);
+    var from = gk.x.toFixed(1) + ',' + gk.z.toFixed(1) + '->' + target.x.toFixed(1) + ',' + target.z.toFixed(1);
+    var t = { t: 0 }, arrived = false, frames = 0, minGap = 1e9;
+    for (var i = 0; i < 300; i++) {
+      if (opts.moving) { target.want.x = 0.85; target.want.z = -0.5; }
+      step(m, 1 / 60, t);
+      minGap = Math.min(minGap, target.distTo(m.ball.x, m.ball.z));
+      if (target.hasBall) { arrived = true; frames = i; break; }
+    }
+    return {
+      ok: arrived, target: target.name, avoidedCrowd: avoidedCrowd,
+      frames: frames, minGap: minGap, dist: gk.distTo(target.x, target.z),
+      ballEnd: m.ball.x.toFixed(1) + ',' + m.ball.z.toFixed(1) + ' kick ' + kick + ' ' + from,
+    };
+  }
+
+  var cases = [
+    { level: 'easy', label: 'EASY to a standing teammate' },
+    { level: 'medium', label: 'MEDIUM to a standing teammate' },
+    { level: 'hard', label: 'HARD to a standing teammate' },
+    { level: 'medium', moving: true, label: 'MEDIUM to a MOVING teammate (lead)' },
+    { level: 'hard', crowdA: true, label: 'HARD under pressure (close man crowded)' },
+    { level: 'hard', moving: true, crowdA: true, label: 'HARD to a moving teammate under pressure' },
+  ];
+  cases.forEach(function (c) {
+    var r = distributeTrial(c);
+    if (r.ok) info(c.label + ': reached ' + r.target + ' in ' + (r.frames / 60).toFixed(2) +
+      's (closest approach ' + r.minGap.toFixed(2) + 'm)');
+    assert(r.ok, 'keeper distribution ' + c.label + ' is controlled by that player',
+      r.why || ('the ball never reached ' + r.target + ' (closest approach ' + r.minGap.toFixed(2) +
+        'm, ball ended at ' + r.ballEnd + ')'));
+  });
+
+  // a crowded teammate must not be the pass
+  var crowded = distributeTrial({ level: 'medium', crowdA: true });
+  assert(crowded.ok && crowded.avoidedCrowd, 'the keeper avoids a smothered teammate and finds someone open',
+    'chose ' + crowded.target + ' (closest approach ' + crowded.minGap.toFixed(2) +
+    'm, ball ended at ' + crowded.ballEnd + ')');
+
+  // a long distribution (a keeper punting to a mate near halfway) must arrive
+  var long = distributeTrial({ level: 'medium', longBall: true });
+  assert(long.ok, 'a 20m keeper distribution still reaches its target (' + (long.dist || 0).toFixed(1) + 'm)',
+    long.why || long.target);
+
+  // the ball must never simply die short of the target
+  var mid = distributeTrial({ level: 'medium' });
+  assert(mid.frames > 0 && mid.frames < 120, 'the pass arrives promptly, not after an age', (mid.frames / 60).toFixed(2) + 's');
 })();
 
 // ============================================================

@@ -93,13 +93,13 @@ html, body {
   display: flex;
   align-items: center;
   gap: 12px;
-  background: var(--hud-bg);
-  border: 1px solid var(--hud-line);
+  background: rgba(12, 16, 26, 0.88);
+  border: 1px solid rgba(255,255,255,0.2);
   border-radius: 14px;
   padding: 6px 18px;
   z-index: 30;
-  backdrop-filter: blur(4px);
-  box-shadow: 0 4px 18px rgba(0,0,0,0.35);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 18px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.06);
 }
 #scoreboard .team { display: flex; flex-direction: column; align-items: center; min-width: 84px; }
 #scoreboard .team .label { font-size: 10px; letter-spacing: 0.18em; opacity: 0.75; }
@@ -148,60 +148,43 @@ html, body {
   z-index: 30;
   width: 44px; height: 44px;
   border-radius: 12px;
-  border: 1px solid var(--hud-line);
-  background: var(--hud-bg);
+  border: 1px solid rgba(255,255,255,0.2);
+  background: rgba(12, 16, 26, 0.88);
+  backdrop-filter: blur(6px);
   color: #fff;
   font-size: 20px;
   cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
 }
 #pause-btn:active { transform: scale(0.92); }
 
-/* ---------- player tags ---------- */
+/* ---------- player tags (dots only) ---------- */
 .tag {
   position: fixed;
   transform: translate(-50%, -100%);
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 1px 7px 2px;
-  border-radius: 999px;
-  background: rgba(8, 12, 20, 0.72);
-  border: 1px solid var(--hud-line);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  white-space: nowrap;
+  justify-content: center;
+  width: 12px; height: 12px;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
   pointer-events: none;
   z-index: 20;
   transition: left 0.05s linear, top 0.05s linear, opacity 0.3s;
 }
-.tag .tname { color: #fff; }
-.tag .tname.me { color: var(--hud-cyan); }
 .tag .tdot {
-  width: 7px; height: 7px;
+  width: 10px; height: 10px;
   border-radius: 50%;
   background: var(--hud-cyan);
-  box-shadow: 0 0 6px rgba(53,224,255,0.7);
+  box-shadow: 0 0 8px rgba(53,224,255,0.8);
+  flex-shrink: 0;
 }
-.tag.team-away .tdot { background: var(--hud-red); box-shadow: 0 0 6px rgba(255,77,94,0.7); }
-.tag.tag-gk { border-style: dashed; }
-.tag.tag-gk .tdot { background: #ffe14d; box-shadow: 0 0 6px rgba(255,225,77,0.8); }
-.tag.tag-gk .tname { font-size: 0.72em; letter-spacing: 0.05em; }
-.tag.tag-me { border-color: rgba(53,224,255,0.65); background: rgba(8,18,30,0.85); }
-.tag.carrier { border-color: var(--hud-amber); }
-.tag.carrier .tname { color: var(--hud-amber); }
-.tag .tstam {
-  width: 30px; height: 4px;
-  border-radius: 2px;
-  background: rgba(255,255,255,0.16);
-  overflow: hidden;
-}
-.tag .tstam i {
-  display: block; height: 100%;
-  background: var(--hud-green);
-  border-radius: 2px;
-  width: 100%;
-}
-.tag .tstam i.low { background: var(--hud-red); }
+.tag.team-away .tdot { background: var(--hud-red); box-shadow: 0 0 8px rgba(255,77,94,0.8); }
+.tag.tag-gk .tdot { background: #ffe14d; box-shadow: 0 0 8px rgba(255,225,77,0.9); }
+.tag.tag-me .tdot { width: 12px; height: 12px; box-shadow: 0 0 10px rgba(53,224,255,0.9), 0 0 3px rgba(53,224,255,1); }
+.tag.carrier .tdot { background: var(--hud-amber); box-shadow: 0 0 10px rgba(255,182,46,0.9); }
 
 /* ---------- bottom controls ---------- */
 #controls {
@@ -251,6 +234,8 @@ html, body {
   grid-template-rows: repeat(2, var(--btn-size));
   gap: clamp(10px, 2.2vmin, 16px);
   pointer-events: none;
+  padding: 8px;
+  border-radius: 20px;
 }
 #actions button {
   pointer-events: auto;
@@ -364,6 +349,9 @@ html, body {
   overflow-y: auto;
   text-align: center;
   padding: clamp(18px, 4vmin, 40px);
+  background: rgba(10, 14, 22, 0.4);
+  border-radius: 20px;
+  border: 1px solid rgba(255,255,255,0.08);
 }
 .overlay .title-xl {
   font-size: clamp(44px, 11vmin, 96px);
@@ -447,6 +435,36 @@ html, body {
 }
 .char-card .price { position: absolute; top: 8px; right: 10px; font-size: 11px; color: var(--hud-amber); }
 
+/* difficulty select */
+.diff-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(178px, 1fr));
+  gap: 14px;
+  margin-top: 24px;
+}
+.diff-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  padding: 18px 14px;
+  border-radius: 16px;
+  cursor: pointer;
+  font-family: inherit;
+  color: #e8f4ff;
+  text-align: center;
+  background: rgba(255,255,255,0.05);
+  border: 2px solid rgba(255,255,255,0.14);
+  transition: transform 0.1s ease, border-color 0.1s ease, background 0.1s ease;
+}
+.diff-btn:hover { transform: translateY(-4px); border-color: rgba(255,255,255,0.4); }
+.diff-btn.selected { border-color: var(--hud-cyan); background: rgba(53,224,255,0.13); box-shadow: 0 0 22px rgba(53,224,255,0.3); }
+.diff-btn .dl { font-size: clamp(18px,4vmin,26px); letter-spacing: 0.18em; color: var(--hud-cyan); text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+.diff-btn.selected .dl { color: #fff; }
+.diff-btn .dd { font-size: 11px; line-height: 1.6; letter-spacing: 0.06em; opacity: 0.75; }
+.diff-note { margin-top: 16px; font-size: 11px; letter-spacing: 0.2em; color: var(--hud-amber); min-height: 16px; }
+.diff-chip { margin-top: 10px; font-size: 11px; letter-spacing: 0.26em; color: var(--hud-cyan); opacity: 0.85; }
+
 /* results */
 .result-score {
   font-size: clamp(46px, 12vmin, 96px);
@@ -475,16 +493,19 @@ html, body {
   left: 50%;
   bottom: 24%;
   transform: translate(-50%, 20px);
-  background: var(--hud-bg);
-  border: 1px solid var(--hud-line);
+  background: rgba(12, 16, 26, 0.92);
+  border: 1px solid rgba(255,255,255,0.2);
   border-radius: 12px;
-  padding: 8px 18px;
+  padding: 10px 24px;
   font-size: 14px;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
+  color: var(--hud-cyan);
   opacity: 0;
   transition: 0.25s;
   pointer-events: none;
   z-index: 45;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
@@ -535,13 +556,45 @@ html, body {
 
 /* touch devices get bigger targets: thumbs are not pixels */
 @media (pointer: coarse) {
-  :root { --btn-size: clamp(58px, 13vmin, 82px); }
-  #actions { gap: clamp(10px, 2.4vmin, 16px); }
-  #joystick-zone { width: 38vmin; height: 38vmin; max-width: 210px; max-height: 210px; }
+  :root { --btn-size: clamp(62px, 14vmin, 88px); }
+  #actions { gap: clamp(12px, 2.8vmin, 18px); }
+  #joystick-zone { width: 40vmin; height: 40vmin; max-width: 220px; max-height: 220px; }
+  #actions button { font-size: clamp(12px, 2.8vmin, 17px); border-radius: 20px; }
+  #actions button.primary { font-size: clamp(14px, 3.2vmin, 19px); border-width: 3px; }
+  #scoreboard { padding: 8px 22px; border-radius: 16px; gap: 14px; }
+  #scoreboard .team .score { font-size: clamp(28px, 6vmin, 44px); }
+  #scoreboard .clock { font-size: clamp(24px, 5.5vmin, 38px); min-width: 80px; }
+  #pause-btn { width: 52px; height: 52px; font-size: 24px; }
+  .big-btn { padding: 18px 40px; font-size: clamp(19px, 4.5vmin, 26px); min-width: 200px; }
+  #coin-chip { padding: 8px 16px; font-size: 16px; }
+  #special-btn { width: calc(var(--btn-size) + 18px); height: calc(var(--btn-size) + 18px); }
+  .tag .tdot { width: 13px; height: 13px; }
+  .tag.tag-me .tdot { width: 15px; height: 15px; }
 }
 
 /* small screens: keep buttons tappable but not cramped */
 @media (max-width: 700px) {
   #actions { gap: clamp(8px, 2vmin, 12px); }
   .help-list { font-size: 12px; }
+  .char-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+  .diff-row { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+}
+
+/* very small screens */
+@media (max-width: 400px) {
+  :root { --btn-size: clamp(56px, 16vmin, 74px); }
+  #actions { gap: 8px; right: 2%; bottom: 2%; }
+  #joystick-zone { width: 36vmin; height: 36vmin; max-width: 170px; max-height: 170px; left: 2%; bottom: 2%; }
+  #special-btn { width: calc(var(--btn-size) + 12px); height: calc(var(--btn-size) + 12px); }
+  .big-btn { padding: 14px 28px; font-size: clamp(16px, 4.2vmin, 22px); min-width: 160px; }
+  .char-card { padding: 10px 8px 8px; }
+  .char-card .avatar { width: 50px; height: 50px; font-size: 24px; }
+  .char-card .cname { font-size: 13px; }
+}
+
+/* tablets */
+@media (min-width: 768px) and (pointer: coarse) {
+  :root { --btn-size: clamp(60px, 10vmin, 80px); }
+  #joystick-zone { width: 32vmin; height: 32vmin; max-width: 200px; max-height: 200px; }
+  .big-btn { min-width: 260px; padding: 18px 44px; }
 }

@@ -8,7 +8,7 @@
   var renderer, scene, camera, camCtrl;
   var match = null;
   var arenaObj = null;
-  var UIState = 'menu';          // menu | select | how | match | paused | result
+  var UIState = 'menu';          // menu | diff | select | how | match | paused | result
   var selectedId = 'blaze';
   var bgT = 0;
   var clock = { t: 0 };
@@ -44,6 +44,7 @@
     LG.Input.init();
     LG.HUD.init();
     LG.HUD.bindButtons();
+    refreshDifficultyUI();
     buildSelectGrid();
 
     window.addEventListener('resize', onResize);
@@ -118,9 +119,29 @@
     var bus = LG.eventBus;
 
     bus.on('playRequested', function () {
-      UIState = 'select';
+      // difficulty comes first: it is the one choice that changes the match
+      UIState = 'diff';
+      refreshDifficultyUI();
       showOverlay('menu-overlay', false);
+      showOverlay('diff-overlay', true);
+    });
+
+    bus.on('difficultyRequested', function (e) {
+      LG.Difficulty.set(e && e.id);
+      refreshDifficultyUI();
+    });
+
+    bus.on('difficultyConfirmed', function () {
+      UIState = 'select';
+      refreshDifficultyUI();
+      showOverlay('diff-overlay', false);
       showOverlay('select-overlay', true);
+    });
+
+    bus.on('difficultyBackRequested', function () {
+      UIState = 'menu';
+      showOverlay('diff-overlay', false);
+      showOverlay('menu-overlay', true);
     });
 
     bus.on('howRequested', function () {
@@ -133,9 +154,12 @@
     });
 
     bus.on('menuBackRequested', function () {
-      UIState = 'menu';
+      // back from character select returns to the difficulty step so the level
+      // stays adjustable up to the moment the match starts
+      UIState = 'diff';
+      refreshDifficultyUI();
       showOverlay('select-overlay', false);
-      showOverlay('menu-overlay', true);
+      showOverlay('diff-overlay', true);
     });
 
     bus.on('startMatchRequested', function () {
@@ -238,6 +262,20 @@
     });
   }
 
+  // Reflect the selected level on the difficulty screen and the select screen.
+  function refreshDifficultyUI() {
+    var cur = LG.Difficulty.get();
+    var levels = LG.Difficulty.LEVELS;
+    for (var i = 0; i < levels.length; i++) {
+      var btn = document.getElementById('diff-' + levels[i]);
+      if (btn) btn.classList.toggle('selected', levels[i] === cur);
+    }
+    var note = document.getElementById('diff-note');
+    if (note) note.textContent = LG.Difficulty.blurb();
+    var chip = document.getElementById('diff-chip');
+    if (chip) chip.textContent = 'DIFFICULTY: ' + LG.Difficulty.label();
+  }
+
   function setupResult(r) {
     var title = document.getElementById('result-title');
     title.className = 'result-title ' + (r.won === 1 ? 'win' : r.won === 0 ? 'draw' : 'lose');
@@ -256,10 +294,29 @@
     if (match) {
       clearMatchFromScene();
     }
-    match = new LG.MatchManager({ playerId: playerId, homeName: 'YOU', awayName: 'ROGUE' });
+    match = new LG.MatchManager({
+      playerId: playerId, homeName: 'YOU', awayName: 'ROGUE',
+      difficulty: LG.Difficulty.get(),
+    });
     match.attachScene(scene, arenaObj);
     match.camera = camCtrl;
     match.selectActive();
+
+    // Mobile: scale players larger for better visibility on small screens
+    if (isMobile) {
+      var mobileScale = 1.35;
+      var allPlayers = match.all;
+      for (var pi = 0; pi < allPlayers.length; pi++) {
+        allPlayers[pi].model.group.scale.set(mobileScale, mobileScale, mobileScale);
+        allPlayers[pi].radius *= mobileScale;
+        allPlayers[pi].height *= mobileScale;
+      }
+      // scale ball slightly
+      if (match.ball && match.ball.mesh) {
+        match.ball.mesh.scale.set(1.25, 1.25, 1.25);
+        match.ball.r *= 1.25;
+      }
+    }
 
     showOverlay('select-overlay', false);
     showOverlay('result-overlay', false);
@@ -292,7 +349,7 @@
     document.getElementById('scoreboard').classList.toggle('hidden', !on);
     document.getElementById('pause-btn').classList.toggle('hidden', !on);
     document.getElementById('coin-chip').classList.toggle('hidden', false);
-    var overlays = ['menu-overlay', 'select-overlay', 'how-overlay', 'pause-overlay', 'result-overlay'];
+    var overlays = ['menu-overlay', 'diff-overlay', 'select-overlay', 'how-overlay', 'pause-overlay', 'result-overlay'];
     for (var i = 0; i < overlays.length; i++) document.getElementById(overlays[i]).classList.add('hidden');
   }
 
@@ -424,6 +481,13 @@
     }
 
     renderer.render(scene, camera);
+  }
+
+  // PWA service worker registration
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('./service-worker.js').catch(function() {});
+    });
   }
 
   // boot

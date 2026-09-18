@@ -5,8 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="theme-color" content="#0b0e14" />
+<meta name="description" content="BLOCK OUT - 3V3 Street Football with goalkeepers" />
 <title>BLOCK OUT — Street Football</title>
 <link rel="stylesheet" href="css/style.css" />
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" type="image/svg+xml" href="icons/icon-192.svg" />
+<link rel="apple-touch-icon" href="icons/icon-192.svg" />
 </head>
 <body>
   <canvas id="game-canvas"></canvas>
@@ -76,11 +82,39 @@
     </div>
   </div>
 
+  <!-- Difficulty select -->
+  <div id="diff-overlay" class="overlay hidden">
+    <div class="panel">
+      <div class="title-xl" style="font-size:clamp(26px,6.4vmin,50px)"><span class="t1">SELECT</span> <span class="t2">DIFFICULTY</span></div>
+      <div class="subtitle" style="margin-top:10px;font-size:12px">CHANGES HOW THE ROGUE SQUAD THINKS — NOT HOW FAST THEY RUN.</div>
+      <div class="diff-row">
+        <button class="diff-btn" id="diff-easy">
+          <span class="dl">EASY</span>
+          <span class="dd">Loose marking, slow reactions, sloppy passes.<br>Room to learn the game.</span>
+        </button>
+        <button class="diff-btn selected" id="diff-medium">
+          <span class="dl">MEDIUM</span>
+          <span class="dd">Balanced and competitive.<br>Solid marking, honest mistakes.</span>
+        </button>
+        <button class="diff-btn" id="diff-hard">
+          <span class="dl">HARD</span>
+          <span class="dd">Sharp, aggressive, quick to punish.<br>Better decisions — never cheats.</span>
+        </button>
+      </div>
+      <div id="diff-note" class="diff-note"></div>
+      <div class="row-btns">
+        <button id="btn-diff-back" class="big-btn" style="min-width:150px; background:linear-gradient(180deg,#9aa6b8,#5d6a7d); box-shadow:0 6px 0 #3c4757">BACK</button>
+        <button id="btn-diff-go" class="big-btn gold" style="min-width:240px">CONTINUE</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Character select -->
   <div id="select-overlay" class="overlay hidden">
     <div class="panel">
       <div class="title-xl" style="font-size:clamp(30px,7vmin,54px)"><span class="t1">PICK</span> <span class="t2">YOUR STAR</span></div>
       <div class="subtitle" style="margin-top:10px;font-size:12px">YOUR TWO RUNNING MATES JOIN AUTOMATICALLY. OPPONENTS ARE A RANDOM SQUAD.</div>
+      <div id="diff-chip" class="diff-chip">DIFFICULTY: MEDIUM</div>
       <div id="char-grid" class="char-grid"></div>
       <div class="row-btns">
         <button id="btn-back" class="big-btn" style="min-width:150px; background:linear-gradient(180deg,#9aa6b8,#5d6a7d); box-shadow:0 6px 0 #3c4757">BACK</button>
@@ -139,6 +173,7 @@
 
   <script src="lib/three.min.js"></script>
   <script src="js/config.js"></script>
+  <script src="js/difficulty.js"></script>
   <script src="js/util.js"></script>
   <script src="js/audio.js"></script>
   <script src="js/progression.js"></script>

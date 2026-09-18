@@ -44,6 +44,21 @@ LG.HUD = (function () {
     document.getElementById('btn-how').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('howRequested'); });
     document.getElementById('btn-how-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('howBackRequested'); });
     document.getElementById('btn-start-match').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('startMatchRequested'); });
+
+    // difficulty picker: the buttons only carry the choice, the match flow in
+    // main.js owns what happens next
+    var levels = LG.Difficulty.LEVELS;
+    for (var i = 0; i < levels.length; i++) {
+      (function (id, btn) {
+        if (!btn) return;
+        btn.addEventListener('click', function () {
+          LG.Audio.sfx.click();
+          LG.eventBus.emit('difficultyRequested', { id: id });
+        });
+      })(levels[i], document.getElementById('diff-' + levels[i]));
+    }
+    document.getElementById('btn-diff-go').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('difficultyConfirmed'); });
+    document.getElementById('btn-diff-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('difficultyBackRequested'); });
   }
 
   function setTeamNames(home, away) {
@@ -76,22 +91,8 @@ LG.HUD = (function () {
       // everyone else gets a compact chip to keep the screen clean
       var dot = document.createElement('i');
       dot.className = 'tdot';
-      var name = document.createElement('span');
-      name.className = 'tname' + (p.isHuman ? ' me' : '');
-      name.textContent = p.name;
       el.appendChild(dot);
-      el.appendChild(name);
-      if (p.isHuman) {
-        var st = document.createElement('span');
-        st.className = 'tstam';
-        var cave = document.createElement('i');
-        cave.className = 'th';
-        st.appendChild(cave);
-        el.appendChild(st);
-        tags[p.team + '.' + p.idx] = { el: el, bar: cave };
-      } else {
-        tags[p.team + '.' + p.idx] = { el: el, bar: null };
-      }
+      tags[p.team + '.' + p.idx] = { el: el, bar: null };
       document.body.appendChild(el);
     }
   }
@@ -142,10 +143,6 @@ LG.HUD = (function () {
       pr.t.el.style.top = pr.sy + 'px';
       pr.t.el.style.transform = 'translate(-50%,-100%) scale(' + sc + ')';
       pr.t.el.classList.toggle('carrier', pr.p.hasBall);
-      if (pr.t.bar) {
-        pr.t.bar.style.width = Math.round(pr.p.stamina * 100) + '%';
-        pr.t.bar.className = 'th' + (pr.p.stamina < 0.3 ? ' low' : '');
-      }
       // fresh lockout uses the ~full opacity, AI stays subtle
       var emph = pr.p.isHuman || pr.p.hasBall;
       pr.t.el.style.opacity = emph ? '1' : '0.55';

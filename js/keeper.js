@@ -62,7 +62,16 @@ LG.KeeperBrain.prototype = {
     h = h - Math.floor(h);
     var raw = (h - 0.5) * 2;                                  // -1..1
     var confidence = Math.min(1, Math.abs(px || 0) / 2.0);    // unsure about corners
-    return raw * (K.readSpread || 1.5) * confidence;
+    // a slower keeper simply misreads the shot by more (goalkeeperReaction)
+    var fuzz = 1 / (LG.Difficulty.forTeam(this.p.team).goalkeeperReaction || 1);
+    return raw * (K.readSpread || 1.5) * confidence * fuzz;
+  },
+
+  // How fast this keeper can actually stretch: a keepers' dive, never an
+  // outfield sprint, and slightly slower on an easier level.
+  diveReach: function () {
+    var react = LG.Difficulty.forTeam(this.p.team).goalkeeperReaction || 1;
+    return (LG.Config.keeper.diveSpeed || 4.2) * (0.75 + 0.25 * react);
   },
 
   update: function (dt) {
@@ -103,7 +112,7 @@ LG.KeeperBrain.prototype = {
       this.state = 'save';
       var tx = this.clampZoneX(th.px + this.readError(ball, th.px));
       var tz = this.clampZoneZ(th.pz);
-      this.moveToward(tx, tz, LG.Config.keeper.diveSpeed || 4.2);
+      this.moveToward(tx, tz, this.diveReach());
       me.want.sprint = false;
       // face the ball
       var ddx = ball.x - me.x, ddz = ball.z - me.z;
@@ -137,6 +146,10 @@ LG.KeeperBrain.prototype = {
   },
 
   // ---------------- DISTRIBUTION ----------------
+  // The pass is TARGET-based: once a teammate is chosen, the ball is aimed at
+  // that player's (lead) position and given the power needed to actually get
+  // there (Match.passTo → passSpeedFor). It never just travels "roughly at"
+  // them, and the receiver takes it cleanly on arrival (intendedReceiver).
   distribute: function () {
     var me = this.p;
     var M = LG.Match;

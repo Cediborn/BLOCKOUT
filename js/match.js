@@ -186,6 +186,32 @@ LG.MatchManager.prototype = {
   teamPlayers: function (team) { return team === 0 ? this.home : this.away; },
   opponents: function (p) { return this.teamPlayers(1 - p.team); },
 
+  // Who should be chasing the ball for a team? Re-evaluated on a cadence set by
+  // the difficulty's playerSwitchSpeed, then cached per team, so the whole
+  // back line agrees on whose job it is. A passive side is slow to hand the
+  // chase to the teammate who is actually closest; a sharp side switches at
+  // once. Nothing here touches speed, position or the ball — it is decision
+  // making only.
+  chaserOf: function (team) {
+    var D = LG.Difficulty.forTeam(team);
+    var speed = Math.max(0.2, D.playerSwitchSpeed || 1);
+    var interval = 0.26 / speed;
+    var cache = this._chaser || (this._chaser = {});
+    var c = cache[team];
+    var now = this.t || 0;
+    if (c && c.p && now - c.t < interval && !c.p.hasBall) return c.p;
+    var players = this.teamPlayers(team);
+    var ball = this.ball;
+    var best = null, bd = 1e9;
+    for (var i = 0; i < players.length; i++) {
+      if (players[i].isGoalkeeper) continue;   // the keeper never chases
+      var d = players[i].distTo(ball.x, ball.z);
+      if (d < bd) { bd = d; best = players[i]; }
+    }
+    cache[team] = { p: best, t: now };
+    return best;
+  },
+
   // ------------------------------------------------------------
   start: function () {
     this.state = 'KICKOFF';
@@ -457,22 +483,69 @@ placeKickoff: function () {
   // ------------------------------------------------------------
   // ACTIONS
   // ------------------------------------------------------------
+  // Launch speed for a pass of a given distance. Rolling friction eats about
+  // half the ball's speed every second, so a single fixed power died short of
+  // any pass beyond ~20m — which is exactly why long balls and the keeper's
+  // distribution drifted "in the general direction" and never arrived. Solve
+  // the speed from the distance instead, with a small cushion, so the ball
+  // reaches the intended teammate with legs left over.
+  passSpeedFor: function (dist) {
+    var P = LG.Config.physics;
+    return LG.Util.clamp(
+      dist * (P.passSpeedPerM || 1.15) + (P.passSpeedBase || 2.6),
+      P.passSpeedMin || 6.5,
+      P.maxBallSpeed * 0.95
+    );
+  },
+
+  // How long a struck ball actually takes to cover `dist`. The ball hops for a
+  // moment (weak air drag) and then rolls against heavy friction, so the naive
+  // dist/speed estimate is badly short: a 14m pass takes ~1.05s, not (14/18.7)=
+  // 0.75s. Using the naive number aimed the lead a metre or two behind any
+  // moving receiver. Returns Infinity when the ball dies before arriving.
+  ballTravelTime: function (dist, speed, vy) {
+    var P = LG.Config.physics;
+    var kAir = -60 * Math.log(P.airDrag || 0.994);
+    var kRoll = -60 * Math.log(P.groundDrag || 0.984);
+    var g = Math.abs(P.gravity) || 17;
+    if (!(speed > 0.01)) return Infinity;
+    var tAir = 2 * Math.max(0, vy || 0) / g;
+    var dAir = speed * (1 - Math.exp(-kAir * tAir)) / kAir;
+    if (dist <= dAir) return -Math.log(1 - dist * kAir / speed) / kAir;
+    var v = speed * Math.exp(-kAir * tAir);
+    var rest = dist - dAir;
+    if (rest * kRoll >= v) return Infinity;
+    return tAir + (-Math.log(1 - rest * kRoll / v) / kRoll);
+  },
+
   passTo: function (src, target, opts) {
     var U = LG.Util;
     var ball = this.ball;
     var perfect = LG.Abilities.isPerfectPassReady(src);
     var d = src.distTo(target.x, target.z);
     // contextual power: quick for short, stronger for long — no input gymnastics
-    var speed = perfect ? 22 : U.clamp(9.5 + d * 0.6, 9.5, LG.Config.physics.passPower * 1.25);
-    if (opts && opts.power) speed *= opts.power;
+    var speed = this.passSpeedFor(d);
+    var vy = perfect ? 0 : 2.2;
     var px = target.x, pz = target.z;
     if (opts && opts.lead) {
-      var dx0 = target.x - src.x, dz0 = target.z - src.z;
-      var dd0 = Math.sqrt(dx0 * dx0 + dz0 * dz0) || 1;
-      var tArr = dd0 / speed;
-      px = target.x + target.vx * tArr;
-      pz = target.z + target.vz * tArr;
+      // Meet the runner where they will actually be. The lead TIME comes from
+      // how long the ball really takes, not from dist/speed; the aim point is
+      // still a fixed straight-line target, so a pass never homes onto anyone.
+      // Two passes of the estimate converge (each one re-solves the power).
+      for (var it = 0; it < 2; it++) {
+        var tGo = this.ballTravelTime(src.distTo(px, pz), speed, vy);
+        if (!isFinite(tGo)) tGo = 0.5;
+        tGo = U.clamp(tGo, 0, 1.1);                 // a sensible lead, never a chase
+        var nx = U.clamp(target.x + target.vx * tGo, -12.5, 12.5);
+        var nz = U.clamp(target.z + target.vz * tGo, -21.5, 21.5);
+        if (Math.abs(nx - px) < 0.03 && Math.abs(nz - pz) < 0.03) { px = nx; pz = nz; break; }
+        px = nx;
+        pz = nz;
+        speed = this.passSpeedFor(src.distTo(px, pz));
+      }
     }
+    if (opts && opts.power) speed *= opts.power;
+    if (perfect) speed = Math.max(speed, 22);
     var sx = px - src.x, sz = pz - src.z;
     var dd = Math.sqrt(sx * sx + sz * sz) || 1;
     // pressure error rotates the direction slightly — predictable, no magic
@@ -500,14 +573,19 @@ placeKickoff: function () {
     if (perfect) this.bus.emit('perfectPass', { src: src });
   },
 
-  shootDirect: function (p, power, goal) {
+  shootDirect: function (p, power, goal, opts) {
     var U = LG.Util;
     var ball = this.ball;
     var perfect = LG.Abilities.isPowerShotReady(p);
     // spread across the whole mouth: good shooters pick their spot, weaker ones
-    // spray it around the goalkeeper instead of always hitting the middle
-    var gx = goal.x + (U.rand() - 0.5) * 2.3 * (1 - p.stats.shoot / 12);
-    var gz = goal.z + (U.rand() - 0.5) * 1.2 * (1 - p.stats.shoot / 12);
+    // spray it around the goalkeeper instead of always hitting the middle.
+    // Difficulty divides the spray — a sloppy side misses the target far more
+    // often, a sharp side picks its corner. The physics of the strike are
+    // identical at every level, so a Hard shot is never a magic rocket.
+    var acc = (opts && opts.accuracy != null) ? opts.accuracy : 1;
+    var spray = (1 - p.stats.shoot / 12) / (acc || 1);
+    var gx = goal.x + (U.rand() - 0.5) * 2.3 * spray;
+    var gz = goal.z + (U.rand() - 0.5) * 1.2 * spray;
     var dx = gx - p.x, dz = gz - p.z;
     var d = Math.sqrt(dx * dx + dz * dz) || 1;
     var sp = perfect ? LG.Config.physics.maxBallSpeed * 0.98 : LG.Config.physics.shootPower * power * (0.8 + p.stats.shoot * 0.04);
@@ -623,9 +701,13 @@ placeKickoff: function () {
   // ------------------------------------------------------------
   // TACKLING — rewards reaching the BALL from a legitimate angle.
   // Shared by the human and the AI: no asymmetric rules anywhere.
-  tryTackle: function (p) {
+  tryTackle: function (p, opts) {
     if (p.tackleCd > 0) return;
     p.tackleCd = 0.5;
+    // Difficulty scales only how well an AI times its challenge. The human
+    // always attacks the ball at full ability, and the angle rules below are
+    // identical in both directions — no asymmetric tackling anywhere.
+    var acc = (opts && opts.accuracy != null) ? opts.accuracy : 1;
     var U = LG.Util;
     var P = LG.Config.physics;
     var opps = this.opponents(p);
@@ -654,7 +736,7 @@ placeKickoff: function () {
       var face = (bdx / bd) * Math.sin(p.facing) + (bdz / bd) * Math.cos(p.facing);
       var angleMul = U.lerp(0.4, 1.3, Math.max(-0.5, Math.min(1, face)));
       var closeMul = U.clamp(1.15 - bestDb * 0.16, 0.85, 1.15);
-      var chance = (0.66 + (p.stats.defense - victim.stats.dribble) * 0.04) * angleMul * closeMul;
+      var chance = (0.66 + (p.stats.defense - victim.stats.dribble) * 0.04) * angleMul * closeMul * acc;
 
       // 2) WHERE is the challenge coming from? Front = the tackler is on the
       // ball side of the carrier (great tackle). Rear = the tackler is behind
@@ -930,7 +1012,9 @@ placeKickoff: function () {
     var vzT = ball.vz * sign;
     if (vzT < 1.0) return null;                          // not heading this way (yet)
     var dist0 = (line - ball.z) * sign;                  // front of the line = positive
-    if (dist0 > K.seeDist) return null;                  // too early to react
+    // How early a keeper picks up the flight of the ball is their reaction.
+    var seeMul = 0.62 + 0.38 * (LG.Difficulty.forTeam(gk.team).goalkeeperReaction || 1);
+    if (dist0 > K.seeDist * seeMul) return null;         // too early to react
     if (dist0 < -K.saveWindow) return null;              // fully over the line = goal
     if (ball.y > C.goalHeight + 0.05) return null;       // over the bar
     var tt = Math.max(0, dist0) / vzT;
@@ -955,19 +1039,28 @@ placeKickoff: function () {
     // Reflex roll on top of the keeper's physical block: placed shots beat the
     // keeper, a shot straight at him does not, and pace always helps the shooter
     var chance = (0.42 + reaction * 0.26) * (0.5 + centered * 0.4) * (0.5 + agility * 0.35) - hard * 0.1;
-    return U.clamp(chance, 0.05, 0.92);
+    // difficulty multiplies the reflex roll — never the shot's flight
+    chance *= (LG.Difficulty.forTeam(gk.team).goalkeeperSaveAbility || 1);
+    return U.clamp(chance, 0.03, 0.92);
   },
 
   // Per-frame keeper pass: run save prediction + one-shot save roll.
   // A keeper already holding the ball skips this (he is distributing).
   updateKeepers: function (dt) {
     var ball = this.ball;
+    var K = LG.Config.keeper;
     var i, gk;
     for (i = 0; i < this.all.length; i++) {
       gk = this.all[i];
       if (!gk.isGoalkeeper || gk.hasBall) continue;
       var th = this.keeperThreat(gk);
       if (!th) continue;
+      // The reflex roll arms at a FIXED distance from the line. It used to arm
+      // on first sight instead, which meant a keeper with a longer sight radius
+      // (a better keeper) rolled while still standing at his spot — punishing
+      // good reactions for being early. Skill now decides WHERE he gets to,
+      // never WHEN the roll happens.
+      if (th.dist0 > K.commitDist) continue;
       // one save roll per kick (shooter + kick sequence) so a keeper can't
       // "win the lottery" by rolling multiple frames on the same shot
       var sig = (ball.lastKicker ? 'p' + ball.lastKicker.idx + '.' + ball.lastKicker.team : 'n') + '-' + (ball._kickSeq || 0);

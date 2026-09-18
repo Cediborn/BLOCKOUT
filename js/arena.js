@@ -296,23 +296,68 @@ LG.Arena = (function () {
     var g = new THREE.Group();
     var brick = LG.Models.buildingTex();
     var dark = new THREE.MeshStandardMaterial({ color: 0x222a34, roughness: 0.9 });
-    function addBlock(x, z, w, h, d, tex, emissive) {
+    function addBlock(x, z, w, h, d, tex) {
       var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), tex ? new THREE.MeshLambertMaterial({ map: tex }) : new THREE.MeshStandardMaterial({ color: 0x232a34, roughness: 0.9 }));
       m.position.set(x, h / 2, z);
       m.receiveShadow = true; m.castShadow = true;
       g.add(m);
       return m;
     }
+    // main block buildings (original 4 + new ones for a denser city feel)
     addBlock(-27, -34, 18, 26, 16, brick);
     addBlock(26, -30, 16, 18, 14);
     addBlock(-28, 34, 16, 22, 15);
     addBlock(27, 30, 20, 30, 18, brick);
-    // rooftop details: water tank + AC units make the block feel lived-in
+    // additional smaller buildings for city density
+    addBlock(-38, -20, 10, 14, 10, brick);
+    addBlock(38, -18, 12, 20, 11);
+    addBlock(-36, 22, 11, 16, 12, brick);
+    addBlock(36, 24, 9, 12, 9);
+    addBlock(-20, -40, 14, 10, 10);
+    addBlock(20, 40, 12, 8, 8, brick);
+    addBlock(-40, 0, 8, 18, 10, brick);
+    addBlock(40, 0, 10, 14, 12);
+    // windows on buildings via emissive plane textures
+    function addWindows(bx, bz, bw, bh, bd, cols, rows) {
+      var winT = LG.Util.makeCanvasTexture(function(c, w, h) {
+        c.fillStyle = '#11161e'; c.fillRect(0, 0, w, h);
+        var cw = w / cols, ch = h / rows;
+        for (var r = 0; r < rows; r++) {
+          for (var c2 = 0; c2 < cols; c2++) {
+            var lit = Math.random() > 0.55;
+            c.fillStyle = lit ? 'rgba(255,230,150,0.7)' : 'rgba(40,50,65,0.8)';
+            c.fillRect(c2 * cw + cw * 0.15, r * ch + ch * 0.15, cw * 0.7, ch * 0.65);
+          }
+        }
+      }, cols * 8, rows * 8);
+      var side1 = new THREE.Mesh(new THREE.PlaneGeometry(bw, bh), new THREE.MeshBasicMaterial({ map: winT }));
+      side1.position.set(bx, bh / 2, bz + bd / 2 + 0.01);
+      g.add(side1);
+      var side2 = new THREE.Mesh(new THREE.PlaneGeometry(bw, bh), new THREE.MeshBasicMaterial({ map: winT }));
+      side2.position.set(bx, bh / 2, bz - bd / 2 - 0.01);
+      side2.rotation.y = Math.PI;
+      g.add(side2);
+      var side3 = new THREE.Mesh(new THREE.PlaneGeometry(bd, bh), new THREE.MeshBasicMaterial({ map: winT }));
+      side3.position.set(bx + bw / 2 + 0.01, bh / 2, bz);
+      side3.rotation.y = Math.PI / 2;
+      g.add(side3);
+    }
+    addWindows(-27, -34, 18, 26, 16, 4, 6);
+    addWindows(26, -30, 16, 18, 14, 3, 4);
+    addWindows(-28, 34, 16, 22, 15, 3, 5);
+    addWindows(27, 30, 20, 30, 18, 4, 7);
+    addWindows(-38, -20, 10, 14, 10, 2, 3);
+    addWindows(38, -18, 12, 20, 11, 2, 4);
+    // rooftop details: water tanks + AC units
     var tankM = new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 0.85 });
     var tank = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.05, 1.5, 12), tankM);
     tank.position.set(-27, 27.7, -32);
     tank.castShadow = true;
     g.add(tank);
+    var tank2 = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 1.2, 10), tankM);
+    tank2.position.set(38, 21.6, -16);
+    tank2.castShadow = true;
+    g.add(tank2);
     var acM = new THREE.MeshStandardMaterial({ color: 0x9aa4ad, roughness: 0.7, metalness: 0.4 });
     var ac1 = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.5, 0.9), acM);
     ac1.position.set(28.6, 16.6, -27);
@@ -322,7 +367,6 @@ LG.Arena = (function () {
     ac2.position.set(-26, 23.2, 33);
     ac2.castShadow = true;
     g.add(ac2);
-    // rooftop detail
     g.add(LG.Models.bar(dark, -27, 27, -36, 2.4, 4));
     // billboards
     var bb = new THREE.Mesh(new THREE.BoxGeometry(7, 3.2, 0.3), new THREE.MeshLambertMaterial({ map: LG.Models.billboardTex('BLOCK OUT CUP') }));
@@ -499,6 +543,132 @@ LG.Arena = (function () {
     return g;
   }
 
+  // ---------------- trees ----------------
+  function trees() {
+    var g = new THREE.Group();
+    var trunkM = new THREE.MeshStandardMaterial({ color: 0x4a3520, roughness: 0.95 });
+    var leafM = new THREE.MeshStandardMaterial({ color: 0x2d6b35, roughness: 0.85 });
+    var leafM2 = new THREE.MeshStandardMaterial({ color: 0x3a7d42, roughness: 0.85 });
+    var spots = [
+      { x: -32, z: -28, s: 1.0 }, { x: 34, z: -24, s: 0.85 },
+      { x: -34, z: 20, s: 0.95 }, { x: 32, z: 28, s: 1.1 },
+      { x: -18, z: -32, s: 0.7 }, { x: 18, z: 32, s: 0.8 },
+      { x: -42, z: -8, s: 0.9 }, { x: 42, z: 8, s: 0.75 },
+      { x: -30, z: 36, s: 1.05 }, { x: 30, z: -36, s: 0.9 },
+    ];
+    for (var i = 0; i < spots.length; i++) {
+      var s = spots[i];
+      var tree = new THREE.Group();
+      var trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15 * s.s, 0.22 * s.s, 2.5 * s.s, 6), trunkM);
+      trunk.position.y = 1.25 * s.s;
+      trunk.castShadow = true;
+      tree.add(trunk);
+      var leafMat = Math.random() > 0.5 ? leafM : leafM2;
+      var crown = new THREE.Mesh(new THREE.SphereGeometry(1.2 * s.s, 8, 6), leafMat);
+      crown.position.y = 3.2 * s.s;
+      crown.castShadow = true;
+      tree.add(crown);
+      // smaller secondary crown for fullness
+      var crown2 = new THREE.Mesh(new THREE.SphereGeometry(0.8 * s.s, 6, 5), leafMat);
+      crown2.position.set(0.4 * s.s, 2.8 * s.s, 0.3 * s.s);
+      crown2.castShadow = true;
+      tree.add(crown2);
+      tree.position.set(s.x, 0, s.z);
+      tree.rotation.y = Math.random() * 6.28;
+      g.add(tree);
+      // gentle sway animation
+      anims.push({ g: crown, t: Math.random() * 6, amp: 0.03 + Math.random() * 0.02, sway: true });
+    }
+    return g;
+  }
+
+  // ---------------- parked vehicles ----------------
+  function vehicles() {
+    var g = new THREE.Group();
+    var bodyM = new THREE.MeshStandardMaterial({ color: 0x3a4455, roughness: 0.6, metalness: 0.3 });
+    var bodyM2 = new THREE.MeshStandardMaterial({ color: 0x8a2222, roughness: 0.6, metalness: 0.3 });
+    var bodyM3 = new THREE.MeshStandardMaterial({ color: 0x2a5530, roughness: 0.6, metalness: 0.3 });
+    var wheelM = new THREE.MeshStandardMaterial({ color: 0x1a1a1e, roughness: 0.95 });
+    var glassM = new THREE.MeshStandardMaterial({ color: 0x5588aa, roughness: 0.3, metalness: 0.4, transparent: true, opacity: 0.5 });
+    function addCar(x, z, rot, col) {
+      var car = new THREE.Group();
+      // body
+      var body = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.7, 3.6), col);
+      body.position.y = 0.55;
+      car.add(body);
+      // roof
+      var roof = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.55, 1.8), col);
+      roof.position.set(0, 1.1, -0.2);
+      car.add(roof);
+      // windows
+      var win = new THREE.Mesh(new THREE.BoxGeometry(1.52, 0.4, 0.05), glassM);
+      win.position.set(0, 1.1, 0.65);
+      car.add(win);
+      var win2 = win.clone(); win2.position.z = -1.1; car.add(win2);
+      // wheels
+      var wGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.15, 8);
+      var wPos = [[-0.85, 0.22, 1.0], [0.85, 0.22, 1.0], [-0.85, 0.22, -1.0], [0.85, 0.22, -1.0]];
+      for (var w = 0; w < wPos.length; w++) {
+        var wheel = new THREE.Mesh(wGeo, wheelM);
+        wheel.position.set(wPos[w][0], wPos[w][1], wPos[w][2]);
+        wheel.rotation.z = Math.PI / 2;
+        car.add(wheel);
+      }
+      car.position.set(x, 0, z);
+      car.rotation.y = rot;
+      car.traverse(function(o) { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+      g.add(car);
+    }
+    addCar(-33, -10, 0.15, bodyM);
+    addCar(35, 12, -0.2, bodyM2);
+    addCar(-35, 8, 0.1, bodyM3);
+    addCar(33, -12, -0.15, bodyM);
+    return g;
+  }
+
+  // ---------------- additional street furniture ----------------
+  function streetFurniture() {
+    var g = new THREE.Group();
+    var poleM = new THREE.MeshStandardMaterial({ color: 0x2a2e38, roughness: 0.6, metalness: 0.4 });
+    var signM = new THREE.MeshStandardMaterial({ color: 0x3388cc, roughness: 0.7 });
+    // additional street lamps around the perimeter
+    var lampSpots = [
+      { x: -20, z: -28 }, { x: 20, z: -28 },
+      { x: -20, z: 28 }, { x: 20, z: 28 },
+      { x: -34, z: 0 }, { x: 34, z: 0 },
+    ];
+    var lampHeadM = new THREE.MeshStandardMaterial({ color: 0xfff6d8, emissive: 0xfff2c9, emissiveIntensity: 1.2 });
+    for (var i = 0; i < lampSpots.length; i++) {
+      var s = lampSpots[i];
+      var pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 7.5, 6), poleM);
+      pole.position.set(s.x, 3.75, s.z);
+      pole.castShadow = true;
+      g.add(pole);
+      var lamp = new THREE.Mesh(new THREE.SphereGeometry(0.3, 6, 4), lampHeadM);
+      lamp.position.set(s.x, 7.6, s.z);
+      g.add(lamp);
+      var pl = new THREE.PointLight(0xffe8b0, 0.35, 16, 2);
+      pl.position.set(s.x, 7.2, s.z);
+      g.add(pl);
+    }
+    // small chain-link fence sections around the outer perimeter
+    var fencePostM = new THREE.MeshStandardMaterial({ color: 0x3a4050, roughness: 0.7, metalness: 0.5 });
+    var fencePositions = [
+      { x: -44, z: -15, r: 0 }, { x: -44, z: 15, r: 0 },
+      { x: 44, z: -15, r: 0 }, { x: 44, z: 15, r: 0 },
+      { x: -15, z: -44, r: Math.PI / 2 }, { x: 15, z: -44, r: Math.PI / 2 },
+      { x: -15, z: 44, r: Math.PI / 2 }, { x: 15, z: 44, r: Math.PI / 2 },
+    ];
+    for (var f = 0; f < fencePositions.length; f++) {
+      var fp = fencePositions[f];
+      var fpole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.2, 4), fencePostM);
+      fpole.position.set(fp.x, 1.1, fp.z);
+      fpole.castShadow = true;
+      g.add(fpole);
+    }
+    return g;
+  }
+
   // ---------------- assemble ----------------
   function build(scene) {
     root = new THREE.Group();
@@ -519,6 +689,9 @@ LG.Arena = (function () {
     root.add(barriers());
     root.add(lamps());
     root.add(benches());
+    root.add(trees());
+    root.add(vehicles());
+    root.add(streetFurniture());
 
     var halfW = C.width / 2, halfL = C.length / 2;
     var gw = C.goalWidth / 2;
@@ -541,7 +714,13 @@ LG.Arena = (function () {
         for (var i = 0; i < anims.length; i++) {
           var a = anims[i];
           a.t += dt;
-          a.g.position.y += Math.sin(a.t * 6) * a.amp * 0.1;
+          if (a.sway) {
+            // tree sway: gentle side-to-side + vertical bob
+            a.g.rotation.z = Math.sin(a.t * 0.7) * a.amp * 2;
+            a.g.rotation.x = Math.cos(a.t * 0.5) * a.amp;
+          } else {
+            a.g.position.y += Math.sin(a.t * 6) * a.amp * 0.1;
+          }
         }
       },
     };
