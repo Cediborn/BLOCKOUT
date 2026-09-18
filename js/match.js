@@ -50,6 +50,18 @@ LG.MatchManager.prototype = {
     var mateDefs = [playerDef];
     (playerDef.team || []).forEach(function (id) { mateDefs.push(LG.byId(id)); });
 
+    // Apply outfit color to human team if selected
+    var outfit = O.outfitColor;
+    if (outfit) {
+      mateDefs = mateDefs.map(function(d) {
+        var clone = JSON.parse(JSON.stringify(d));
+        clone.palette = JSON.parse(JSON.stringify(clone.palette));
+        clone.palette.shirt = outfit.color;
+        clone.palette.shoe = outfit.color;
+        return clone;
+      });
+    }
+
     var team0 = this.teamOf(mateDefs, 0);
     var oppIds = U.choose([['blaze', 'cannon', 'volt'], ['stone', 'echo', 'pulse'], ['frenzy', 'brute', 'pulse'], ['volt', 'echo', 'stone'], ['cannon', 'frenzy', 'blaze']]);
     if ((playerDef.team || []).some(function (id) { return oppIds.indexOf(id) >= 0; })) {

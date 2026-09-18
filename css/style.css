@@ -482,6 +482,58 @@ html, body {
 .side-vs { font-size: clamp(18px, 4vmin, 28px); letter-spacing: 0.2em; color: rgba(255,255,255,0.35); align-self: center; }
 .side-sub { font-size: 11px; letter-spacing: 0.2em; opacity: 0.6; }
 
+/* player style / customization */
+.color-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-top: 16px;
+  max-width: 400px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.color-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 8px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  color: #e8f4ff;
+  text-align: center;
+  background: rgba(255,255,255,0.05);
+  border: 2px solid rgba(255,255,255,0.14);
+  transition: transform 0.1s ease, border-color 0.1s ease, background 0.1s ease;
+}
+.color-btn:hover { transform: translateY(-3px); border-color: rgba(255,255,255,0.4); }
+.color-btn.selected { border-color: var(--hud-cyan); background: rgba(53,224,255,0.13); box-shadow: 0 0 16px rgba(53,224,255,0.3); }
+.color-swatch {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.3);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+}
+.color-label { font-size: 10px; letter-spacing: 0.12em; opacity: 0.8; }
+.color-btn.selected .color-label { color: #fff; opacity: 1; }
+.style-preview {
+  margin-top: 16px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 80px;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  color: rgba(255,255,255,0.5);
+}
+.style-preview .preview-label {
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+}
+
 /* results */
 .result-score {
   font-size: clamp(46px, 12vmin, 96px);

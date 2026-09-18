@@ -8,8 +8,9 @@
   var renderer, scene, camera, camCtrl;
   var match = null;
   var arenaObj = null;
-  var UIState = 'menu';          // menu | diff | select | how | match | paused | result
+  var UIState = 'menu';          // menu | sides | diff | select | style | how | match | paused | result
   var selectedId = 'blaze';
+  var outfitColor = null;        // null = regular clothes, or LG.OutfitColors entry
   var bgT = 0;
   var clock = { t: 0 };
   var isMobile = false;
@@ -171,6 +172,25 @@
       showOverlay('diff-overlay', true);
     });
 
+    bus.on('styleRequested', function () {
+      UIState = 'style';
+      buildColorGrid();
+      showOverlay('select-overlay', false);
+      showOverlay('style-overlay', true);
+    });
+
+    bus.on('styleBackRequested', function () {
+      UIState = 'select';
+      showOverlay('style-overlay', false);
+      showOverlay('select-overlay', true);
+    });
+
+    bus.on('styleConfirmed', function () {
+      UIState = 'select';
+      showOverlay('style-overlay', false);
+      showOverlay('select-overlay', true);
+    });
+
     bus.on('startMatchRequested', function () {
       startMatch(selectedId);
     });
@@ -306,6 +326,7 @@
     match = new LG.MatchManager({
       playerId: playerId, homeName: 'YOU', awayName: 'ROGUE',
       difficulty: LG.Difficulty.get(),
+      outfitColor: outfitColor,
     });
     match.attachScene(scene, arenaObj);
     match.camera = camCtrl;
@@ -358,7 +379,7 @@
     document.getElementById('scoreboard').classList.toggle('hidden', !on);
     document.getElementById('pause-btn').classList.toggle('hidden', !on);
     document.getElementById('coin-chip').classList.toggle('hidden', false);
-    var overlays = ['menu-overlay', 'sides-overlay', 'diff-overlay', 'select-overlay', 'how-overlay', 'pause-overlay', 'result-overlay'];
+    var overlays = ['menu-overlay', 'sides-overlay', 'diff-overlay', 'select-overlay', 'style-overlay', 'how-overlay', 'pause-overlay', 'result-overlay'];
     for (var i = 0; i < overlays.length; i++) document.getElementById(overlays[i]).classList.add('hidden');
   }
 
@@ -452,6 +473,72 @@
       if (lock) lock.remove();
       if (price) price.remove();
     }
+  }
+
+  // ---------------- player style / customization UI ----------------
+  function buildColorGrid() {
+    var grid = document.getElementById('color-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    // regular clothes button
+    var regBtn = document.createElement('div');
+    regBtn.className = 'color-btn' + (outfitColor === null ? ' selected' : '');
+    regBtn.innerHTML = '<div class="color-swatch" style="background:linear-gradient(135deg,#3d6b50,#6b3d66);border-color:rgba(255,255,255,0.5)"></div><div class="color-label">REGULAR</div>';
+    regBtn.addEventListener('click', function() {
+      outfitColor = null;
+      refreshColorGrid();
+      LG.Audio.sfx.click();
+    });
+    grid.appendChild(regBtn);
+    // color buttons
+    for (var i = 0; i < LG.OutfitColors.length; i++) {
+      (function(c) {
+        var btn = document.createElement('div');
+        btn.className = 'color-btn' + (outfitColor && outfitColor.id === c.id ? ' selected' : '');
+        btn.innerHTML = '<div class="color-swatch" style="background:' + c.hex + '"></div><div class="color-label">' + c.label + '</div>';
+        btn.addEventListener('click', function() {
+          outfitColor = c;
+          refreshColorGrid();
+          LG.Audio.sfx.click();
+        });
+        grid.appendChild(btn);
+      })(LG.OutfitColors[i]);
+    }
+    refreshStylePreview();
+  }
+
+  function refreshColorGrid() {
+    var btns = document.querySelectorAll('#color-grid .color-btn');
+    for (var i = 0; i < btns.length; i++) {
+      if (i === 0) {
+        btns[i].classList.toggle('selected', outfitColor === null);
+      } else {
+        var c = LG.OutfitColors[i - 1];
+        btns[i].classList.toggle('selected', outfitColor && outfitColor.id === c.id);
+      }
+    }
+    refreshStylePreview();
+  }
+
+  function refreshStylePreview() {
+    var preview = document.getElementById('style-preview');
+    if (!preview) return;
+    var playerDef = LG.byId(selectedId);
+    var name = playerDef ? playerDef.name : '';
+    if (outfitColor === null) {
+      preview.innerHTML = '<div class="preview-label">👟 ' + name + ' — REGULAR CLOTHES</div>';
+    } else {
+      preview.innerHTML = '<div class="preview-label">⚽ ' + name + ' — ' + outfitColor.label + ' KIT</div>';
+    }
+  }
+
+  // Apply outfit colors to a player definition (returns a new palette)
+  function applyOutfit(def) {
+    if (!outfitColor) return def.palette; // regular clothes: keep original
+    var p = JSON.parse(JSON.stringify(def.palette));
+    p.shirt = outfitColor.color;
+    p.shoe = outfitColor.color;
+    return p;
   }
 
   // ---------------- loop ----------------

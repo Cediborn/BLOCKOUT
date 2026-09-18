@@ -291,4 +291,130 @@ LG.byId = function (id) {
   return LG.Roster[0];
 };
 
+// ------------------------------------------------------------
+// KIDS ROSTER — street football kids for casual pickup games
+// Smaller bodies, younger faces, casual clothing
+// ------------------------------------------------------------
+LG.Kids = [
+  {
+    id: 'kid1', name: 'KAI', role: 'STREET', emoji: '⚽',
+    stats: { speed: 7, shoot: 6, pass: 6, dribble: 7, defense: 5, stamina: 7 },
+    ability: 'BURST',
+    team: ['kid2', 'kid3'],
+    palette: { skin: 0xe0a878, hair: 0x1a1a2e, shirt: 0x2f7fd4, trim: 0xffffff, pants: 0x1c2440, shoe: 0x2f7fd4 },
+    body: { tall: 0.82, wide: 0.9 },
+    hairStyle: 0,
+  },
+  {
+    id: 'kid2', name: 'MAYA', role: 'STREET', emoji: '🌟',
+    stats: { speed: 8, shoot: 5, pass: 7, dribble: 8, defense: 4, stamina: 6 },
+    ability: 'DRIBBLE_RUSH',
+    team: ['kid1', 'kid4'],
+    palette: { skin: 0x8c5a3a, hair: 0x2b2320, shirt: 0xff6b6b, trim: 0xffe9c9, pants: 0x1b1d22, shoe: 0xff6b6b },
+    body: { tall: 0.78, wide: 0.85 },
+    hairStyle: 6,
+  },
+  {
+    id: 'kid3', name: 'JAY', role: 'STREET', emoji: '🔥',
+    stats: { speed: 6, shoot: 8, pass: 5, dribble: 5, defense: 7, stamina: 7 },
+    ability: 'POWER_SHOT',
+    team: ['kid1', 'kid5'],
+    palette: { skin: 0xc99a76, hair: 0x4a3520, shirt: 0x4a5568, trim: 0xffd23f, pants: 0x262b33, shoe: 0x465063 },
+    body: { tall: 0.85, wide: 0.95 },
+    hairStyle: 3,
+  },
+  {
+    id: 'kid4', name: 'LUNA', role: 'STREET', emoji: '🌙',
+    stats: { speed: 9, shoot: 4, pass: 8, dribble: 9, defense: 3, stamina: 6 },
+    ability: 'PERFECT_PASS',
+    team: ['kid2', 'kid6'],
+    palette: { skin: 0xd99f72, hair: 0xd3b02c, shirt: 0x7b3fb0, trim: 0xffe23f, pants: 0x241a3a, shoe: 0xffe23f },
+    body: { tall: 0.76, wide: 0.82 },
+    hairStyle: 5,
+  },
+  {
+    id: 'kid5', name: 'RIO', role: 'STREET', emoji: '💨',
+    stats: { speed: 7, shoot: 7, pass: 6, dribble: 6, defense: 6, stamina: 8 },
+    ability: 'FREEZE',
+    team: ['kid3', 'kid7'],
+    palette: { skin: 0x6d4a33, hair: 0x1d1d22, shirt: 0x10b5a5, trim: 0xffe9c9, pants: 0x0e2b32, shoe: 0x35e0ff },
+    body: { tall: 0.8, wide: 0.88 },
+    hairStyle: 1,
+  },
+  {
+    id: 'kid6', name: 'ZARA', role: 'STREET', emoji: '⚡',
+    stats: { speed: 8, shoot: 5, pass: 7, dribble: 7, defense: 5, stamina: 7 },
+    ability: 'SHOCKWAVE',
+    team: ['kid4', 'kid8'],
+    palette: { skin: 0xe09a72, hair: 0xff5a2d, shirt: 0xb8312f, trim: 0xffe9c9, pants: 0x1b1d22, shoe: 0xb8312f },
+    body: { tall: 0.77, wide: 0.84 },
+    hairStyle: 7,
+  },
+  {
+    id: 'kid7', name: 'OMAR', role: 'STREET', emoji: '🎯',
+    stats: { speed: 6, shoot: 6, pass: 9, dribble: 6, defense: 7, stamina: 6 },
+    ability: 'SUPER_TACKLE',
+    team: ['kid5', 'kid9'],
+    palette: { skin: 0x8a5a3c, hair: 0x2b2320, shirt: 0x5a2f66, trim: 0x62ff8a, pants: 0x22262e, shoe: 0x343a44 },
+    body: { tall: 0.83, wide: 0.92 },
+    hairStyle: 2,
+  },
+  {
+    id: 'kid8', name: 'COCO', role: 'STREET', emoji: '🌈',
+    stats: { speed: 7, shoot: 6, pass: 6, dribble: 8, defense: 4, stamina: 7 },
+    ability: 'WALL',
+    team: ['kid6', 'kid10'],
+    palette: { skin: 0xc98d5e, hair: 0x3a3f49, shirt: 0xff9c1a, trim: 0x1a1a22, pants: 0x1a1a22, shoe: 0xff9c1a },
+    body: { tall: 0.79, wide: 0.86 },
+    hairStyle: 4,
+  },
+  {
+    id: 'kid9', name: 'SAM', role: 'STREET', emoji: '🧊',
+    stats: { speed: 5, shoot: 7, pass: 5, dribble: 5, defense: 8, stamina: 8 },
+    ability: 'BURST',
+    team: ['kid7', 'kid10'],
+    palette: { skin: 0x7a5a42, hair: 0x171a20, shirt: 0x4a5568, trim: 0xffd23f, pants: 0x262b33, shoe: 0x465063 },
+    body: { tall: 0.84, wide: 0.93 },
+    hairStyle: 3,
+  },
+  {
+    id: 'kid10', name: 'MIKA', role: 'STREET', emoji: '🎪',
+    stats: { speed: 8, shoot: 5, pass: 7, dribble: 7, defense: 5, stamina: 6 },
+    ability: 'DRIBBLE_RUSH',
+    team: ['kid8', 'kid9'],
+    palette: { skin: 0xd99f72, hair: 0x2aa7b0, shirt: 0x35e0ff, trim: 0xffffff, pants: 0x141a12, shoe: 0x171c14 },
+    body: { tall: 0.75, wide: 0.83 },
+    hairStyle: 0,
+  },
+];
+
+LG.kidById = function (id) {
+  for (var i = 0; i < LG.Kids.length; i++) if (LG.Kids[i].id === id) return LG.Kids[i];
+  return LG.Kids[0];
+};
+
+// ------------------------------------------------------------
+// OUTFIT COLORS — street football outfit customization
+// ------------------------------------------------------------
+LG.OutfitColors = [
+  { id: 'red',    label: 'RED',    hex: '#ff4444', color: 0xff4444 },
+  { id: 'blue',   label: 'BLUE',   hex: '#4488ff', color: 0x4488ff },
+  { id: 'yellow', label: 'YELLOW', hex: '#ffcc00', color: 0xffcc00 },
+  { id: 'green',  label: 'GREEN',  hex: '#44cc44', color: 0x44cc44 },
+  { id: 'orange', label: 'ORANGE', hex: '#ff8833', color: 0xff8833 },
+  { id: 'purple', label: 'PURPLE', hex: '#9944cc', color: 0x9944cc },
+  { id: 'black',  label: 'BLACK',  hex: '#222222', color: 0x222222 },
+  { id: 'white',  label: 'WHITE',  hex: '#eeeeee', color: 0xeeeeee },
+];
+
+// Regular clothes palettes — casual street wear variations
+LG.RegularClothes = [
+  { shirt: 0x3d6b50, pants: 0x2a2a35, shoe: 0x1a1a22, trim: 0x88aa88 },
+  { shirt: 0x6b3d66, pants: 0x1b1d22, shoe: 0x2b2320, trim: 0xcc88cc },
+  { shirt: 0x3d4a63, pants: 0x262b33, shoe: 0x1a1a22, trim: 0x6688aa },
+  { shirt: 0x6b603d, pants: 0x1b1d22, shoe: 0x2b2320, trim: 0xccaa66 },
+  { shirt: 0x5a3d3d, pants: 0x2a2a35, shoe: 0x1a1a22, trim: 0xaa6666 },
+  { shirt: 0x3d5a6b, pants: 0x1b1d22, shoe: 0x2b2320, trim: 0x66aacc },
+];
+
 // human starting team is 4 (blaze unlocked by default) — see progression

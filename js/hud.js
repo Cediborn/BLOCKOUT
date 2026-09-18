@@ -46,6 +46,9 @@ LG.HUD = (function () {
     document.getElementById('btn-start-match').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('startMatchRequested'); });
     document.getElementById('btn-sides-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('sidesBackRequested'); });
     document.getElementById('btn-sides-go').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('sidesConfirmed'); });
+    document.getElementById('btn-style').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('styleRequested'); });
+    document.getElementById('btn-style-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('styleBackRequested'); });
+    document.getElementById('btn-style-go').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('styleConfirmed'); });
 
     // difficulty picker: the buttons only carry the choice, the match flow in
     // main.js owns what happens next
