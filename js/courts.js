@@ -39,6 +39,74 @@ LG.Courts = (function () {
   var seen = {};
   defs = defs.filter(function (d) { if (seen[d.id]) return false; seen[d.id] = 1; return true; });
 
+  // ------------------------------------------------------------------
+  // per-court metadata — ONE central table, keyed by court id, so goal
+  // alignment / net visuals never scatter across gameplay code.
+  //   paintedGoals : the court ART already paints its own goal mouth +
+  //                  net (best + 1..5 all do).  When true the arena hides
+  //                  the game's cosmetic goal frame (no double net) and
+  //                  keeps ONLY the invisible functional geometry
+  //                  (detection, post collision, keeper, net-pocket).
+  //   (future: per-court goalWidth/goalDepth/goalZ/orient overrides)
+  // ------------------------------------------------------------------
+  var META = {
+    default: { paintedGoals: true },
+    overrides: {},
+  };
+
+  // ------------------------------------------------------------------
+  // PER-COURT METADATA (centralized — the ONLY place court geometry /
+  // alignment knobs live).  The courts/ art is hand-painted street-court
+  // scenes and every one of them ALREADY paints its own complete goal:
+  // posts, crossbar, and a net.  So when such a court is on the pitch we
+  // must NOT render the game's own goal frame/nets on top of it (that is
+  // the "double net").  The game's *functional* goal (posts for collision,
+  // goal detection, keeper stance, net-pocket pocket for the ball) stays
+  // exactly where it is — it simply becomes invisible.
+  //
+  //   id            court id ('' = procedural street)
+  //   paintedGoal   true  -> the artwork draws its own goal: the arena
+  //                          hides the cosmetic 3D frame, keeps functional.
+  //
+  // Extra per-court tuning (goal width/depth, image cropping to isolate
+  // the playable pitch, logo offset ...) would slot in here per court when
+  // individual images need it.  Keeping it all in this one table means no
+  // scattered hardcoded values anywhere else.
+  // ------------------------------------------------------------------
+  var META = {
+    // courts numbering 1.png .. 24.png (portrait street-court paintings)
+    // + the handful of "courtN.png" + best.png — all art shows its goal.
+    // (Defaults are applied for any id not listed, so probing a brand-new
+    //  courtN.png automatically gets the safe paintedGoal behaviour.)
+    DEFAULT: { paintedGoal: true },
+    _table: {},
+  };
+
+  // courts 1..24 (numeric files)
+  (function () {
+    for (var i = 1; i <= 24; i++) {
+      META._table['court' + i] = { paintedGoal: true };
+    }
+    // named secondary courts
+    for (var j = 1; j <= 8; j++) {
+      META._table['court' + j] = { paintedGoal: true };
+    }
+    META._table['best'] = { paintedGoal: true };
+  })();
+
+  // resolve metadata for a court id (merges the DEFAULT fallback)
+  function metaFor(id) {
+    var m = META._table[id];
+    return m ? m : { paintedGoal: META.DEFAULT.paintedGoal };
+  }
+  function meta(id) {
+    if (!id) {
+      // '' => procedural pitch, always shows the game's own goal frame
+      return { paintedGoal: false };
+    }
+    return metaFor(id);
+  }
+
   var loaded = {};        // id -> true  once the file is known to exist
   var selected = null;    // chosen id ('' = procedural)
 
@@ -154,5 +222,13 @@ LG.Courts = (function () {
 
     // purely cosmetic: is a custom court texture in use right now?
     isCustom: function () { return !!this.active(); },
+
+    // central per-court metadata (the ONLY per-court geometry/alignment
+    // knobs — see the META table at the top of this file).  arena.js +
+    // anything else that needs to know "does this court's art already
+    // paint its own goal?" reads it through THIS one accessor so the
+    // painted-goal / double-net rule never gets scattered over gameplay
+    // code.  ('' = procedural pitch -> paintedGoal false.)
+    meta: meta,
   };
 })();
