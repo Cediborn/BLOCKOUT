@@ -135,7 +135,22 @@
       <div class="row-btns">
         <button id="btn-back" class="big-btn" style="min-width:150px; background:linear-gradient(180deg,#9aa6b8,#5d6a7d); box-shadow:0 6px 0 #3c4757">BACK</button>
         <button id="btn-style" class="big-btn" style="min-width:200px; background:linear-gradient(180deg,#9aa6b8,#5d6a7d); box-shadow:0 6px 0 #3c4757">PLAYER STYLE</button>
+        <button id="btn-court" class="big-btn" style="min-width:200px; background:linear-gradient(180deg,#9aa6b8,#5d6a7d); box-shadow:0 6px 0 #3c4757">COURT</button>
         <button id="btn-start-match" class="big-btn gold" style="min-width:240px">KICK OFF</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Court selection -->
+  <div id="court-overlay" class="overlay hidden">
+    <div class="panel">
+      <div class="title-xl" style="font-size:clamp(24px,6vmin,44px)"><span class="t1">SELECT</span> <span class="t2">COURT</span></div>
+      <div class="subtitle" style="margin-top:10px;font-size:12px">PICK THE STREET YOU PLAY ON</div>
+      <div id="court-grid" class="court-grid"></div>
+      <div id="court-preview" class="court-preview"></div>
+      <div class="row-btns">
+        <button id="btn-court-back" class="big-btn" style="min-width:150px; background:linear-gradient(180deg,#9aa6b8,#5d6a7d); box-shadow:0 6px 0 #3c4757">BACK</button>
+        <button id="btn-court-go" class="big-btn gold" style="min-width:240px">CONFIRM</button>
       </div>
     </div>
   </div>
@@ -148,6 +163,11 @@
       <div id="color-grid" class="color-grid"></div>
 
       <div id="style-preview" class="style-preview"></div>
+
+      <div class="subtitle" style="margin-top:24px;font-size:12px">OPPONENT KIT — ROGUE SQUAD</div>
+      <div id="away-color-grid" class="color-grid"></div>
+      <div id="away-kit-note" class="kit-note"></div>
+
       <div class="row-btns" style="margin-top:20px">
         <button id="btn-style-back" class="big-btn" style="min-width:150px; background:linear-gradient(180deg,#9aa6b8,#5d6a7d); box-shadow:0 6px 0 #3c4757">BACK</button>
         <button id="btn-style-go" class="big-btn gold" style="min-width:240px">CONFIRM</button>
@@ -211,6 +231,7 @@
   <script src="js/progression.js"></script>
   <script src="js/input.js"></script>
   <script src="js/particles.js"></script>
+  <script src="js/courts.js"></script>
   <script src="js/models.js"></script>
   <script src="js/ball.js"></script>
   <script src="js/player.js"></script>

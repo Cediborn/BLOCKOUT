@@ -23,6 +23,11 @@ LG.AIBrain.prototype = {
     return LG.Difficulty.forTeam(this.p.team);
   },
 
+  // which direction is "toward the enemy goal" for my team?
+  attDir: function () {
+    return this.p.team === 0 ? -1 : 1;
+  },
+
   // How much an AI pass wobbles: how hard the passer is being pressed and how
   // good a passer they are, divided by this difficulty's passing accuracy.
   passError: function (pressure) {
@@ -69,6 +74,22 @@ LG.AIBrain.prototype = {
       this.think();
     }
 
+    // run onto a pass that is actually aimed at me — the ball's own motion sets
+    // the lead, so two chasers never fight over the same intercept point
+    if (ball && ball.intendedReceiver === me && ball.intendedT > 0 && !me.hasBall) {
+      var lead = Math.min(0.4, 3 / Math.max(2, ball.speed()));
+      this.moveTarget.x = U.clamp(ball.x + ball.vx * lead, -12.6, 12.6);
+      this.moveTarget.z = U.clamp(ball.z + ball.vz * lead, -21.6, 21.6);
+      if (ball.lastKicker && ball.lastKicker.team !== me.team) {
+        // a loose opponent pass cut off — close it down hard
+        this.moveTarget.x = ball.x;
+        this.moveTarget.z = ball.z;
+      }
+    } else {
+      // keep spacing: don't stack onto a mate or swarm a free ball
+      this.separate(this.moveTarget, me.hasBall);
+    }
+
     // move toward target
     var dx = this.moveTarget.x - me.x;
     var dz = this.moveTarget.z - me.z;
@@ -94,7 +115,47 @@ LG.AIBrain.prototype = {
       sprint = cDist > (LG.Config.ai.containRange || 3.2); // sprint to close down, jog to contain
     }
     if (me.hasBall && me.team === M.possessionTeam) sprint = (M.distToGoal(me) > 8 && Math.random() < 0.4 * (D.attackingAggression || 1));
+    // receivers sprint onto their own pass; defenders sprint to a cut ball
+    if (ball && ball.intendedReceiver === me && ball.intendedT > 0 && !me.hasBall) {
+      var tSp = ball.speed();
+      sprint = sprint || (tSp > 12 && Math.random() < 0.7);
+    }
     me.want.sprint = sprint;
+  },
+
+  // Pull `target` away from teammates (and a free ball) so the side keeps
+  // spacing instead of collapsing. Only a shape target — never snaps the ball
+  // chase: the designated chaser is exempt from the ball repulsion.
+  separate: function (target, haveBall) {
+    var me = this.p;
+    var M = LG.Match;
+    var U = LG.Util;
+    var ax = target.x, az = target.z;
+    var mates = M.teamPlayers(me.team);
+    var i, m, dx, dz, d, f;
+    for (i = 0; i < mates.length; i++) {
+      m = mates[i];
+      if (m === me) continue;
+      dx = ax - m.x; dz = az - m.z;
+      d = Math.sqrt(dx * dx + dz * dz);
+      if (d < 2.2 && d > 0.001) {
+        f = ((2.2 - d) / 2.2) * 1.7;
+        ax += (dx / d) * f;
+        az += (dz / d) * f;
+      }
+    }
+    if (!haveBall && !this.isClosestChaser()) {
+      var b = M.ball;
+      dx = ax - b.x; dz = az - b.z;
+      d = Math.sqrt(dx * dx + dz * dz);
+      if (d < 2.6 && d > 0.001) {
+        f = ((2.6 - d) / 2.6) * 2.2;
+        ax += (dx / d) * f;
+        az += (dz / d) * f;
+      }
+    }
+    this.moveTarget.x = U.clamp(ax, -12.6, 12.6);
+    this.moveTarget.z = U.clamp(az, -21.6, 21.6);
   },
 
   // The designated chaser is decided per TEAM by the match, on a cadence set
@@ -252,6 +313,7 @@ LG.AIBrain.prototype = {
     var M = LG.Match;
     var U = LG.Util;
     var goal = M.enemyGoal(me.team);
+    var dir = this.attDir();
     var mates = M.teamPlayers(me.team);
     var best = null;
     for (var i = 0; i < mates.length; i++) {
@@ -260,10 +322,12 @@ LG.AIBrain.prototype = {
       var d = t.distTo(me.x, me.z);
       if (d < 1.6) continue;                       // too close = no value to a pass
       if (!M.lineClear(me, t)) continue;           // defender on the lane
-      var forward = (t.z - me.z) * (goal.z > 0 ? 1 : -1);
+      var forward = (t.z - me.z) * dir;            // how far upfield the target is
       var open = M.openness(t, 1 - me.team, 2.6);
+      var toGoal = M.distToGoal(t);
+      var atMouth = toGoal < 3 ? 0.4 : 0;          // a mate parked on the goal line is a bad idea
       // open + forward is king; long passes are riskier than short ones
-      var score = open * (0.55 + forward * 0.045) - d * 0.028;
+      var score = open * (0.6 + forward * 0.045) - d * 0.028 - atMouth;
       // the human is a legitimate, slightly-preferred target when they've
       // found space ahead (but not mandatory — AI still shares between mates)
       if (t.isHuman && forward > 1.5) score += 0.22;
@@ -277,24 +341,40 @@ LG.AIBrain.prototype = {
     var me = this.p;
     var M = LG.Match;
     var U = LG.Util;
-    var goal = M.enemyGoal(me.team);
     var carrier = M.ownerPlayer();
-    var dCarrier = carrier ? me.distTo(carrier.x, carrier.z) : 999;
-
-    // when we are the closest not-carrier, keep near for short outlet. How
-    // high the support runs is the attack's aggression: a passive side builds
-    // up slowly behind the ball, a sharp one commits runners forward.
     var D = this.difficulty();
-    var pushForward = U.lerp(4, 9, me.stats.speed / 10) * (0.72 + 0.28 * (D.attackingAggression || 1));
-    var baseZ = goal.z - Math.sign(goal.z) * pushForward;
-    var baseX = (me.idx === 1 ? -3.5 : 3.5) + U.rand() * 1.4;
+    var agg = D.attackingAggression || 1;
+    var dir = this.attDir();
 
-    // follow around the ball attack slightly behind it
-    var tx = U.lerp(baseX, carrier ? carrier.x : 0, 0.35);
-    var tz = U.lerp(baseZ, goal.z, 0.6);
+    // "s" = progress toward the enemy goal (−20.5 own goal line .. +20.5 theirs)
+    var ballS = dir * M.ball.z;
+    var cs = carrier ? dir * carrier.z : ballS;
+    var cx = carrier ? carrier.x : M.ball.x;
+    var push = U.lerp(3, 9, me.stats.speed / 10) * (0.72 + 0.28 * agg);
+    var s, x;
+
+    switch (me.idx) {
+      case 0:
+        // holding man: sits behind the ball, the release valve / shield
+        s = U.clamp(ballS - Math.max(8, push), -16, 3);
+        x = U.lerp(0, cx, 0.4);
+        break;
+      case 1:
+        // link man: just behind the ball, drifting to the carrier's side
+        s = U.clamp(cs - push * 0.55, -12, 10);
+        x = U.lerp(-3.5, cx, 0.55);
+        break;
+      case 2:
+      default:
+        // forward runner: highest line, hugs the far side to stretch the box
+        s = U.clamp(cs + push, 7, 18.5);
+        x = (cx >= 0 ? -1 : 1) * U.lerp(3.5, 7.5, me.stats.speed / 12);
+        break;
+    }
+
     this.moveTarget = {
-      x: U.clamp(tx + (U.rand() - 0.5) * 1.6, -11.5, 11.5),
-      z: U.clamp(tz + (U.rand() - 0.5) * 1.2, -20.5, 20.5),
+      x: U.clamp(x + (U.rand() - 0.5) * 1.6, -11.5, 11.5),
+      z: U.clamp(dir * s + (U.rand() - 0.5) * 1.1, -20.5, 20.5),
     };
     // call for a pass sometimes
     this.actionCd = Math.max(this.actionCd, 0);
@@ -347,32 +427,68 @@ LG.AIBrain.prototype = {
         }
       }
     } else {
-      // cover passing lanes & dangerous attackers: position between carrier & mark.
-      // defensiveAggression decides how high the covering men hold: a passive
-      // side drops off toward its own goal and concedes space.
+      // cover passing lanes & dangerous attackers. With an AI DEF man the slot
+      // order owns the marks (DEF takes the top threat, MID the second, the
+      // FWD guards the deep zone); when the human is on DEF the two AI men
+      // pick up the top-two threats instead. defensiveAggression decides how
+      // high the covering men hold: a passive side drops off toward its own
+      // goal and concedes space.
       var sink = U.clamp((1 - (D.defensiveAggression || 1)) * 0.55, -0.3, 0.6);
-      var mark = null, mind = 1e9;
+
+      // rank the opponent's forward options by threat: close to the carrier
+      // AND close to our goal is the pass that kills us
+      var marks = [];
       var opps = M.teamPlayers(1 - me.team);
-      for (var i = 0; i < opps.length; i++) {
-        var o = opps[i];
-        if (o === carrier || o.isGoalkeeper) continue;   // never mark the keeper
-        var dGoal = M.distToGoal(o);
-        if (dGoal < mind && !o.hasBall) { mind = dGoal; mark = o; }
+      for (var mi = 0; mi < opps.length; mi++) {
+        var mo = opps[mi];
+        if (mo === carrier || mo.isGoalkeeper) continue;   // never mark the keeper
+        var danger = M.distToGoal(mo) * 0.6 + (carrier ? mo.distTo(carrier.x, carrier.z) : 0);
+        marks.push({ o: mo, danger: danger });
       }
-      if (mark && carrier) {
+      marks.sort(function (a, b) { return a.danger - b.danger; });
+
+      var mine = null;
+      if (marks.length) {
+        // is OUR DEF slot an AI or the human? When the human is on DEF they
+        // never run this module, so the two AI outfielders must take over the
+        // top-two marks. When DEF is AI, the slot order (DEF then MID) owns
+        // the marks exactly as before and the FWD guards the deep zone.
+        var defP = null;
+        var matesD = M.teamPlayers(me.team);
+        for (var dij = 0; dij < matesD.length; dij++) {
+          if (matesD[dij].idx === 0) { defP = matesD[dij]; break; }
+        }
+        var defIsAi = !!(defP && defP.ai && !defP.isHuman);
+        if (defIsAi) {
+          if (me.idx === 0) mine = marks[0].o;                    // DEF man: top threat
+          else if (me.idx === 1 && marks.length > 1) mine = marks[1].o;  // MID: second
+        } else {
+          if (me.idx === 1) mine = marks[0].o;                    // MID covers the top threat
+          else if (me.idx === 2 && marks.length > 1) mine = marks[1].o;  // FWD: second
+        }
+      }
+
+      if (mine && carrier) {
         // cut the passing lane between carrier & receiver, leaning goalside
-        var lx = (carrier.x + mark.x * 2 + myGoal.x) / 4;
-        var lz = (carrier.z + mark.z * 2 + myGoal.z) / 4;
-        this.moveTarget = this.sinkTo({ x: U.clamp(lx, -11.5, 11.5), z: U.clamp(lz, -20.5, 20.5) }, myGoal, sink);
-      } else if (mark) {
-        var mx = (mark.x + myGoal.x) / 2 + (U.rand() - 0.5) * 1.4;
-        var mz = (mark.z + myGoal.z) / 2 + (U.rand() - 0.5) * 1.4;
-        this.moveTarget = this.sinkTo({ x: U.clamp(mx, -11.5, 11.5), z: U.clamp(mz, -20.5, 20.5) }, myGoal, sink);
+        var lx = (carrier.x + mine.x * 1.3) / 2.3;
+        var lz = (carrier.z + mine.z * 1.3) / 2.3;
+        lz += (myGoal.z - lz) * 0.3;
+        // never let the mark get goal side of me
+        if (me.team === 0) lz = Math.max(lz, mine.z + 0.7);
+        else lz = Math.min(lz, mine.z - 0.7);
+        this.moveTarget = this.sinkTo({
+          x: U.clamp(lx, -11.5, 11.5),
+          z: U.clamp(lz, -20.5, 20.5),
+        }, myGoal, sink);
       } else {
-        // drift goal-side
-        var gdx = (ball.x + myGoal.x) / 2;
-        var gdz = (ball.z + myGoal.z) / 2;
-        this.moveTarget = this.sinkTo({ x: U.clamp(gdx + (U.rand() - 0.5) * 2.4, -11.5, 11.5), z: U.clamp(gdz + (U.rand() - 0.5) * 1.6, -20.5, 20.5) }, myGoal, sink);
+        // zonal cover: hold the line between the ball and our goal, shielding
+        // the mouth from cutters — the back four when there is no man to mark
+        var lz2 = myGoal.z - this.attDir() * 2.6;
+        var lx2 = U.clamp(M.ball.x * 0.7, -7, 7);
+        this.moveTarget = this.sinkTo({
+          x: U.clamp(lx2 + (U.rand() - 0.5) * 1.8, -11.5, 11.5),
+          z: U.clamp(lz2, -20.5, 20.5),
+        }, myGoal, sink);
       }
     }
     me.want.tackle = false;
@@ -394,16 +510,38 @@ LG.AIBrain.prototype = {
     var M = LG.Match;
     var U = LG.Util;
     var ball = M.ball;
-    var goal = M.enemyGoal(me.team);
+    var dir = this.attDir();
+    var ballS = dir * ball.z;
 
     // a side that has not read the turnover yet does not pounce on the loose
     // ball — it drops into shape and lets the alert side win it
     if (this.isClosestChaser() && this.reactT <= 0) {
       this.moveTarget = { x: ball.x, z: ball.z };
-    } else {
-      var gx = (ball.x + goal.x) / 2 + (U.rand() - 0.5) * 2;
-      var gz = (ball.z + goal.z) / 2;
-      this.moveTarget = { x: U.clamp(gx, -11.5, 11.5), z: U.clamp(gz, -20.5, 20.5) };
+      return;
     }
+
+    // role-appropriate recovery spot: the DEF holds deep, the MID drops to the
+    // ball side for the second ball, the FWD keeps a high outlet so the team
+    // can counter from the shape
+    var s, x;
+    switch (me.idx) {
+      case 0:
+        s = U.clamp(ballS - 7, -18, -4);
+        x = U.clamp(ball.x * 0.5, -7, 7);
+        break;
+      case 1:
+        s = U.clamp(ballS - 2, -12, 9);
+        x = U.clamp(ball.x + 3.5, -11.5, 11.5);
+        break;
+      case 2:
+      default:
+        s = U.clamp(ballS + 8, 3, 18);
+        x = (ball.x >= 0 ? -1 : 1) * 5;
+        break;
+    }
+    this.moveTarget = {
+      x: U.clamp(x + (U.rand() - 0.5) * 1.6, -11.5, 11.5),
+      z: U.clamp(dir * s + (U.rand() - 0.5) * 1.2, -20.5, 20.5),
+    };
   },
 };

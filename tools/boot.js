@@ -164,7 +164,7 @@ global.console.error = global.console.error;
 
 // ---------------- load the real code ----------------
 var SRC = ['js/config.js', 'js/difficulty.js', 'js/util.js', 'js/audio.js', 'js/progression.js', 'js/input.js',
-  'js/particles.js', 'js/models.js', 'js/ball.js', 'js/player.js', 'js/arena.js', 'js/abilities.js',
+  'js/particles.js', 'js/courts.js', 'js/models.js', 'js/ball.js', 'js/player.js', 'js/arena.js', 'js/abilities.js',
   'js/ai.js', 'js/keeper.js', 'js/camera.js', 'js/match.js', 'js/hud.js', 'js/main.js'];
 
 section('1. scripts parse + boot (as a phone)');
@@ -197,6 +197,26 @@ try {
   check(vis('diff-overlay'), 'CONTINUE opens SELECT DIFFICULTY');
   elements['btn-diff-go'].fire('click');
   check(vis('select-overlay'), 'CONTINUE opens PICK YOUR STAR');
+
+  // player style: both kit grids (your kit + the opponent kit) build
+  elements['btn-style'].fire('click');
+  check(vis('style-overlay') && !vis('select-overlay'), 'PLAYER STYLE opens the style overlay');
+  check(elements['color-grid'] && elements['color-grid'].children.length > 0, 'your kit colors build');
+  check(elements['away-color-grid'] && elements['away-color-grid'].children.length > 0, 'the opponent kit colors build');
+  elements['btn-style-back'].fire('click');
+  check(vis('select-overlay') && !vis('style-overlay'), 'PLAYER STYLE BACK returns to PICK YOUR STAR');
+
+  // court picker: the classic tile builds even with no assets discovered
+  elements['btn-court'].fire('click');
+  check(vis('court-overlay') && !vis('select-overlay'), 'COURT opens the court overlay');
+  check(elements['court-grid'] && elements['court-grid'].children.length > 0, 'the court grid builds');
+  if (elements['court-grid'] && elements['court-grid'].children.length) {
+    elements['court-grid'].children[0].fire('click');       // CLASSIC STREET tile
+  }
+  check(LG.Courts.selected() === '', 'selecting CLASSIC persists an empty court id', LG.Courts.selected());
+  elements['btn-court-go'].fire('click');
+  check(vis('select-overlay') && !vis('court-overlay'), 'COURT CONFIRM returns to PICK YOUR STAR');
+
   elements['btn-start-match'].fire('click');
   check(window.LGMain.getState() === 'match', 'KICK OFF starts the match', window.LGMain.getState());
 } catch (e) {

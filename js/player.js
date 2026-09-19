@@ -125,11 +125,10 @@ LG.Player.prototype.update = function (dt) {
   var gw = C.goalWidth / 2;
   this.x = U.clamp(this.x, -halfW, halfW);
   if (Math.abs(this.x) < gw) {
-    // inside goal mouth: allowed slightly into the net zone
-    this.z = U.clamp(this.z, -halfL - C.goalDepth * 0.85, halfL + C.goalDepth * 0.85);
-    // push back out of the net pocket
-    if (this.z < -halfL - C.goalDepth * 0.8 && Math.abs(this.x) < gw) this.z = -halfL - C.goalDepth * 0.8;
-    if (this.z > halfL + C.goalDepth * 0.8 && Math.abs(this.x) < gw) this.z = halfL + C.goalDepth * 0.8;
+    // inside goal mouth: allowed just past the line, never INTO the net pocket
+    this.z = U.clamp(this.z, -halfL - 0.35, halfL + 0.35);
+    if (this.z < -halfL - 0.3 && Math.abs(this.x) < gw) this.z = -halfL - 0.3;
+    if (this.z > halfL + 0.3 && Math.abs(this.x) < gw) this.z = halfL + 0.3;
   } else {
     this.z = U.clamp(this.z, -halfL, halfL);
   }

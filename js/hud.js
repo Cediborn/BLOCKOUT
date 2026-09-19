@@ -50,6 +50,10 @@ LG.HUD = (function () {
     document.getElementById('btn-style').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('styleRequested'); });
     document.getElementById('btn-style-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('styleBackRequested'); });
     document.getElementById('btn-style-go').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('styleConfirmed'); });
+    var courtBtn = document.getElementById('btn-court');
+    if (courtBtn) courtBtn.addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('courtRequested'); });
+    document.getElementById('btn-court-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('courtBackRequested'); });
+    document.getElementById('btn-court-go').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('courtConfirmed'); });
 
     // difficulty picker: the buttons only carry the choice, the match flow in
     // main.js owns what happens next

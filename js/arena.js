@@ -9,6 +9,7 @@ LG.Arena = (function () {
   var U = LG.Util;
   var root = null;
   var anims = [];
+  var surfaceGroup = null;   // the pitch slab + lines + logo, rebuilt on court change
 
   function skyBox() {
     var g = new THREE.SphereGeometry(70, 16, 12);
@@ -75,7 +76,13 @@ LG.Arena = (function () {
     walk3.rotation.x = -Math.PI / 2; walk3.position.x = C.width / 2 + ringW / 2 - 1; walk3.receiveShadow = true; g.add(walk3);
     var walk4 = walk3.clone(); walk4.position.x = -C.width / 2 - ringW / 2 + 1; g.add(walk4);
 
-    // CORT court slab — worn asphalt-paint street court surface
+    return g;
+  }
+
+  // The playable slab mesh (procedural worn asphalt).  Kept separate so the
+  // surface can be swapped for a custom court texture without touching the
+  // surrounding environment.
+  function courtSlab() {
     var courtT = LG.Util.makeCanvasTexture(function (c, w, h) {
       c.fillStyle = '#4d5a68';
       c.fillRect(0, 0, w, h);
@@ -107,10 +114,26 @@ LG.Arena = (function () {
     court.rotation.x = -Math.PI / 2;
     court.position.y = 0.02;
     court.receiveShadow = true;
-    g.add(court);
+    return court;
+  }
 
-    // painted lines (replaced by courtLines())
-    return g;
+  // A custom court image stretched across the pitch slab.  The texture loads
+  // asynchronously and pops in on load; gameplay geometry is untouched.
+  function courtSlabCustom(custom) {
+    var mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    var court = new THREE.Mesh(new THREE.PlaneGeometry(C.width, C.length), mat);
+    court.rotation.x = -Math.PI / 2;
+    court.position.y = 0.02;
+    court.receiveShadow = true;
+    var ready = function (tex) {
+      mat.map = tex;
+      mat.needsUpdate = true;
+    };
+    if (LG.Courts) {
+      var tex = LG.Courts.texture(custom.id, ready);
+      if (tex) { mat.map = tex; mat.needsUpdate = true; }
+    }
+    return court;
   }
 
   // Painted lines are drawn onto a canvas whose pixel-resolution mirrors the
@@ -122,10 +145,12 @@ LG.Arena = (function () {
   //   - world center  = (0, 0)         -> the exact midpoint between goal lines
   // A world-space circle drawn here is a true circle on the pitch (no stretch),
   // and the halfway line lands EXACTLY at z = 0 under the kickoff spot.
-  function courtLines() {
+  function courtLines(opacity) {
+    opacity = opacity === undefined ? 0.82 : opacity;
     var ps = 16; // pixels per world unit (16px == 1 world unit, both axes)
     var w = Math.round(C.width * ps), h = Math.round(C.length * ps);
     var halfW = C.width / 2, halfL = C.length / 2;
+    var lineColor = 'rgba(224,226,220,' + opacity + ')';
     var tl = LG.Util.makeCanvasTexture(function (c, cw, ch) {
       c.clearRect(0, 0, cw, ch);
       // world -> canvas.  Canvas row 0 is the NORTH goal (z = -halfL) and
@@ -135,7 +160,7 @@ LG.Arena = (function () {
       var midX = px(0), midY = py(0); // true world center (0,0)
       var ins = 2.0 * ps;             // keep paint just inside the slab edge
 
-      c.strokeStyle = 'rgba(224,226,220,0.82)';
+      c.strokeStyle = lineColor;
       c.lineWidth = 3;
 
       // outer boundary == the two goal lines at z = +-halfL
@@ -146,28 +171,30 @@ LG.Arena = (function () {
       // center circle + spot, dead-center on the halfway line
       c.beginPath(); c.arc(midX, midY, 3.2 * ps, 0, 7); c.stroke();
       c.beginPath(); c.arc(midX, midY, 0.42 * ps, 0, 7);
-      c.fillStyle = 'rgba(224,226,220,0.82)'; c.fill();
+      c.fillStyle = lineColor; c.fill();
 
       // goal-area boxes, symmetric on both ends against the real goal lines
       var gb = { w: 5.2, d: 4.0 };
       c.strokeRect(px(-gb.w / 2), py(-halfL), gb.w * ps, gb.d * ps);            // north
       c.strokeRect(px(-gb.w / 2), py(halfL) - gb.d * ps, gb.w * ps, gb.d * ps); // south
 
-      // worn paint: chip random notches along the halfway line & circle rim
-      for (var i = 0; i < 42; i++) {
-        var cwx, cwz, chipA;
-        if (Math.random() < 0.5) {
-          cwx = (Math.random() * 2 - 1) * (halfW - ins / ps - 2);
-          cwz = 0;
-        } else {
-          chipA = Math.random() * 6.283;
-          var rr = 3.2 * (0.75 + Math.random() * 0.4);
-          cwx = Math.cos(chipA) * rr;
-          cwz = Math.sin(chipA) * rr;
+      if (opacity > 0.4) {
+        // worn paint: chip random notches along the halfway line & circle rim
+        for (var i = 0; i < 42; i++) {
+          var cwx, cwz, chipA;
+          if (Math.random() < 0.5) {
+            cwx = (Math.random() * 2 - 1) * (halfW - ins / ps - 2);
+            cwz = 0;
+          } else {
+            chipA = Math.random() * 6.283;
+            var rr = 3.2 * (0.75 + Math.random() * 0.4);
+            cwx = Math.cos(chipA) * rr;
+            cwz = Math.sin(chipA) * rr;
+          }
+          var chcx = px(cwx), chcy = py(cwz);
+          c.clearRect(chcx - 5, chcy - 2, 10, 4);
+          if (Math.random() < 0.3) c.clearRect(chcx - 2, chcy - 5, 4, 10);
         }
-        var chcx = px(cwx), chcy = py(cwz);
-        c.clearRect(chcx - 5, chcy - 2, 10, 4);
-        if (Math.random() < 0.3) c.clearRect(chcx - 2, chcy - 5, 4, 10);
       }
     }, w, h);
     tl.repeat.set(1, 1);
@@ -670,14 +697,34 @@ LG.Arena = (function () {
   }
 
   // ---------------- assemble ----------------
+  // The pitch surface group holds ONLY what changes with the selected court:
+  // the slab texture + its painted lines/logo. Swapping a court rebuilds this
+  // single group; the environment and props stay put.
+  function buildSurface() {
+    var g = new THREE.Group();
+    var custom = LG.Courts ? LG.Courts.active() : null;
+    if (custom) {
+      g.add(courtSlabCustom(custom));
+      // keep gameplay geometry readable over the artwork: faint painted lines
+      g.add(courtLines(0.16));
+    } else {
+      g.add(courtSlab());
+      g.add(courtLines(0.82));
+      g.add(centerLogo());
+    }
+    return g;
+  }
+
   function build(scene) {
     root = new THREE.Group();
     anims.length = 0;
 
     root.add(skyBox());
     root.add(ground());
-    root.add(courtLines());
-    root.add(centerLogo());
+
+    surfaceGroup = buildSurface();
+    root.add(surfaceGroup);
+
     root.add(goals());
     root.add(bleacher(-1));
     root.add(bleacher(1));
@@ -710,6 +757,13 @@ LG.Arena = (function () {
     return {
       root: root,
       posts: posts,
+      // swap the pitch surface to the currently selected court (no reload)
+      refreshCourt: function () {
+        if (!root || !surfaceGroup) return;
+        root.remove(surfaceGroup);
+        surfaceGroup = buildSurface();
+        root.add(surfaceGroup);
+      },
       update: function (dt) {
         for (var i = 0; i < anims.length; i++) {
           var a = anims[i];

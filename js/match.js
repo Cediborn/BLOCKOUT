@@ -68,7 +68,20 @@ LG.MatchManager.prototype = {
       oppIds = ['blaze', 'volt', 'stone'];
       // avoid duplicating the same 3 as player team
     }
-    var team1 = this.teamOf(oppIds.map(function (id) { return LG.byId(id); }), 1);
+
+    // Apply opponent kit color if selected (independent of the human kit)
+    var awayKit = O.awayColor;
+    var awayDefs = oppIds.map(function (id) { return LG.byId(id); });
+    if (awayKit) {
+      awayDefs = awayDefs.map(function (d) {
+        var clone = JSON.parse(JSON.stringify(d));
+        clone.palette = JSON.parse(JSON.stringify(clone.palette));
+        clone.palette.shirt = awayKit.color;
+        clone.palette.shoe = awayKit.color;
+        return clone;
+      });
+    }
+    var team1 = this.teamOf(awayDefs, 1);
 
     // one dedicated goalkeeper per team (outfield stays 3v3)
     team0.push(this.makeGoalkeeper(0));
@@ -156,6 +169,11 @@ LG.MatchManager.prototype = {
         { skin: 0xd99f72, hair: 0x20242c, shirt: 0x2ee65a, trim: 0xffffff, pants: 0x141a12, shoe: 0x171c14 } :
         { skin: 0x8a5a3c, hair: 0x1d2026, shirt: 0xffa62e, trim: 0x2b1500, pants: 0x23201a, shoe: 0x181c22 },
     };
+    // away keeper wears the selected opponent kit if there is one
+    if (team === 1 && this.opts.awayColor) {
+      def.palette.shirt = this.opts.awayColor.color;
+      def.palette.shoe = this.opts.awayColor.color;
+    }
     var p = new LG.Player(def, team, 3);
     p.isHuman = false;
     p.isGoalkeeper = true;
@@ -325,6 +343,10 @@ placeKickoff: function () {
         this.updatePlayers(dt);
         if (this.clock <= 0) { this.endMatch(); return; }
         this.resolvePossession();
+        // remember where the ball was BEFORE the step — a fast ball can cross
+        // the goal plane between frames and needs the whole segment judged
+        this._ballPrevZ = this.ball.z;
+        this._ballPrevY = this.ball.y;
         this.ball.step(dt, this.arena);
         this.updateKeepers(dt);    // goalkeepers save/parry BEFORE the goal check
         this.checkGoal();
@@ -1076,7 +1098,12 @@ placeKickoff: function () {
       // one save roll per kick (shooter + kick sequence) so a keeper can't
       // "win the lottery" by rolling multiple frames on the same shot
       var sig = (ball.lastKicker ? 'p' + ball.lastKicker.idx + '.' + ball.lastKicker.team : 'n') + '-' + (ball._kickSeq || 0);
-      if (gk._saveSig !== sig) { gk._saveSig = sig; gk._saveRoll = Math.random(); }
+      // a keeper who just made a save needs a beat to get back set: within the
+      // SAME kick sequence a loose rebound can beat him before he recovers.
+      // A new kick (fresh attack) always resets the clock.
+      if (gk._recoverT > 0) gk._recoverT = Math.max(0, gk._recoverT - dt);
+      if (gk._saveSig !== sig) { gk._saveSig = sig; gk._saveRoll = Math.random(); gk._recoverT = 0; }
+      if (gk._recoverT > 0) continue;
       if (gk._saveRoll < this.keeperSaveChance(gk, th)) {
         this.doKeeperSave(gk, th);
       }
@@ -1103,10 +1130,15 @@ placeKickoff: function () {
       ball.z = line - sign * 0.12;
       ball.y = ball.r;
       ball.vy = 1.5 + Math.random() * 0.8;
-      ball.vx = (Math.random() - 0.5) * 5;
-      ball.vz = -sign * (6 + Math.random() * 3.5);   // back out toward the field
+      // deflect it AWAY from the middle — punch toward the nearest wing or, for
+      // a shot through the middle, the side the keeper is already diving toward.
+      // A straight-out parry sat the ball up on the penalty spot for the rebound.
+      var side = Math.abs(th.px) < 0.8 ? (Math.random() < 0.5 ? -1 : 1) : (th.px > 0 ? 1 : -1);
+      ball.vx = side * (4 + Math.random() * 3);
+      ball.vz = -sign * (5 + Math.random() * 3);
       ball.mesh.position.set(ball.x, ball.y, ball.z);
       this.possessionTeam = -1;
+      gk._recoverT = 0.6;                         // scramble before the next save
     } else {
       // clean catch: freeze, hold, then distribute
       ball._guided = null;
@@ -1135,13 +1167,27 @@ placeKickoff: function () {
     var C = LG.Config.court;
     var halfL = C.length / 2;
     var gw = C.goalWidth / 2;
+    var r = ball.r;
 
-    if (Math.abs(ball.x) > gw) return;
-    if (ball.y > C.goalHeight + 0.05) return; // over the bar
+    // a fast ball can cross the goal plane between frames, so judge the whole
+    // step: the highest the ball got (bar clearance) and the farthest the
+    // segment reached (goal line). prevZ/prevY are captured before ball.step.
+    var prevZ = (this._ballPrevZ !== undefined) ? this._ballPrevZ : ball.z;
+    var prevY = (this._ballPrevY !== undefined) ? this._ballPrevY : ball.y;
+
+    // mouth check is center-based with a little body allowance: the ball can
+    // ride just past the post plane when it is still physically inside the goal
+    if (Math.abs(ball.x) > gw + r * 0.5) return;
+    if (Math.max(prevY, ball.y) > C.goalHeight + 0.05) return; // over the bar
 
     var goalZ = null;
-    if (ball.z < -halfL) goalZ = 'away';   // north goal is AWAY team's goal -> home scores
-    if (ball.z > halfL) goalZ = 'home';    // south goal is HOME's goal -> away scores
+    if (prevZ >= -halfL && ball.z <= -halfL) goalZ = 'away';  // north goal: home scores
+    else if (prevZ <= halfL && ball.z >= halfL) goalZ = 'home';  // south goal: away scores
+    if (!goalZ) {
+      // already parked in the net from an earlier frame that slipped the check
+      if (ball.z < -halfL) goalZ = 'away';
+      else if (ball.z > halfL) goalZ = 'home';
+    }
 
     if (!goalZ) return;
     if (ball.lastKicker && ball.lastKicker.team === 0 && goalZ === 'home') return; // own goal not allowed for arcade simplicity

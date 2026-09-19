@@ -137,9 +137,15 @@ LG.KeeperBrain.prototype = {
     // ---------------- default: track the ball along the goal mouth ----------------
     this.state = 'track';
     // narrow the angle instead of mirroring the ball: standing exactly on the
-    // ball's line turned the keeper into a wall that no placed shot could pass
+    // ball's line turned the keeper into a wall that no placed shot could pass.
+    // Come off the line a little more when the play is far away, tuck back in
+    // when it closes in — so the keeper sweeps behind deep balls but keeps the
+    // mouth covered as attackers arrive.
+    var K = LG.Config.keeper;
+    var inFront = (this.line() - ball.z) * this.sign();
+    var out = U.clamp((inFront - 2.5) / (K.depth - 1.5), 0, 1);
     var tx2 = this.clampZoneX(ball.x * 0.55);
-    var tz2 = this.clampZoneZ(this.line() - this.sign() * LG.Config.keeper.stance);
+    var tz2 = this.clampZoneZ(this.line() - this.sign() * (K.stance + out * 0.9));
     this.moveTarget = { x: tx2, z: tz2 };
     this.moveToward(tx2, tz2, me.maxSpeed * 0.6);   // stay set, don't scamper
     me.want.sprint = false;
@@ -195,7 +201,10 @@ LG.KeeperBrain.prototype = {
       var space = this.crowdOf(m);                 // nearest opponent distance
       var open = U.clamp((space - 1.9) / 1.6, 0, 1);
       var forward = (m.z - me.z) * (goal.z > 0 ? 1 : -1);
-      var score = 0.8 + open * 1.0 + U.clamp(forward * 0.09, -0.25, 0.5) - d * 0.022 + U.rand() * 0.25;
+      // build out of the back: an open defender or linking midfielder is a
+      // safer launch point than an early ball to a marked striker
+      var roleBias = m.idx === 1 ? 0.18 : (m.idx === 0 ? 0.08 : 0);
+      var score = 0.8 + open * 1.0 + U.clamp(forward * 0.09, -0.25, 0.5) - d * 0.022 + U.rand() * 0.25 + roleBias;
       if (!best || score > best.score) { second = best; best = { p: m, score: score }; }
     }
     if (best && second && Math.random() < 0.22) best = second;

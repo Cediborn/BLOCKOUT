@@ -8,9 +8,10 @@
   var renderer, scene, camera, camCtrl;
   var match = null;
   var arenaObj = null;
-  var UIState = 'menu';          // menu | sides | diff | select | style | how | match | paused | result
+  var UIState = 'menu';          // menu | sides | diff | select | style | court | how | match | paused | result
   var selectedId = 'blaze';
   var outfitColor = null;        // null = regular clothes, or LG.OutfitColors entry
+  var awayColor = null;          // null = default rogue kit, or LG.OutfitColors entry
   var bgT = 0;
   var clock = { t: 0 };
   var isMobile = false;
@@ -47,6 +48,12 @@
     LG.HUD.bindButtons();
     refreshDifficultyUI();
     buildSelectGrid();
+    if (LG.Courts) {
+      LG.Courts.probeAll(function () {
+        if (UIState === 'court') buildCourtGrid();
+        if (arenaObj && arenaObj.refreshCourt) arenaObj.refreshCourt();
+      });
+    }
 
     window.addEventListener('resize', onResize);
     window.addEventListener('orientationchange', onResize);
@@ -193,6 +200,7 @@
     bus.on('styleRequested', function () {
       UIState = 'style';
       buildColorGrid();
+      buildAwayColorGrid();
       showOverlay('select-overlay', false);
       showOverlay('style-overlay', true);
     });
@@ -206,6 +214,25 @@
     bus.on('styleConfirmed', function () {
       UIState = 'select';
       showOverlay('style-overlay', false);
+      showOverlay('select-overlay', true);
+    });
+
+    bus.on('courtRequested', function () {
+      UIState = 'court';
+      buildCourtGrid();
+      showOverlay('select-overlay', false);
+      showOverlay('court-overlay', true);
+    });
+
+    bus.on('courtBackRequested', function () {
+      UIState = 'select';
+      showOverlay('court-overlay', false);
+      showOverlay('select-overlay', true);
+    });
+
+    bus.on('courtConfirmed', function () {
+      UIState = 'select';
+      showOverlay('court-overlay', false);
       showOverlay('select-overlay', true);
     });
 
@@ -346,6 +373,7 @@
       playerId: playerId, homeName: 'YOU', awayName: 'ROGUE',
       difficulty: LG.Difficulty.get(),
       outfitColor: outfitColor,
+      awayColor: awayColor,
     });
     match.attachScene(scene, arenaObj);
     match.camera = camCtrl;
@@ -398,7 +426,7 @@
     document.getElementById('scoreboard').classList.toggle('hidden', !on);
     document.getElementById('pause-btn').classList.toggle('hidden', !on);
     document.getElementById('coin-chip').classList.toggle('hidden', false);
-    var overlays = ['menu-overlay', 'sides-overlay', 'diff-overlay', 'select-overlay', 'style-overlay', 'how-overlay', 'pause-overlay', 'result-overlay'];
+    var overlays = ['menu-overlay', 'sides-overlay', 'diff-overlay', 'select-overlay', 'style-overlay', 'court-overlay', 'how-overlay', 'pause-overlay', 'result-overlay'];
     for (var i = 0; i < overlays.length; i++) document.getElementById(overlays[i]).classList.add('hidden');
   }
 
@@ -537,6 +565,141 @@
       }
     }
     refreshStylePreview();
+  }
+
+  // ---------------- court picker UI ----------------
+  function buildCourtGrid() {
+    var grid = document.getElementById('court-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    var preview = document.getElementById('court-preview');
+    var list = (LG.Courts && LG.Courts.list()) || [];
+    var selected = LG.Courts ? LG.Courts.selected() : '';
+
+    // procedural / classic tile
+    (function () {
+      var t = document.createElement('div');
+      t.className = 'court-btn' + (selected === '' ? ' selected' : '');
+      t.innerHTML =
+        '<div class="court-thumb procedural">CLASSIC<br>&nbsp;STREET</div>' +
+        '<div class="court-name">CLASSIC</div>';
+      t.addEventListener('click', function () {
+        if (!LG.Courts) return;
+        LG.Courts.set('');
+        if (arenaObj && arenaObj.refreshCourt) arenaObj.refreshCourt();
+        LG.Audio.sfx.click();
+        refreshCourtGrid();
+      });
+      grid.appendChild(t);
+    })();
+
+    // court tiles
+    for (var i = 0; i < list.length; i++) {
+      (function (c) {
+        var t = document.createElement('div');
+        t.className = 'court-btn' + (selected === c.id ? ' selected' : '');
+        var name = c.id === 'best' ? c.name : 'COURT ' + c.id.replace('court', '');
+        t.innerHTML =
+          '<img class="court-thumb" src="courts/' + c.file + '" alt="' + name + '" loading="lazy">' +
+          '<div class="court-name">' + name + '</div>';
+        t.addEventListener('click', function () {
+          if (!LG.Courts) return;
+          LG.Courts.set(c.id);
+          if (arenaObj && arenaObj.refreshCourt) arenaObj.refreshCourt();
+          LG.Audio.sfx.click();
+          refreshCourtGrid();
+        });
+        grid.appendChild(t);
+      })(list[i]);
+    }
+
+    if (list.length === 0 && preview) {
+      preview.innerHTML = '<span>📷 NO EXTRA COURTS FOUND — PLAYING THE CLASSIC STREET</span>';
+    }
+    refreshCourtGrid();
+  }
+
+  function refreshCourtGrid() {
+    var grid = document.getElementById('court-grid');
+    if (!grid) return;
+    var selected = LG.Courts ? LG.Courts.selected() : '';
+    var list = (LG.Courts && LG.Courts.list()) || [];
+    var btns = grid.querySelectorAll('.court-btn');
+    for (var i = 0; i < btns.length; i++) {
+      var id = i === 0 ? '' : (list[i - 1] ? list[i - 1].id : '');
+      btns[i].classList.toggle('selected', id === selected);
+    }
+    refreshCourtPreview();
+  }
+
+  function refreshCourtPreview() {
+    var preview = document.getElementById('court-preview');
+    if (!preview) return;
+    var selected = LG.Courts ? LG.Courts.selected() : '';
+    if (selected === '') {
+      preview.innerHTML = '<span>🏟 CLASSIC STREET — THE ORIGINAL BLOCK OUT PITCH</span>';
+      return;
+    }
+    var d = LG.Courts && LG.Courts.get(selected);
+    var name = d ? d.name : '';
+    preview.innerHTML = '<span>🎯 ' + name + ' — PLAYING ON THIS COURT</span>';
+  }
+
+  // ---------------- opponent kit UI ----------------
+  function buildAwayColorGrid() {
+    var grid = document.getElementById('away-color-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    var regBtn = document.createElement('div');
+    regBtn.className = 'color-btn' + (awayColor === null ? ' selected' : '');
+    regBtn.innerHTML = '<div class="color-swatch" style="background:linear-gradient(135deg,#7a1f1f,#241010);border-color:rgba(255,255,255,0.5)"></div><div class="color-label">DEFAULT</div>';
+    regBtn.addEventListener('click', function () {
+      awayColor = null;
+      refreshAwayColorGrid();
+      LG.Audio.sfx.click();
+    });
+    grid.appendChild(regBtn);
+    for (var i = 0; i < LG.OutfitColors.length; i++) {
+      (function (c) {
+        var btn = document.createElement('div');
+        btn.className = 'color-btn' + (awayColor && awayColor.id === c.id ? ' selected' : '');
+        btn.innerHTML = '<div class="color-swatch" style="background:' + c.hex + '"></div><div class="color-label">' + c.label + '</div>';
+        btn.addEventListener('click', function () {
+          awayColor = c;
+          refreshAwayColorGrid();
+          LG.Audio.sfx.click();
+        });
+        grid.appendChild(btn);
+      })(LG.OutfitColors[i]);
+    }
+    refreshAwayColorGrid();
+  }
+
+  function refreshAwayColorGrid() {
+    var btns = document.querySelectorAll('#away-color-grid .color-btn');
+    for (var i = 0; i < btns.length; i++) {
+      if (i === 0) {
+        btns[i].classList.toggle('selected', awayColor === null);
+      } else {
+        var c = LG.OutfitColors[i - 1];
+        btns[i].classList.toggle('selected', awayColor && awayColor.id === c.id);
+      }
+    }
+    refreshAwayKitNote();
+  }
+
+  function refreshAwayKitNote() {
+    var note = document.getElementById('away-kit-note');
+    if (!note) return;
+    if (!awayColor || !outfitColor || awayColor.id !== outfitColor.id) {
+      note.className = 'kit-note';
+      note.textContent = awayColor
+        ? 'ROGUE wear the ' + awayColor.label + ' kit'
+        : 'ROGUE keep their default kit';
+      return;
+    }
+    note.className = 'kit-note conflict';
+    note.textContent = '⚠ ' + awayColor.label + ' is your own kit — pick a different color';
   }
 
   function refreshStylePreview() {
