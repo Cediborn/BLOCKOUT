@@ -10,7 +10,6 @@ LG.Arena = (function () {
   var root = null;
   var anims = [];
   var surfaceGroup = null;   // the pitch slab + lines + logo, rebuilt on court change
-  var goalGroup = null;      // cosmetic 3D goal frame/net (built once; see goals())
 
   function skyBox() {
     var g = new THREE.SphereGeometry(70, 16, 12);
@@ -276,23 +275,6 @@ LG.Arena = (function () {
     north.position.set(0, 0, -C.length / 2);
     g.add(north);
     return g;
-  }
-
-  // The 3D goal frame is purely cosmetic.  Lyrics that already PAINT their own
-  // goal mouth + net (LG.Courts.meta(id).paintedGoal) should not be doubled by
-  // our frame — hide it while keeping every piece of functional goal geometry
-  // (posts collision list, keeper, net-pocket) exactly where the art shows it.
-  function applyGoalVisibility() {
-    if (!goalGroup) return;
-    var painted = false;
-    if (LG.Courts) {
-      var d = LG.Courts.active();
-      if (d) {
-        var m = LG.Courts.meta(d.id);
-        painted = !!(m && m.paintedGoal);
-      }
-    }
-    goalGroup.visible = !painted;
   }
 
   // ---------------- bleachers + spectators ----------------
@@ -743,15 +725,7 @@ LG.Arena = (function () {
     surfaceGroup = buildSurface();
     root.add(surfaceGroup);
 
-    // The 3D goal frame/net is purely cosmetic (functional goal geometry —
-    // posts collision list, goal detection, keeper, net-pocket — lives in
-    // coordinate arrays, NOT this mesh).  Some court artworks already
-    // paint their own goal mouth + net (paintedGoal), so drop this frame
-    // from the screen to avoid the ghost "double net" — without touching
-    // gameplay.  Single source of truth = LG.Courts.meta(id).paintedGoal.
-    goalGroup = goals();
-    root.add(goalGroup);
-    applyGoalVisibility();
+    root.add(goals());
     root.add(bleacher(-1));
     root.add(bleacher(1));
     root.add(sideSpectators(1));
@@ -789,8 +763,6 @@ LG.Arena = (function () {
         root.remove(surfaceGroup);
         surfaceGroup = buildSurface();
         root.add(surfaceGroup);
-        // court art may paint its own goal -> re-check cosmetic frame visibility
-        applyGoalVisibility();
       },
       update: function (dt) {
         for (var i = 0; i < anims.length; i++) {
