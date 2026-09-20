@@ -77,8 +77,12 @@ LG.HUD = (function () {
   }
 
   function setScore(h, a) {
-    scoreEl.home.textContent = h;
-    scoreEl.away.textContent = a;
+    // TEMP DEBUG: verify the live-path value actually reaches the DOM board.
+    console.log('[score-trace] hud.setScore called with', h, a);
+    if (scoreEl.home) scoreEl.home.textContent = h;
+    if (scoreEl.away) scoreEl.away.textContent = a;
+    console.log('[score-trace] #home-score now =', scoreEl.home && scoreEl.home.textContent,
+      ' #away-score now =', scoreEl.away && scoreEl.away.textContent);
   }
 
   function setClock(t) {
