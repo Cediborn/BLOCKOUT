@@ -1,46 +1,133 @@
 // ============================================================
-// COURTS — pitch backdrop selection.
-// The courts/ folder holds street-court art (best.png, 1.png,
-// 2.png ...). This module probes the folder at runtime, keeps the
-// chosen court in localStorage, and hands the arena a THREE.js
-// texture for the pitch slab whenever a custom court is active.
-//   - robust: no localStorage / no Image / headless -> procedural
-//   - future-proof: dropping court7.png into courts/ just works
+// COURTS - street-court backdrop registry.
+//
+// Every hand-painted court lives in courts/ and is registered HERE
+// (the ONLY place court ids/files/names are listed).  The arena and
+// the menu both read from LG.Courts so the disk, the picker and the
+// pitch can never disagree.
+//
+// Each court also declares VISUAL metadata used by the arena:
+//
+//   paintedGoal:true   the artwork ALREADY paints the goal (posts,
+//                      crossbar, net) onto the slab.  The arena then
+//                      hides the game's cosmetic 3D goal frame so we
+//                      never see a DOUBLE NET / DOUBLE GOAL.  The
+//                      functional goal geometry (post collision, goal
+//                      detection, keeper, net pocket) stays exactly in
+//                      place, invisibly aligned with the painted goal.
+//   paintedGoal:false  the game draws its own visible goal (procedural
+//                      "CLASSIC" pitch - default).
+//
+//   fit:"cover"    (default) NOTHING is distorted.  A horizontal strip
+//                  of the artwork fills the slab; the sides are cropped
+//                  off evenly.  Image top/bottom stay glued to the goal
+//                  lines (z = +/- 22), so painted goals hug the goal
+//                  lines even when the art is wider than the pitch.
+//   fit:"stretch"  fill the full slab width (mild horizontal pull) for
+//                  narrow/tall artwork whose painted goals would be
+//                  cropped off the sides by "cover".
+//
+// The actual UV math lives in LG.Courts.fitCalc - a pure function (no
+// THREE) shared by the arena and the headless boot harness, so the two
+// can never drift.
 // ============================================================
-var LG = window.LG = window.LG || {};
+window.LG = window.LG || {};
 
 LG.Courts = (function () {
   var KEY = 'blockout.court.v1';
   var hasStorage = false;
-
   try {
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem('__bo_test__', '1');
       localStorage.removeItem('__bo_test__');
       hasStorage = true;
     }
-  } catch (e) { /* no storage (private mode / headless) */ }
+  } catch (e) { /* ignore */ }
 
   // ------------------------------------------------------------
-  // candidate courts.  Numeric files (1.png ...) + a few named
-  // ones (best.png).  Probing handles any missing files.
+  // THE REGISTRY - every court, explicitly.  Keep sorted by name.
   // ------------------------------------------------------------
-  var defs = [];
-  var i;
-  for (i = 1; i <= 24; i++) {
-    defs.push({ id: 'court' + i, file: i + '.png', name: 'COURT ' + i });
-  }
-  for (i = 1; i <= 8; i++) {
-    defs.push({ id: 'court' + i, file: 'court' + i + '.png', name: 'COURT ' + i });
-  }
-  defs.push({ id: 'best', file: 'best.png', name: 'MAIN COURT' });
+  var DEFS = [
+    { id: 'angel',      file: 'ANGEL GROUNDS.png', name: 'ANGEL GROUNDS' },
+    { id: 'ballgads',   file: 'BALLGADS\'.png',   name: 'BALLGADS\'' },
+    { id: 'cardi',      file: 'CARDI.png',         name: 'CARDI' },
+    { id: 'crow-d',     file: 'CROW-D.png',        name: 'CROW-D' },
+    { id: 'crow-w',     file: 'CROW-W.png',        name: 'CROW-W' },
+    { id: 'daems',      file: 'DAEMS LOUNGE.png',  name: 'DAEMS LOUNGE' },
+    { id: 'galaktikos', file: 'GALAKTIKOS.png',    name: 'GALAKTIKOS' },
+    { id: 'heartstyle', file: 'HEARTSTYLE.png',    name: 'HEARTSTYLE' },
+    { id: 'lyte',       file: 'LYTE ARENA.png',    name: 'LYTE ARENA' },
+    { id: 'manzies',    file: 'MANZIES.png',       name: 'MANZIES' },
+    { id: 'marilyne',   file: 'MARILYNE.png',      name: 'MARILYNE' },
+    { id: 'motherland', file: 'MOTHERLAND.png',    name: 'MOTHERLAND' },
+    { id: 'rizier',     file: 'THE RIZIER.png',    name: 'THE RIZIER' },
+    { id: 'turf',       file: 'TURF.png',          name: 'TURF' },
+    { id: 'yonald',     file: 'YONALD.png',        name: 'YONALD' },
+  ];
 
-  // dedupe by id (1.png + court1.png both probe id court1)
-  var seen = {};
-  defs = defs.filter(function (d) { if (seen[d.id]) return false; seen[d.id] = 1; return true; });
+  // ------------------------------------------------------------
+  // PER-COURT VISUAL metadata - the ONE place to tweak alignment /
+  // painted-goal behaviour per court.  Anything not listed here:
+  //   paintedGoal:true (all customs paint their own goal),
+  //   fit:"cover"      (no distortion, crop sides evenly).
+  // NARROW/TALL paintings get fit:"stretch" so their painted goals
+  // are not cropped off the sides.
+  // ------------------------------------------------------------
+  var META = {
+    DEFAULT: { paintedGoal: true, fit: 'cover' },
+    _table: {
+      ballgads:   { fit: 'stretch' },
+      daems:      { fit: 'stretch' },
+      galaktikos: { fit: 'stretch' },
+      lyte:       { fit: 'stretch' },
+    },
+  };
 
-  var loaded = {};        // id -> true  once the file is known to exist
-  var selected = null;    // chosen id ('' = procedural)
+  // merge DEFAULT with the per-court override
+  function metaFor(id) {
+    var out = {}, k, m = META._table[id] || {};
+    for (k in META.DEFAULT) out[k] = META.DEFAULT[k];
+    for (k in m) out[k] = m[k];
+    return out;
+  }
+  // public accessor.  '' = procedural pitch (game draws its own goal) =
+  // paintedGoal:false.
+  function meta(id) {
+    if (!id) return { paintedGoal: false, fit: 'stretch' };
+    return metaFor(id);
+  }
+
+  // ------------------------------------------------------------
+  // fitCalc - PURE math (no THREE) so the arena AND the headless
+  // boot harness agree on how an artwork sits on the 26 x 44 slab.
+  //   id   court id
+  //   iw,ih  artwork pixel size
+  //   sx,sz  slab world size (x = width, z = length)
+  // returns { mode, strip, offsetX }:
+  //   mode "cover"    no distortion; a centered horizontal strip of the
+  //                   art fills the slab (strip fraction shows, sides
+  //                   cropped evenly: offsetX = (1-strip)/2).
+  //        "stretch"  fill the full slab width (mild horizontal pull).
+  // ------------------------------------------------------------
+  function fitCalc(id, iw, ih, sx, sz) {
+    var m = meta(id);
+    var pitchA = sx / sz;     // 26/44
+    var imageA = iw / ih;
+    var strip = pitchA / imageA; // fraction of the art width shown
+    var out = { mode: 'stretch', strip: 1, offsetX: 0 };
+    if (m.fit === 'cover' && strip < 1) {
+      out.mode = 'cover';
+      out.strip = strip;
+      out.offsetX = (1 - strip) / 2;
+    }
+    return out;
+  }
+
+  var byId = {};
+  for (var i = 0; i < DEFS.length; i++) byId[DEFS[i].id] = DEFS[i];
+
+  var loaded = {};   // id -> def once the file is confirmed to exist
+  var selected = null; // chosen id ('' = procedural)
 
   function load() {
     if (!hasStorage) return;
@@ -53,17 +140,12 @@ LG.Courts = (function () {
     if (!hasStorage) return;
     try { localStorage.setItem(KEY, selected); } catch (e) { /* ignore */ }
   }
-
   load();
 
-  function get(id) {
-    for (var i = 0; i < defs.length; i++) if (defs[i].id === id) return defs[i];
-    return null;
-  }
+  function get(id) { return byId[id] || null; }
 
-  // Asynchronous existence probe.  Uses a real Image so the browser
-  // tells us which files are actually present; every other env is a
-  // no-op (the caller falls back to the procedural pitch).
+  // Asynchronous existence probe using a real Image (browser only;
+  // headless environments are no-ops - they fall back to procedural).
   function probe(def, cb) {
     if (typeof Image === 'undefined') { if (cb) cb(false); return; }
     try {
@@ -80,35 +162,47 @@ LG.Courts = (function () {
       img.src = 'courts/' + def.file;
     } catch (e) { if (cb) cb(false); }
   }
-
   function probeAll(cb) {
-    var pending = defs.length, done = function () { if (--pending <= 0 && cb) cb(); };
-    defs.forEach(function (d) { probe(d, done); });
-    if (!pending) cb && cb();
+    var pending = DEFS.length, done = function () {
+      if (--pending <= 0 && cb) cb();
+    };
+    DEFS.forEach(function (d) { probe(d, done); });
+    if (!pending && cb) cb();
   }
 
-  // ordered, actually-available courts (best first, then numeric)
   function list() {
     var out = [];
-    var pick = function (d) { out.push({ id: d.id, name: d.name, file: d.file, w: d.w, h: d.h }); };
-    var b = get('best');
-    if (b && loaded['best']) {
-      out.push({ id: b.id, name: b.name, file: b.file, w: b.w, h: b.h });
-    }
-    for (var i = 1; i <= 24; i++) {
-      var d = get('court' + i);
-      if (d && loaded[d.id]) pick(d);
+    for (var i = 0; i < DEFS.length; i++) {
+      var d = DEFS[i];
+      if (loaded[d.id]) out.push({ id: d.id, name: d.name, file: d.file, w: d.w, h: d.h });
     }
     return out;
   }
 
+  function texture(id, onLoad) {
+    var d = get(id);
+    if (!d) return null;
+    if (d.tex) { if (onLoad) onLoad(d.tex); return d.tex; }
+    if (typeof THREE === 'undefined' || !THREE.TextureLoader) return null;
+    try {
+      var loader = new THREE.TextureLoader();
+      var t = loader.load('courts/' + d.file, function (tx) {
+        d.tex = tx;
+        if (onLoad) onLoad(tx);
+      });
+      t.anisotropy = 4;
+      return t;
+    } catch (e) { return null; }
+  }
+
   return {
     KEY: KEY,
-
+    DEFS: DEFS,
+    meta: meta,
+    fitCalc: fitCalc,
     list: list,
     probeAll: probeAll,
-
-    // the id the player picked, or '' for the default procedural pitch
+    texture: texture,
     get: get,
     selected: function () { return selected; },
     set: function (id) {
@@ -116,43 +210,17 @@ LG.Courts = (function () {
       save();
       return selected;
     },
-
-    // The court that is currently ACTIVE on the pitch ('' = procedural).
-    // Falls back to procedural when the saved choice is unknown.
     active: function () {
       if (!selected) return null;
       var d = get(selected);
       if (d && loaded[selected]) return d;
       return null;
     },
-
-    // A THREE.Texture for a court id; starts loading on first call.
-    // Returns the texture immediately (three waits for the image) and
-    // fires onLoad once the pixels are available.  Null when headless.
-    texture: function (id, onLoad) {
-      var d = get(id);
-      if (!d) return null;
-      if (d.tex) { if (onLoad) onLoad(d.tex); return d.tex; }
-      if (typeof THREE === 'undefined' || !THREE.TextureLoader) return null;
-      try {
-        var loader = new THREE.TextureLoader();
-        var t = loader.load('courts/' + d.file, function (tx) {
-          d.tex = tx;
-          if (onLoad) onLoad(tx);
-        });
-        t.anisotropy = 4;
-        return t;
-      } catch (e) { return null; }
-    },
-
-    // preload the currently selected court (fires a callback when done)
+    isCustom: function () { return !!this.active(); },
     ensureSelected: function (cb) {
       var d = this.active();
       if (!d) { if (cb) cb(null); return null; }
       return this.texture(d.id, cb);
     },
-
-    // purely cosmetic: is a custom court texture in use right now?
-    isCustom: function () { return !!this.active(); },
   };
 })();

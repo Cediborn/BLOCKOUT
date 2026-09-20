@@ -598,7 +598,7 @@
       (function (c) {
         var t = document.createElement('div');
         t.className = 'court-btn' + (selected === c.id ? ' selected' : '');
-        var name = c.id === 'best' ? c.name : 'COURT ' + c.id.replace('court', '');
+        var name = c.name || ('COURT ' + c.id.replace('court', ''));
         t.innerHTML =
           '<img class="court-thumb" src="courts/' + c.file + '" alt="' + name + '" loading="lazy">' +
           '<div class="court-name">' + name + '</div>';

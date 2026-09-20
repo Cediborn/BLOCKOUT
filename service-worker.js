@@ -9,7 +9,7 @@
 // every release — that is what makes installed clients pick the new files up.
 // ============================================================
 
-var CACHE_NAME = 'blockout-v2';
+var CACHE_NAME = 'blockout-v3';
 var ASSETS = [
   './',
   './index.html',

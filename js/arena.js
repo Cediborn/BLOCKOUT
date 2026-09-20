@@ -10,6 +10,7 @@ LG.Arena = (function () {
   var root = null;
   var anims = [];
   var surfaceGroup = null;   // the pitch slab + lines + logo, rebuilt on court change
+  var goalGroup = null;      // cosmetic 3D goal frame/net (built once; see goals())
 
   function skyBox() {
     var g = new THREE.SphereGeometry(70, 16, 12);
@@ -117,8 +118,17 @@ LG.Arena = (function () {
     return court;
   }
 
-  // A custom court image stretched across the pitch slab.  The texture loads
-  // asynchronously and pops in on load; gameplay geometry is untouched.
+  // A custom court image drawn across the pitch slab as the real ground.
+  // The texture loads asynchronously and pops in on load; gameplay geometry
+  // (posts collision list, goal detection, keeper, net-pocket) is untouched.
+  //
+  // ALIGNMENT = the whole playable area IS the slab, so every gameplay
+  // coordinate always lands on the artwork: image TOP -> the NORTH goal at
+  // z = -C.length/2, image BOTTOM -> the SOUTH goal at z = +C.length/2, and
+  // the painted goals in the art sit exactly under the invisible functional
+  // goals.  The art's OWN markings are used as-is (no synthetic lines on top
+  // — see buildSurface), and painted-goal courts hide the cosmetic 3D goal
+  // frame (see goals / applyGoalVisibility) so there is never a double net.
   function courtSlabCustom(custom) {
     var mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
     var court = new THREE.Mesh(new THREE.PlaneGeometry(C.width, C.length), mat);
@@ -128,12 +138,31 @@ LG.Arena = (function () {
     var ready = function (tex) {
       mat.map = tex;
       mat.needsUpdate = true;
+      applyCourtFit(tex, custom);
     };
     if (LG.Courts) {
       var tex = LG.Courts.texture(custom.id, ready);
       if (tex) { mat.map = tex; mat.needsUpdate = true; }
     }
     return court;
+  }
+
+  // Pins the artwork onto the slab WITHOUT distorting it.  The vertical (z)
+  // axis always keeps the whole image end-to-end, so the painted goals stay
+  // exactly on the invisible goal lines.  Horizontally:
+  //   'cover'   art wider than the pitch -> sample the CENTRAL strip of the
+  //             image (proportions intact, a little cropped off the sides).
+  //   else     narrower-than-pitch art -> fill the width fully (the mild
+  //             pull keeps the goals from being cut off).
+  // The per-court fit comes from the single metadata table in courts.js.
+  function applyCourtFit(tex, custom) {
+    if (!tex || !tex.image || !custom) return;
+    var can = LG.Courts && LG.Courts.fitCalc;
+    var info = can ? LG.Courts.fitCalc(custom.id, w, h, C.width, C.length) : null;
+    if (!info) { tex.repeat.set(1, 1); tex.offset.set(0, 0); return; }
+    if (info.mode !== 'cover' || info.strip >= 1) { tex.repeat.set(1, 1); tex.offset.set(0, 0); return; }
+    tex.repeat.set(info.strip, 1);
+    tex.offset.set(info.offsetX, 0);
   }
 
   // Painted lines are drawn onto a canvas whose pixel-resolution mirrors the
@@ -275,6 +304,21 @@ LG.Arena = (function () {
     north.position.set(0, 0, -C.length / 2);
     g.add(north);
     return g;
+  }
+
+  // The 3D goal frame is purely cosmetic.  Courts that ALREADY PAINT their
+  // own goal mouth + net (LG.Courts.meta(id).paintedGoal) must not be doubled
+  // by our frame — hide it while keeping every piece of functional goal
+  // geometry (posts collision list, keeper, net-pocket) exactly where the art
+  // shows it.  Single source of truth = LG.Courts.meta(id).paintedGoal.
+  function applyGoalVisibility() {
+    if (!goalGroup) return;
+    var painted = false;
+    if (LG.Courts) {
+      var d = LG.Courts.active();
+      if (d) painted = !!(LG.Courts.meta(d.id) && LG.Courts.meta(d.id).paintedGoal);
+    }
+    goalGroup.visible = !painted;
   }
 
   // ---------------- bleachers + spectators ----------------
@@ -704,9 +748,11 @@ LG.Arena = (function () {
     var g = new THREE.Group();
     var custom = LG.Courts ? LG.Courts.active() : null;
     if (custom) {
+      // The artwork IS the court — it carries its own markings.  Drawing any
+      // procedural line overlay or center logo on top is exactly the "picture
+      // behind the game" look the court art was meant to replace, so a custom
+      // surface is JUST the artwork slab (aspect-correct; see courtSlabCustom).
       g.add(courtSlabCustom(custom));
-      // keep gameplay geometry readable over the artwork: faint painted lines
-      g.add(courtLines(0.16));
     } else {
       g.add(courtSlab());
       g.add(courtLines(0.82));
@@ -725,7 +771,14 @@ LG.Arena = (function () {
     surfaceGroup = buildSurface();
     root.add(surfaceGroup);
 
-    root.add(goals());
+    // The 3D goal frame/net is purely cosmetic (functional goal geometry —
+    // posts collision list, goal detection, keeper, net-pocket — lives in
+    // coordinate arrays, NOT this mesh).  Court artwork that already paints
+    // its own goal mouth + net (paintedGoal) must not be doubled by it, so
+    // the frame is hidden for those courts — without touching gameplay.
+    goalGroup = goals();
+    root.add(goalGroup);
+    applyGoalVisibility();
     root.add(bleacher(-1));
     root.add(bleacher(1));
     root.add(sideSpectators(1));
@@ -763,6 +816,8 @@ LG.Arena = (function () {
         root.remove(surfaceGroup);
         surfaceGroup = buildSurface();
         root.add(surfaceGroup);
+        // court art may paint its own goal -> re-check cosmetic frame visibility
+        applyGoalVisibility();
       },
       update: function (dt) {
         for (var i = 0; i < anims.length; i++) {

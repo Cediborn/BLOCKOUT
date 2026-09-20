@@ -187,6 +187,33 @@ check(!initErr, 'init() survives boot on a touch device', initErr && (initErr.me
 var vis = function (id) { return elements[id] && !elements[id].classList.contains('hidden'); };
 check(vis('menu-overlay'), 'main menu ends up visible');
 
+section('1b. court registration + metadata are the single source of truth');
+(function () {
+  // every .png actually stored in courts/ must be registered in LG.Courts.DEFS
+  var disk = fs.readdirSync(path.join(ROOT, 'courts')).filter(function (f) { return /\.png$/i.test(f); });
+  var defs = (LG.Courts && LG.Courts.DEFS) || [];
+  var there = disk.filter(function (f) { return defs.some(function (d) { return d.file === f; }); });
+  check(there.length === disk.length,
+    'every courts/ png is registered', 'disk=' + disk.length + ' registered=' + there.length +
+    (there.length !== disk.length ? ' missing=' + disk.filter(function (f) { return !defs.some(function (d) { return d.file === f; }); }).join(',') : ''));
+  var orphans = defs.filter(function (d) { return disk.indexOf(d.file) < 0; });
+  check(orphans.length === 0, 'every registered court file exists on disk', orphans.map(function (d) { return d.file; }).join(','));
+  var seenIds = {}, dup = null;
+  defs.forEach(function (d) { if (seenIds[d.id]) dup = d.id; seenIds[d.id] = 1; });
+  check(defs.length === disk.length && !dup,
+    'one registered def per court, ids unique', 'defs=' + defs.length + ' idsdup=' + dup);
+
+  // metadata contract: painted-goal rule + aspect fit live ONLY here
+  check(LG.Courts.meta('turf').paintedGoal === true && LG.Courts.meta('turf').fit === 'cover',
+    'TURF metadata: painted goal + cover fit', JSON.stringify(LG.Courts.meta('turf')));
+  check(LG.Courts.meta('ballgads').fit === 'stretch',
+    'narrow portrait courts stretch to keep goals aligned', LG.Courts.meta('ballgads').fit);
+  check(LG.Courts.meta('').paintedGoal === false,
+    'CLASSIC pitch keeps the game\'s own visible goals');
+  check(LG.Courts.meta('some-unknown-court').paintedGoal === true,
+    'unknown courts safely default to the painted-goal rule');
+})();
+
 section('2. the menu flow actually advances');
 var flow = null;
 try {
