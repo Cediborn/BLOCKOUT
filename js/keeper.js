@@ -201,6 +201,10 @@ LG.KeeperBrain.prototype = {
       var space = this.crowdOf(m);                 // nearest opponent distance
       var open = U.clamp((space - 1.9) / 1.6, 0, 1);
       var forward = (m.z - me.z) * (goal.z > 0 ? 1 : -1);
+      // own-goal safety: a mate standing toward OUR goal (or level with us) is
+      // not a distribution target — the pass would travel backward, and a
+      // defensive error needs no extra help
+      if (forward < 0.25) continue;
       // build out of the back: an open defender or linking midfielder is a
       // safer launch point than an early ball to a marked striker
       var roleBias = m.idx === 1 ? 0.18 : (m.idx === 0 ? 0.08 : 0);

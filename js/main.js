@@ -42,8 +42,6 @@
     lights();
     arenaObj = LG.Arena.build(scene);
     if (LG.Living) LG.Living.build({ scene: scene }, arenaObj);
-    console.log('[env-trace] arena.build done; scene.children after env =',
-      scene && scene.children ? scene.children.length : -1);
     LG.Particles.init(scene);
 
     LG.Input.init();

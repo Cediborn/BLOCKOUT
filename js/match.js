@@ -205,6 +205,17 @@ LG.MatchManager.prototype = {
     var g = this.enemyGoal(p.team);
     return p.distTo(g.x, g.z);
   },
+  // shortest distance from point (px,pz) to the segment (ax,az)-(bx,bz)
+  segToPoint: function (ax, az, bx, bz, px, pz) {
+    var abx = bx - ax, abz = bz - az;
+    var l2 = abx * abx + abz * abz;
+    if (l2 < 1e-8) return Math.sqrt((px - ax) * (px - ax) + (pz - az) * (pz - az)); // degenerate
+    var t = ((px - ax) * abx + (pz - az) * abz) / l2;
+    t = LG.Util.clamp(t, 0, 1);
+    var cx = ax + abx * t, cz = az + abz * t;
+    var dx = px - cx, dz = pz - cz;
+    return Math.sqrt(dx * dx + dz * dz);
+  },
   shootRange: function (p) {
     // better shooters fire sooner & farther
     return 8 + p.stats.shoot * 1.1;
@@ -345,6 +356,7 @@ placeKickoff: function () {
         this.resolvePossession();
         // remember where the ball was BEFORE the step — a fast ball can cross
         // the goal plane between frames and needs the whole segment judged
+        this._ballPrevX = this.ball.x;
         this._ballPrevZ = this.ball.z;
         this._ballPrevY = this.ball.y;
         this.ball.step(dt, this.arena);
@@ -933,7 +945,25 @@ placeKickoff: function () {
       if (ball.noPk === p && ball.noPkT > 0) continue;
       d = p.distTo(ball.x, ball.z);
       R = p.radius + ball.r + 0.06;
-      if (d < R) {
+      // swept contact: a fast ball can cross a standing body entirely within a
+      // single frame, so judge the whole segment (prev -> now), not just the
+      // endpoint — otherwise a rocket skips right over a defender's feet.
+      // The sweeping radius is the TRUE body contact (no control slack): the
+      // pickup radius above is a generous "reach out and grab it" circle, but a
+      // ball passing through a player's body mid-flight must physically contact
+      // that body — a fat tube around everyone would block every attack.
+      var onSeg = d < R;
+      if (!onSeg && this._ballPrevX !== undefined && this._ballPrevZ !== undefined) {
+        var sdx = ball.x - this._ballPrevX, sdz = ball.z - this._ballPrevZ;
+        var segLen2 = sdx * sdx + sdz * sdz;
+        // only a genuine in-flight segment counts (a kickoff/goal reset moves the
+        // ball many metres instantly and must not be judged as motion)
+        if (segLen2 < 0.8) {
+          var contact = p.radius + ball.r;
+          onSeg = this.segToPoint(this._ballPrevX, this._ballPrevZ, ball.x, ball.z, p.x, p.z) < contact;
+        }
+      }
+      if (onSeg) {
         if (ball.owner) continue;      // already moving with an owner elsewhere (shouldn't happen)
         if (ball.lastKicker === p && ball.kickT > 0) continue;  // self-hit protection
         var speed = ball.speed();
@@ -1105,6 +1135,21 @@ placeKickoff: function () {
       if (gk._saveSig !== sig) { gk._saveSig = sig; gk._saveRoll = Math.random(); gk._recoverT = 0; }
       if (gk._recoverT > 0) continue;
       if (gk._saveRoll < this.keeperSaveChance(gk, th)) {
+        this.doKeeperSave(gk, th);
+        continue;
+      }
+      // PHYSICAL BODY BLOCK — the reflex roll is the keeper READING the shot
+      // (which a corner-bound shot can genuinely beat), but a ball that
+      // actually crosses AROUND the keeper and slams into his body is stopped:
+      // he is not a ghost. Judge the whole segment the ball travelled this
+      // frame, so a full-speed strike crossing in a single step is still halted.
+      var pAx = (this._ballPrevX !== undefined) ? this._ballPrevX : ball.x;
+      var pAz = (this._ballPrevZ !== undefined) ? this._ballPrevZ : ball.z;
+      var bgx = ball.x - pAx, bgz = ball.z - pAz;
+      var bSeg2 = bgx * bgx + bgz * bgz;
+      var reach = gk.radius + ball.r + 0.06;
+      // (the < 0.8 guard skips kickoff/goal teleports that are not real motion)
+      if (bSeg2 < 0.8 && this.segToPoint(pAx, pAz, ball.x, ball.z, gk.x, gk.z) <= reach) {
         this.doKeeperSave(gk, th);
       }
     }
