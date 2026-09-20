@@ -15,7 +15,7 @@ LG.Living = (function () {
   var LG = window.LG;
   var scene = null;
   var movers = [];          // { kind, g, t, speed, R, y, phase }
-  var cheer = 0;            // seconds left in the crowd cheer pulse
+  var pulse = 0;            // seconds left in the crowd cheer pulse
   var sub = false;          // eventBus subscription guard
 
   function v3(x, y, z) {
@@ -92,7 +92,12 @@ LG.Living = (function () {
   }
 
   function cheer() {
-    cheer = 0.65;
+    pulse = 0.65;   // kick the crowd bob on a real goal (safe: sets the
+                    // *pulse timer*, never the function binding — historical
+                    // "cheer = 0.65" reassigned this function-name's binding
+                    // to a Number and that Number landed in the goal-listener
+                    // array via bus.on('goal', cheer), throwing
+                    // "l[i] is not a function" on the very first goal emit.
   }
 
   function build(ctx) {
@@ -152,12 +157,12 @@ LG.Living = (function () {
         try { LG.Models.animateChar(m2.g, true, m2.phase, m2.speed, 0); } catch (e) { }
       }
     }
-    if (cheer > 0) {
-      cheer -= dt;
+    if (pulse > 0) {
+      pulse -= dt;
       // quick pulse: gently bob everyone so the block feels alive
       for (i = 0; i < movers.length; i++) {
         if (movers[i].kind === 'ped') {
-          movers[i].g.position.y = Math.sin((cheer * 40)) * 0.12;
+          movers[i].g.position.y = Math.sin((pulse * 40)) * 0.12;
         }
       }
     }
