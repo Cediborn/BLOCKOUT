@@ -306,19 +306,16 @@ LG.Arena = (function () {
     return g;
   }
 
-  // The 3D goal frame is purely cosmetic.  Courts that ALREADY PAINT their
-  // own goal mouth + net (LG.Courts.meta(id).paintedGoal) must not be doubled
-  // by our frame — hide it while keeping every piece of functional goal
-  // geometry (posts collision list, keeper, net-pocket) exactly where the art
-  // shows it.  Single source of truth = LG.Courts.meta(id).paintedGoal.
+  // The 3D goal frame must ALWAYS be visible: a court that bakes a painted
+  // goal mouth into its art is a flat backing behind the posts — it is not a
+  // replacement for the real 3D net with depth.  Keeping the 3D frame + net
+  // (goalGroup) visible on every court guarantees nets are never invisible or
+  // flat-texture-only.  The painted mouth sits behind the net plane, so posts,
+  // net-pocket and keeper stay exactly where the art shows them (functional
+  // goal geometry is authored in the 3D frame, never in the paint).
   function applyGoalVisibility() {
     if (!goalGroup) return;
-    var painted = false;
-    if (LG.Courts) {
-      var d = LG.Courts.active();
-      if (d) painted = !!(LG.Courts.meta(d.id) && LG.Courts.meta(d.id).paintedGoal);
-    }
-    goalGroup.visible = !painted;
+    goalGroup.visible = true;
   }
 
   // ---------------- bleachers + spectators ----------------
