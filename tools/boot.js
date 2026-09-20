@@ -165,7 +165,7 @@ global.console.error = global.console.error;
 // ---------------- load the real code ----------------
 var SRC = ['js/config.js', 'js/difficulty.js', 'js/util.js', 'js/audio.js', 'js/progression.js', 'js/input.js',
   'js/particles.js', 'js/courts.js', 'js/models.js', 'js/ball.js', 'js/player.js', 'js/arena.js', 'js/abilities.js',
-  'js/ai.js', 'js/keeper.js', 'js/camera.js', 'js/match.js', 'js/hud.js', 'js/main.js'];
+  'js/ai.js', 'js/keeper.js', 'js/camera.js', 'js/match.js', 'js/hud.js', 'js/main.js', 'js/living.js'];
 
 section('1. scripts parse + boot (as a phone)');
 var bootErr = null;

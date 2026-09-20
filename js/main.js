@@ -41,6 +41,7 @@
 
     lights();
     arenaObj = LG.Arena.build(scene);
+    if (LG.Living) LG.Living.build({ scene: scene }, arenaObj);
     LG.Particles.init(scene);
 
     LG.Input.init();
@@ -747,6 +748,7 @@
       LG.HUD.aim(match.active.shotCharge > 0.15 && match.active.hasBall);
       if (match.state !== 'GOAL') LG.Particles.update(dt);
       arenaObj.update(dt);
+      if (LG.Living) LG.Living.update(dt);
     } else if (UIState === 'menu') {
       // idle cinematic drift
       var a = bgT * 0.06;
@@ -754,6 +756,7 @@
       camera.lookAt(0, 0, 0);
       LG.Particles.update(dt);
       arenaObj.update(dt);
+      if (LG.Living) LG.Living.update(dt);
     } else {
       camera.position.set(0, 19, 24);
       camera.lookAt(0, 0, 0);
