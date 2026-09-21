@@ -411,12 +411,26 @@ placeKickoff: function () {
   // ------------------------------------------------------------
   // HUMAN
   // ------------------------------------------------------------
+  // Screen input -> world movement. PORTRAIT maps 1:1 (screen-right = +x,
+  // screen-up = -z toward the away goal). The LANDSCAPE camera looks across
+  // the pitch from the east touchline, so there screen-right = -z (still the
+  // attack direction!) and screen-up = -x (toward the far side) — the stick
+  // always follows the SCREEN, so controls feel identical in both views while
+  // the world underneath is never altered. Pure function so the harness can
+  // pin the mapping for both views.
+  screenToWorldMove: function (mv) {
+    var land = !!(LG.Settings && LG.Settings.isLandscape && LG.Settings.isLandscape());
+    if (land) return { x: -mv.y, z: -mv.x };
+    return { x: mv.x, z: -mv.y };
+  },
+
   resolveHuman: function (h, dt) {
     var inp = LG.Input;
     var mv = inp.moveVec();
+    var wv = this.screenToWorldMove(mv);
 
-    h.want.x = mv.x;
-    h.want.z = -mv.y;               // screen-up (y+) => -z (toward away goal)
+    h.want.x = wv.x;
+    h.want.z = wv.z;
     h.want.sprint = inp.down('sprint');
 
     if (inp.pressed('switch')) this.switchPlayer();

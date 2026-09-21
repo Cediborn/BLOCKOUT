@@ -4,6 +4,11 @@
 var LG = window.LG = window.LG || {};
 LG.Util = (function () {
   var clamp = function (v, a, b) { return v < a ? a : v > b ? b : v; };
+  // guarded debug logger: silent unless BLOCKOUT_DEBUG is set before load
+  LG.DBG = {
+    on: !!(window && window.BLOCKOUT_DEBUG),
+    log: function (m) { if (LG.DBG.on && window.console) window.console.log(m); },
+  };
   var lerp = function (a, b, t) { return a + (b - a) * t; };
   var lerpClamp = function (a, b, t) { t = clamp(t, 0, 1); return a + (b - a) * t; };
   var rand = function () { return Math.random(); };

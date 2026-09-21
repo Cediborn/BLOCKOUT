@@ -143,7 +143,7 @@ function load(rel) {
   vm.runInThisContext(fs.readFileSync(path.join(ROOT, rel), 'utf8'), { filename: rel });
 }
 
-['js/config.js', 'js/difficulty.js', 'js/util.js', 'js/audio.js', 'js/models.js', 'js/ball.js',
+['js/config.js', 'js/difficulty.js', 'js/settings.js', 'js/util.js', 'js/audio.js', 'js/models.js', 'js/ball.js',
   'js/player.js', 'js/abilities.js', 'js/ai.js', 'js/keeper.js', 'js/match.js',
   'js/input.js'].forEach(load);
 
@@ -174,6 +174,12 @@ if (process.env.SPREAD) LG.Config.keeper.readSpread = parseFloat(process.env.SPR
 if (process.env.NOSAVE) LG.MatchManager.prototype.keeperSaveChance = function () { return 0; };
 
 LG.Input.init();
+// The sim scenarios below pin the PORTRAIT gameplay (the original reference):
+// they drive the human stick along the -z runway and read resolveHuman's
+// world-space intent as though screen-up == attack. View-aware input mapping
+// landed with the TRUE landscape camera, so reset to portrait here; the
+// landscape mapping gets its own dedicated section further down.
+LG.Settings.setView('portrait');
 
 // ---------------- helpers ----------------
 function newMatch(playerId) {
@@ -1408,6 +1414,65 @@ section('13. goalkeeper distribution reaches the chosen teammate');
   // the ball must never simply die short of the target
   var mid = distributeTrial({ level: 'medium' });
   assert(mid.frames > 0 && mid.frames < 120, 'the pass arrives promptly, not after an age', (mid.frames / 60).toFixed(2) + 's');
+})();
+
+// ============================================================
+// LANDSCAPE camera-relative input — kept LAST on purpose: it owns the RNG
+// stream from here on, so it can never shift the seed of the tuned sections
+// above. It drives the real stick and pins that the player's intent follows
+// the TRUE side-on camera basis (-z to the right, -x up-screen).
+// ============================================================
+section('14. LANDSCAPE input: the stick drives the world from the east-side camera');
+(function () {
+  LG.Settings.setView('landscape');            // the TRUE side-on gameplay mode
+  LG.Input.reset();
+  LG.Input.setEnabled(true);
+  LG.Input.update(0);
+
+  var m = newMatch();
+  m.start();
+  m.state = 'PLAY';
+  var h = m.active;
+  m.all.forEach(function (o) {
+    if (o === h) return;
+    if (o.isGoalkeeper) { o.x = 0; o.z = o.team === 0 ? 21.5 : -21.5; return; }
+    place(o, 40, 40);
+  });
+  place(h, 0, 8, Math.PI);
+  giveBall(m, h);
+  var t = { t: 0 };
+
+  // screen-RIGHT on the landscape camera = the away goal direction (-z):
+  // the very first step must already translate the stick into world -z
+  stickTo(1, 0, 1);
+  LG.Input.update(t.t += 1 / 60);
+  m.update(1 / 60);
+  assert(h.want.x > -0.05 && h.want.x < 0.05 && h.want.z < -0.9,
+    'landscape: pushing screen-right = wanting -z (attack, screen-right)',
+    'want(' + h.want.x.toFixed(2) + ',' + h.want.z.toFixed(2) + ')');
+
+  // hold it for a second: the carrier must actually travel up the pitch (left
+  // to right across the screen = -z in world space) while barely drifting in x
+  var z0 = h.z, x0 = h.x;
+  for (var i = 0; i < 45; i++) {
+    LG.Input.update(t.t += 1 / 60);
+    m.update(1 / 60);
+  }
+  assert(h.z < z0 - 2 && Math.abs(h.x - x0) < 1.2,
+    'landscape: running screen-right moved the carrier toward the away goal, not sideways',
+    'x ' + x0.toFixed(1) + '->' + h.x.toFixed(1) + ' | z ' + z0.toFixed(1) + '->' + h.z.toFixed(1));
+
+  // screen-UP on the landscape camera = the far touchline (-x): the stick
+  // must push the player across the width, not toward a goal
+  stickRelease();
+  LG.Input.update(t.t += 1 / 60);
+  stickTo(0, -1, 1);
+  LG.Input.update(t.t += 1 / 60);
+  m.update(1 / 60);
+  assert(h.want.x < -0.9 && h.want.z > -0.05 && h.want.z < 0.05,
+    'landscape: pushing screen-up = wanting -x (far touchline)',
+    'want(' + h.want.x.toFixed(2) + ',' + h.want.z.toFixed(2) + ')');
+  stickRelease();
 })();
 
 // ============================================================

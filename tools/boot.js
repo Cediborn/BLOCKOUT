@@ -336,6 +336,61 @@ section('5. match settings are wired into the real game state');
     'LANDSCAPE => the horizontal wide framing');
   check(global.document.body.classList.contains('view-landscape') && !global.document.body.classList.contains('view-portrait'),
     'body carries view-landscape for the HUD');
+
+  // LANDSCAPE must be a GENUINELY different camera pose, not a zoomed portrait:
+  // the match camera has to move off the east touchline and look across the
+  // pitch width, so the goal-to-goal axis runs left-to-right on screen.
+  var rec = (function () {
+    var cam = {
+      fov: 50,
+      position: { x: 0, y: 0, z: 0, set: function (x, y, z) { this.x = x; this.y = y; this.z = z; } },
+      lookAt: function (x, y, z) { cam.lookX = x; cam.lookY = y; cam.lookZ = z; },
+      updateProjectionMatrix: function () {},
+    };
+    return cam;
+  })();
+  var camCtrl = new LG.MatchCamera(rec);
+
+  LG.Settings.setView('portrait');
+  camCtrl.reset();
+  camCtrl.update(0.02, 0, 0, 0, 0);
+  var pBehind = rec.position.x === 0 && rec.position.y === 30 && rec.position.z === 25;
+  var pLookAway = rec.lookZ < rec.position.z;                 // looking toward -z (away goal)
+  check(pBehind && pLookAway,
+    'PORTRAIT pose: camera behind the play on +z, looking along -z',
+    '(' + rec.position.x + ',' + rec.position.y + ',' + rec.position.z + ') lookAt(' + rec.lookX + ',' + rec.lookY + ',' + rec.lookZ + ')');
+
+  LG.Settings.setView('landscape');
+  camCtrl.reset();
+  camCtrl.update(0.02, 0, 0, 0, 0);
+  var lSide = rec.position.x > 0 && Math.abs(rec.position.z) < 0.01;   // east touchline, level
+  var lAcross = rec.lookX < rec.position.x && rec.lookZ === rec.position.z;  // looking straight west
+  check(lSide && lAcross,
+    'LANDSCAPE pose: camera moves to the east touchline (+x) and looks across the width',
+    '(' + rec.position.x + ',' + rec.position.y + ',' + rec.position.z + ') lookAt(' + rec.lookX + ',' + rec.lookY + ',' + rec.lookZ + ')');
+  check(rec.position.x === 25 && rec.position.z === 0,
+    'LANDSCAPE pose is a genuine side view (not a portrait pulled wider)',
+    'x=' + rec.position.x + ' z=' + rec.position.z);
+
+  // and it FOLLOWS the play along the length (the horizontal gameplay axis)
+  camCtrl.update(0.02, 0, -14, 0, -14);          // action drives 14m toward the away goal
+  check(rec.position.z < -1.5 && rec.position.z > -14.5 && rec.position.x === 25,
+    'LANDSCAPE camera tracks the action left-to-right along -z',
+    'z=' + rec.position.z.toFixed(2) + ' x=' + rec.position.x);
+
+  // screen input adopts the landscape camera basis: the stick always follows
+  // the screen, so controls feel identical while the world is never altered
+  var mm = LG.MatchManager.prototype;
+  LG.Settings.setView('portrait');
+  var pv = mm.screenToWorldMove({ x: 1, y: 0 });
+  var pu = mm.screenToWorldMove({ x: 0, y: 1 });
+  check(pv.x === 1 && pv.z === 0 && pu.x === 0 && pu.z === -1,
+    'PORTRAIT input: right = +x, up = -z (attack up-screen)');
+  LG.Settings.setView('landscape');
+  var lr = mm.screenToWorldMove({ x: 1, y: 0 });
+  var lu = mm.screenToWorldMove({ x: 0, y: 1 });
+  check(lr.x === 0 && lr.z === -1 && lu.x === -1 && lu.z === 0,
+    'LANDSCAPE input: right = -z (attack screen-right), up = -x (far touchline)');
 })();
 
 console.log('\n' + (FAIL === 0 ? 'BOOT + MENU FLOW PASSED' : 'BOOT + MENU FLOW FAILED (' + FAIL + ')'));

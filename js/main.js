@@ -157,6 +157,7 @@
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     updateLayoutClass();
     updateRotate();
+    if (LG.DBG) LG.DBG.log('[viewport] ' + window.innerWidth + 'x' + window.innerHeight + ' aspect ' + (window.innerWidth / window.innerHeight).toFixed(3));
   }
 
   // ---------------- events ----------------
@@ -386,6 +387,7 @@
     updateRotate();
     refreshSettingsUI();
     updateLayoutClass();
+    if (LG.DBG) LG.DBG.log('[orientation] ' + LG.Settings.view());
   }
 
   function refreshSettingsUI() {

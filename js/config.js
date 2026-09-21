@@ -164,15 +164,24 @@ LG.Config = {
     fov: 50,
     xClamp: 11,
     zClamp: 18.5,           // symmetric full-pitch tracking: both ends reachable
-    // landscape framing: pulled closer + tighter so the extra horizontal
-    // screen space becomes a WIDER view of the pitch instead of a far-away
-    // zoom-out (players stay a readable size)
+    // TRUE landscape gameplay camera.
+    //
+    // This is NOT a zoomed portrait: the camera physically moves off the EAST
+    // touchline (+x) and looks back across the pitch WIDTH, so the long axis
+    // (±z — the two goals) runs LEFT-TO-RIGHT on screen. Play flows from
+    // screen-left toward the away goal on screen-right. Screen-up is the far
+    // touchline (−x). The whole pitch plus both goals stays in frame from
+    // aspect ~1.4 (narrow tablet) up to ultra-wide phones/desktop; the pitch
+    // is never stretched, just genuinely re-framed. Verified by exact
+    // projection checks across aspects 1.4–2.2.
     landscape: {
-      height: 27,
-      distance: 23,
-      fov: 44,
-      xClamp: 12,
-      zClamp: 18.5,
+      height: 30,
+      distance: 25,       // sideways standoff from the action (east, +x)
+      fov: 54,            // wide enough to keep both ends in frame at 1.4:1
+      // the side-on view barely drifts across the width, but follows the
+      // action along the length (goals stay in frame, the view feels alive)
+      xClamp: 4,
+      zClamp: 14,
     },
   },
 
