@@ -39,10 +39,15 @@
     camCtrl = new LG.MatchCamera(camera);
     camCtrl.reset();
 
-    lights();
+    // Day/Night atmosphere lives in LG.Lighting (owns the key lights). The
+    // arena environment is untouched by it — only its lighting is rebalanced.
+    LG.Lighting.build(scene, renderer);
     arenaObj = LG.Arena.build(scene);
     if (LG.Living) LG.Living.build({ scene: scene }, arenaObj);
     LG.Particles.init(scene);
+    // gather the environment's own lights/emissive signs/sky now that it exists
+    LG.Lighting.collect(scene);
+    LG.Lighting.setMode(LG.Settings.timeOfDay());
 
     LG.Input.init();
     LG.HUD.init();
@@ -72,65 +77,71 @@
     window.addEventListener('pointerdown', unlockOnce);
 
     bindEvents();
+    bindSettingsUI();
+    refreshSettingsUI();
+    updateLayoutClass();
     showMenu(true);
     requestAnimationFrame(loop);
   }
 
-  function lights() {
-    var hemi = new THREE.HemisphereLight(0x9db4da, 0x23272f, 0.85);
-    scene.add(hemi);
-    var ambient = new THREE.AmbientLight(0x3a4150, 0.5);
-    scene.add(ambient);
-    var sun = new THREE.DirectionalLight(0xffd9a0, 1.15);
-    sun.position.set(16, 30, 12);
-    sun.castShadow = true;
-    var d = 26;
-    sun.shadow.camera.left = -d;
-    sun.shadow.camera.right = d;
-    sun.shadow.camera.top = d;
-    sun.shadow.camera.bottom = -d;
-    sun.shadow.camera.near = 1;
-    sun.shadow.camera.far = 80;
-    sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.bias = -0.0004;
-    scene.add(sun);
-  }
-
-  var lastPortrait = null;
+  var lastRotate = null;
   function updateRotate() {
     if (!isMobile) return;
     var el = document.getElementById('rotate-overlay');
     if (!el) return;
-    var portrait = window.innerHeight > window.innerWidth;
-    if (portrait === lastPortrait) return;      // only touch the DOM on a real flip
-    lastPortrait = portrait;
-    el.classList.toggle('hidden', !portrait);
+    var portraitDevice = window.innerHeight > window.innerWidth;
+    // Portrait is a real playable view now, so a phone may stay upright. Only a
+    // Landscape match on a portrait-held phone wants the prompt, and the menus
+    // are never covered so the player can always change the setting.
+    var want = LG.Settings.isLandscape() && portraitDevice &&
+      (UIState === 'match' || UIState === 'paused');
+    if (want === lastRotate) return;      // only touch the DOM on a real change
+    lastRotate = want;
+    el.classList.toggle('hidden', !want);
   }
 
-  // Landscape + fullscreen, requested when the match actually starts. Doing this
-  // on the first stray pointerdown looked harmless on desktop but on a phone the
-  // viewport resize it triggers re-lays out the page mid-tap, so the press was
-  // swallowed and the button never fired: exactly one press of KICK OFF did
-  // nothing. Starting a match is a user gesture too, so it is still allowed.
+  // Landscape + fullscreen, requested when a LANDSCAPE match actually starts.
+  // Doing this on the first stray pointerdown looked harmless on desktop but on
+  // a phone the viewport resize it triggers re-lays out the page mid-tap, so the
+  // press was swallowed and the button never fired: exactly one press of KICK
+  // OFF did nothing. Starting a match is a user gesture too, so it is allowed.
+  // Portrait matches never force fullscreen or lock.
   function enterLandscape() {
     if (!isMobile) return;
-    if (document.fullscreenElement || document.webkitFullscreenElement) return;
+    if (!LG.Settings.isLandscape()) return;
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      requestOrientation('landscape');
+      return;
+    }
     try {
       var fs = document.documentElement;
       if (fs.requestFullscreen) {
-        fs.requestFullscreen().then(function () { lockLandscape(); }).catch(function () {});
+        fs.requestFullscreen().then(function () { requestOrientation('landscape'); }).catch(function () {});
       } else if (fs.webkitRequestFullscreen) {
         fs.webkitRequestFullscreen();
-        lockLandscape();
+        requestOrientation('landscape');
       }
     } catch (e) {}
   }
 
-  function lockLandscape() {
+  // Steers the physical screen toward the player-chosen view. Locking only
+  // exists behind fullscreen on most mobile browsers, and some refuse entirely
+  // — every path is wrapped so the game keeps playing in whatever shape the
+  // browser actually gives it (the camera + HUD follow the real viewport).
+  function requestOrientation(orient) {
     try {
       var so = screen.orientation || {};
-      if (so.lock && so.lock.call) so.lock('landscape').catch(function () {});
+      if (so.lock && so.lock.call) so.lock(orient).catch(function () {});
+      else if (orient === null && so.unlock) so.unlock();
     } catch (e) {}
+  }
+
+  // Keeps a body class in sync with the REAL viewport so layout tweaks can key
+  // off it regardless of what device media queries report.
+  function updateLayoutClass() {
+    var portrait = window.innerHeight > window.innerWidth;
+    document.body.classList.toggle('is-portrait', portrait);
+    document.body.classList.toggle('is-landscape', !portrait);
   }
 
   function onResize() {
@@ -138,6 +149,7 @@
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    updateLayoutClass();
     updateRotate();
   }
 
@@ -172,6 +184,7 @@
     bus.on('difficultyConfirmed', function () {
       UIState = 'select';
       refreshDifficultyUI();
+      refreshSettingsUI();
       showOverlay('diff-overlay', false);
       showOverlay('select-overlay', true);
     });
@@ -335,6 +348,50 @@
         setupResult(r);
       }, 900);
     });
+  }
+
+  // ---------------- match settings (Time of Day / View) ----------------
+  function bindSettingsUI() {
+    function on(id, fn) {
+      var b = document.getElementById(id);
+      if (!b) return;
+      b.addEventListener('click', function () { LG.Audio.sfx.click(); fn(); });
+    }
+    on('time-day', function () { setTimeOfDay('day'); });
+    on('time-night', function () { setTimeOfDay('night'); });
+    on('view-portrait', function () { setView('portrait'); });
+    on('view-landscape', function () { setView('landscape'); });
+  }
+
+  function setTimeOfDay(m) {
+    LG.Settings.setTimeOfDay(m);
+    // cheap reconfigure — the environment is already built, only the lighting
+    // presets are re-applied (no rebuild, no reload)
+    LG.Lighting.setMode(m);
+    refreshSettingsUI();
+  }
+
+  function setView(m) {
+    LG.Settings.setView(m);
+    // aim the physical screen at the chosen view; if the browser refuses the
+    // lock, fall back to letting the player hold the phone as they like (the
+    // rotate prompt covers the landscape-looking-for-a-flip case)
+    requestOrientation(LG.Settings.isPortrait() ? 'portrait' : 'landscape');
+    updateRotate();
+    refreshSettingsUI();
+  }
+
+  function refreshSettingsUI() {
+    var tod = LG.Settings.timeOfDay();
+    var view = LG.Settings.view();
+    var pairs = [
+      ['time-day', tod === 'day'], ['time-night', tod === 'night'],
+      ['view-portrait', view === 'portrait'], ['view-landscape', view === 'landscape'],
+    ];
+    for (var i = 0; i < pairs.length; i++) {
+      var b = document.getElementById(pairs[i][0]);
+      if (b) b.classList.toggle('selected', pairs[i][1]);
+    }
   }
 
   // Reflect the selected level on the difficulty screen and the select screen.

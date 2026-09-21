@@ -24,7 +24,7 @@
     <div class="rot-box">
       <div class="rot-glyph">↻</div>
       <div class="rot-title">ROTATE YOUR PHONE</div>
-      <div class="rot-sub">landscape required to play</div>
+      <div class="rot-sub">flip to landscape for the wide view — or pick PORTRAIT in game settings</div>
     </div>
   </div>
 
@@ -131,6 +131,24 @@
     <div class="panel">
       <div class="title-xl" style="font-size:clamp(30px,7vmin,54px)"><span class="t1">PICK</span> <span class="t2">YOUR STAR</span></div>
       <div id="diff-chip" class="diff-chip">DIFFICULTY: MEDIUM</div>
+
+      <div class="option-groups">
+        <div class="option-group">
+          <div class="option-label">TIME OF DAY</div>
+          <div class="option-row">
+            <button class="option-btn selected" id="time-day">☀ DAY</button>
+            <button class="option-btn" id="time-night">🌙 NIGHT</button>
+          </div>
+        </div>
+        <div class="option-group">
+          <div class="option-label">GAME VIEW</div>
+          <div class="option-row">
+            <button class="option-btn" id="view-portrait">▯ PORTRAIT</button>
+            <button class="option-btn selected" id="view-landscape">▭ LANDSCAPE</button>
+          </div>
+        </div>
+      </div>
+
       <div id="char-grid" class="char-grid"></div>
       <div class="row-btns">
         <button id="btn-back" class="big-btn" style="min-width:150px; background:linear-gradient(180deg,#9aa6b8,#5d6a7d); box-shadow:0 6px 0 #3c4757">BACK</button>
@@ -229,6 +247,7 @@
   <script src="js/util.js"></script>
   <script src="js/audio.js"></script>
   <script src="js/progression.js"></script>
+  <script src="js/settings.js"></script>
   <script src="js/input.js"></script>
   <script src="js/particles.js"></script>
   <script src="js/courts.js"></script>
@@ -240,6 +259,7 @@
   <script src="js/ai.js"></script>
   <script src="js/keeper.js"></script>
   <script src="js/camera.js"></script>
+  <script src="js/lighting.js"></script>
   <script src="js/match.js"></script>
   <script src="js/hud.js"></script>
   <script src="js/main.js"></script>

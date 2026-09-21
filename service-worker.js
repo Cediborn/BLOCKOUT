@@ -9,7 +9,7 @@
 // every release — that is what makes installed clients pick the new files up.
 // ============================================================
 
-var CACHE_NAME = 'blockout-v3';
+var CACHE_NAME = 'blockout-v4';
 var ASSETS = [
   './',
   './index.html',
@@ -20,8 +20,10 @@ var ASSETS = [
   './js/util.js',
   './js/audio.js',
   './js/progression.js',
+  './js/settings.js',
   './js/input.js',
   './js/particles.js',
+  './js/courts.js',
   './js/models.js',
   './js/ball.js',
   './js/player.js',
@@ -30,9 +32,11 @@ var ASSETS = [
   './js/ai.js',
   './js/keeper.js',
   './js/camera.js',
+  './js/lighting.js',
   './js/match.js',
   './js/hud.js',
   './js/main.js',
+  './js/living.js',
   './lib/three.min.js'
 ];
 

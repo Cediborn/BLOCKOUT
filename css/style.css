@@ -465,6 +465,33 @@ html, body {
 .diff-note { margin-top: 16px; font-size: 11px; letter-spacing: 0.2em; color: var(--hud-amber); min-height: 16px; }
 .diff-chip { margin-top: 10px; font-size: 11px; letter-spacing: 0.26em; color: var(--hud-cyan); opacity: 0.85; }
 
+/* match option groups (time of day / game view) */
+.option-groups {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 14px 34px;
+  margin-top: 16px;
+}
+.option-group { display: flex; flex-direction: column; align-items: center; gap: 7px; }
+.option-label { font-size: 10px; letter-spacing: 0.26em; color: var(--hud-cyan); opacity: 0.8; }
+.option-row { display: flex; gap: 10px; }
+.option-btn {
+  font-family: inherit;
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  color: #dbe9f7;
+  padding: 9px 20px;
+  min-width: 104px;
+  border-radius: 12px;
+  cursor: pointer;
+  background: rgba(255,255,255,0.05);
+  border: 2px solid rgba(255,255,255,0.14);
+  transition: transform 0.1s ease, border-color 0.1s ease, background 0.1s ease;
+}
+.option-btn:hover { transform: translateY(-3px); border-color: rgba(255,255,255,0.4); }
+.option-btn.selected { border-color: var(--hud-cyan); background: rgba(53,224,255,0.13); color: #fff; box-shadow: 0 0 18px rgba(53,224,255,0.3); }
+
 /* select sides */
 .side-card {
   display: flex;
@@ -719,6 +746,8 @@ html, body {
   .help-list { font-size: 12px; }
   .char-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
   .diff-row { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .option-groups { gap: 12px 22px; }
+  .option-btn { min-width: 88px; padding: 8px 14px; }
 }
 
 /* very small screens */

@@ -15,8 +15,18 @@ LG.MatchCamera = function (camera) {
 };
 
 LG.MatchCamera.prototype = {
-  reset: function () {
+  // Orientation-aware framing. Portrait keeps the original camera; landscape
+  // uses the dedicated config so the wider screen shows more pitch without
+  // shrinking the players to dots. The aspect is whatever the canvas is right
+  // now, so flipping the phone (or resizing the window) is picked up live.
+  cfg: function () {
     var C = LG.Config.camera;
+    if (this.camera.aspect >= 1 && C.landscape) return C.landscape;
+    return C;
+  },
+
+  reset: function () {
+    var C = this.cfg();
     this.followX = 0; this.followZ = 0;
     this.shakeT = 0; this.zoomPulse = 0;
     this.camera.fov = C.fov;
@@ -30,7 +40,7 @@ LG.MatchCamera.prototype = {
 
   update: function (dt, targetX, targetZ, ballX, ballZ) {
     var U = LG.Util;
-    var C = LG.Config.camera;
+    var C = this.cfg();
 
     // blend target: weighted ball + action (ball pulls the frame toward the threat)
     var tx = U.lerp(targetX, ballX, 0.42);

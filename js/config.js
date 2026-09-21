@@ -158,11 +158,22 @@ LG.Config = {
   },
 
   camera: {
+    // portrait / base framing (the original broadcast camera)
     height: 30,
     distance: 25,
     fov: 50,
     xClamp: 11,
     zClamp: 18.5,           // symmetric full-pitch tracking: both ends reachable
+    // landscape framing: pulled closer + tighter so the extra horizontal
+    // screen space becomes a WIDER view of the pitch instead of a far-away
+    // zoom-out (players stay a readable size)
+    landscape: {
+      height: 27,
+      distance: 23,
+      fov: 44,
+      xClamp: 12,
+      zClamp: 18.5,
+    },
   },
 
   touch: {
