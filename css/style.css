@@ -270,6 +270,16 @@ html, body {
 #btn-pass   { grid-column: 1; grid-row: 2; border-color: rgba(98,255,138,0.85); box-shadow: 0 0 12px rgba(98,255,138,0.25); }
 #btn-switch { grid-column: 2; grid-row: 2; border-color: rgba(180,160,255,0.6); }
 
+/* ---------- selected-view layout ----------
+   The VIEW choice (not just the physical media query) also drives the HUD and
+   panels, so choosing LANDSCAPE reads horizontal immediately even where the
+   window cannot rotate (desktop, unsupported orientation lock). body classes
+   view-portrait / view-landscape are toggled from LG.Settings. */
+body.view-landscape .overlay .panel { max-width: 1080px; }
+body.view-landscape #actions { right: clamp(10px, 2.6vmin, 22px); bottom: clamp(10px, 2.8vmin, 22px); }
+body.view-landscape #joystick-zone { left: clamp(12px, 3.2vmin, 28px); bottom: clamp(12px, 3.2vmin, 28px); }
+body.view-landscape #special-wrap { left: auto; right: clamp(10px, 2.6vmin, 22px); transform: none; bottom: calc(2 * var(--btn-size) + 30px); }
+
 /* ---------- special ability ---------- */
 #special-wrap {
   position: absolute;

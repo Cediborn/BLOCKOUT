@@ -15,13 +15,15 @@ LG.MatchCamera = function (camera) {
 };
 
 LG.MatchCamera.prototype = {
-  // Orientation-aware framing. Portrait keeps the original camera; landscape
-  // uses the dedicated config so the wider screen shows more pitch without
-  // shrinking the players to dots. The aspect is whatever the canvas is right
-  // now, so flipping the phone (or resizing the window) is picked up live.
+  // Framing follows the player's VIEW choice, not the device's current aspect:
+  // LANDSCAPE always uses the dedicated wide/tight config, PORTRAIT keeps the
+  // original broadcast camera. The projection matrix still tracks the real
+  // canvas, so rotating the phone or resizing the window adapts live without
+  // ever stretching or cropping the world. This is what makes the VIEW buttons
+  // visibly change the gameplay on every device (desktop included).
   cfg: function () {
     var C = LG.Config.camera;
-    if (this.camera.aspect >= 1 && C.landscape) return C.landscape;
+    if (LG.Settings && LG.Settings.isLandscape() && C.landscape) return C.landscape;
     return C;
   },
 

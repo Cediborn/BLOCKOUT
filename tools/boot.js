@@ -33,7 +33,7 @@ function fakeNode() {
     shadow: { camera: { left: 0, right: 0, top: 0, bottom: 0, near: 0, far: 0 }, mapSize: { set: function () {} }, bias: 0 },
     add: function (c) { n.children.push(c); return n; },
     remove: function () { return n; },
-    traverse: function (cb) { cb(n); return n; },
+    traverse: function (cb) { cb(n); (n.children || []).forEach(function (c) { if (c && c.traverse) c.traverse(cb); }); return n; },
     lookAt: function () {}, updateProjectionMatrix: function () {},
     color: color, groundColor: color,
     repeat: { set: function () {}, x: 1, y: 1 }, offset: { set: function () {}, x: 0, y: 0 },
@@ -54,21 +54,38 @@ function fakeNode() {
   });
 }
 var threeCache = {};
-global.THREE = new Proxy({}, {
-  get: function (t, prop) {
-    if (prop in threeCache) return threeCache[prop];
-    if (prop === 'DoubleSide' || prop === 'AdditiveBlending' || prop === 'PCFSoftShadowMap') return 2;
-    if (prop === 'RepeatWrapping') return 1000;
-    if (prop === 'sRGBEncoding') return 3001;
-    var Cls = function () {
-      var node = fakeNode();
-      if (arguments.length >= 2 && typeof arguments[1] === 'object') node.material = arguments[1];
-      return node;
-    };
-    threeCache[prop] = Cls;
-    return Cls;
-  },
-});
+  var MAT_FLAGS = {
+    MeshBasicMaterial: 'isMeshBasicMaterial',
+    MeshLambertMaterial: 'isMeshLambertMaterial',
+    MeshStandardMaterial: 'isMeshStandardMaterial',
+    MeshPhongMaterial: 'isMeshPhongMaterial',
+  };
+  global.THREE = new Proxy({}, {
+    get: function (t, prop) {
+      if (prop in threeCache) return threeCache[prop];
+      if (prop === 'DoubleSide' || prop === 'AdditiveBlending' || prop === 'PCFSoftShadowMap') return 2;
+      if (prop === 'BackSide') return 1;
+      if (prop === 'sRGBEncoding') return 3001;
+      var Cls = function () {
+        var node = fakeNode();
+        if (prop === 'PointLight') node.isPointLight = true;
+        if (MAT_FLAGS[prop] && arguments.length >= 1 && typeof arguments[0] === 'object') {
+          var opts = arguments[0];
+          // the material instance carries its options (side, map, emissive...)
+          // and the real "is-mesh-*" marker, exactly like three.js Materials
+          node.material = opts;
+          node.material[MAT_FLAGS[prop]] = true;
+          node[MAT_FLAGS[prop]] = true;
+          Object.keys(opts).forEach(function (k) { if (opts[k] !== undefined) node[k] = opts[k]; });
+        } else if (arguments.length >= 2 && typeof arguments[1] === 'object') {
+          node.material = arguments[1];
+        }
+        return node;
+      };
+      threeCache[prop] = Cls;
+      return Cls;
+    },
+  });
 
 // ---------------- DOM ----------------
 var html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
@@ -282,6 +299,44 @@ check(!elements['rotate-overlay'].classList.contains('hidden'),
   'the loop re-checks orientation and re-shows the overlay (no resize event needed)');
 
 check(missed.length === 0, 'no getElementById ever missed the real DOM', missed.join(', '));
+
+section('5. match settings are wired into the real game state');
+(function () {
+  // fail-safe defaults (no localStorage in this harness)
+  check(LG.Settings.timeOfDay() === 'day' && LG.Settings.view() === 'landscape',
+    'defaults: day + landscape', LG.Settings.timeOfDay() + '/' + LG.Settings.view());
+
+  // collect() walked the built environment, so setMode has something to drive:
+  // the lamp/flood point lights, the lamp-head emissives and the sky dome
+  var st = LG.Lighting.stats();
+  check(st.points >= 8 && st.emissives >= 3 && st.skies === 1,
+    'Lighting.collect found the environment', JSON.stringify(st));
+
+  // DAY -> NIGHT through the actual button: the full chain must flip
+  var nightErr = null;
+  try { elements['time-night'].fire('click'); } catch (e) { nightErr = e; }
+  check(!nightErr, 'clicking NIGHT runs clean', nightErr && nightErr.message);
+  check(LG.Settings.timeOfDay() === 'night' && LG.Lighting.mode() === 'night',
+    'NIGHT button flipped Settings + Lighting state', LG.Settings.timeOfDay() + '/' + LG.Lighting.mode());
+  check(elements['time-night'].classList.contains('selected') && !elements['time-day'].classList.contains('selected'),
+    'NIGHT reflects in the option UI', 'daySel=' + elements['time-day'].classList.contains('selected') + ' nightSel=' + elements['time-night'].classList.contains('selected'));
+
+  // NIGHT -> DAY restores it
+  elements['time-day'].fire('click');
+  check(LG.Settings.timeOfDay() === 'day' && LG.Lighting.mode() === 'day',
+    'DAY button restored the lighting');
+
+  // VIEW drives the match camera framing (the visible gameplay change)
+  var probe = new LG.MatchCamera({ aspect: 1.9 });   // wide canvas, on purpose
+  LG.Settings.setView('portrait');
+  check(probe.cfg() === LG.Config.camera && probe.cfg() !== LG.Config.camera.landscape,
+    'PORTRAIT => the original broadcast framing');
+  LG.Settings.setView('landscape');
+  check(probe.cfg() === LG.Config.camera.landscape,
+    'LANDSCAPE => the horizontal wide framing');
+  check(global.document.body.classList.contains('view-landscape') && !global.document.body.classList.contains('view-portrait'),
+    'body carries view-landscape for the HUD');
+})();
 
 console.log('\n' + (FAIL === 0 ? 'BOOT + MENU FLOW PASSED' : 'BOOT + MENU FLOW FAILED (' + FAIL + ')'));
 process.exit(FAIL === 0 ? 0 : 1);

@@ -19,6 +19,7 @@ LG.Lighting = (function () {
   var pointLights = [];  // { light, base }
   var emissives = [];    // { mat, base }
   var skies = [];        // { mat, base }
+  var stats = { points: 0, emissives: 0, skies: 0 };
 
   var PRESETS = {
     day: {
@@ -33,15 +34,20 @@ LG.Lighting = (function () {
       fill: 0.0,
     },
     night: {
-      hemiSky: 0x2a3a5c, hemiGround: 0x080b12, hemiIntensity: 0.30,
-      ambColor: 0x121a2c, ambIntensity: 0.22,
-      sunColor: 0xa7bdff, sunIntensity: 0.30,   // cool "moon" fill, soft shadows
-      fogColor: 0x060a12, fogNear: 38, fogFar: 112,
-      exposure: 1.08,
-      pointIntensity: 3.4, pointDistance: 1.3,
+      // True night: the surroundings and horizon drop into deep shade while the
+      // pitch stays lit by boosted lamp floods + the overhead fills. The court
+      // reads as "street football at night under floodlights" — never a dark
+      // filter on top of the daytime scene (sky tint, emissive windows/lamps
+      // and the warm flood weights all carry the night look on their own).
+      hemiSky: 0x2a3a5c, hemiGround: 0x080b12, hemiIntensity: 0.22,
+      ambColor: 0x121a2c, ambIntensity: 0.18,
+      sunColor: 0xa7bdff, sunIntensity: 0.22,   // cool "moon" fill, soft shadows
+      fogColor: 0x05080f, fogNear: 42, fogFar: 115,
+      exposure: 1.05,
+      pointIntensity: 2.1, pointDistance: 1.25,
       emissive: 1.8,
-      skyTint: 0x9fb0d6,
-      fill: 1.25,
+      skyTint: 0x8697bc,
+      fill: 1.1,
     },
   };
 
@@ -90,6 +96,7 @@ LG.Lighting = (function () {
         if (o._lgBase === undefined) {
           o._lgBase = { intensity: o.intensity, distance: o.distance };
           pointLights.push(o);
+          stats.points++;
         }
         return;
       }
@@ -101,6 +108,7 @@ LG.Lighting = (function () {
       if (m.isMeshBasicMaterial && m.side === THREE.BackSide && m.map && skies.indexOf(m) < 0) {
         skies.push(m);
         m._lgBase = m.color ? m.color.getHex() : 0xffffff;
+        stats.skies++;
       }
     });
   }
@@ -111,6 +119,7 @@ LG.Lighting = (function () {
     if (m.emissive.r + m.emissive.g + m.emissive.b <= 0.001) return;
     emissives.push(m);
     m._lgBaseEmissive = m.emissiveIntensity !== undefined ? m.emissiveIntensity : 1;
+    stats.emissives++;
   }
 
   function build(sc, rend) {
@@ -173,5 +182,7 @@ LG.Lighting = (function () {
     collect: collect,
     setMode: setMode,
     mode: function () { return mode; },
+    // what the environment actually contained when collect() ran
+    stats: function () { return { points: stats.points, emissives: stats.emissives, skies: stats.skies }; },
   };
 })();

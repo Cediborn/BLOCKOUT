@@ -57,7 +57,7 @@
     if (LG.Courts) {
       LG.Courts.probeAll(function () {
         if (UIState === 'court') buildCourtGrid();
-        if (arenaObj && arenaObj.refreshCourt) arenaObj.refreshCourt();
+        refreshEnvironment(true);
       });
     }
 
@@ -136,12 +136,18 @@
     } catch (e) {}
   }
 
-  // Keeps a body class in sync with the REAL viewport so layout tweaks can key
-  // off it regardless of what device media queries report.
+  // Keeps the body classes in sync with BOTH the real viewport shape and the
+  // player's VIEW choice. is-portrait/is-landscape mirror the actual screen;
+  // view-portrait/view-landscape mirror the selected setting, so choosing
+  // LANDSCAPE rearranges the HUD/panels immediately even where the physical
+  // window cannot rotate (desktop, unsupported orientation lock, ...).
   function updateLayoutClass() {
     var portrait = window.innerHeight > window.innerWidth;
     document.body.classList.toggle('is-portrait', portrait);
     document.body.classList.toggle('is-landscape', !portrait);
+    var wantLandscape = LG.Settings.isLandscape();
+    document.body.classList.toggle('view-landscape', wantLandscape);
+    document.body.classList.toggle('view-portrait', !wantLandscape);
   }
 
   function onResize() {
@@ -379,6 +385,7 @@
     requestOrientation(LG.Settings.isPortrait() ? 'portrait' : 'landscape');
     updateRotate();
     refreshSettingsUI();
+    updateLayoutClass();
   }
 
   function refreshSettingsUI() {
@@ -391,6 +398,19 @@
     for (var i = 0; i < pairs.length; i++) {
       var b = document.getElementById(pairs[i][0]);
       if (b) b.classList.toggle('selected', pairs[i][1]);
+    }
+  }
+
+  // Re-apply the environment options to the arena: with courtSwitch it also
+  // swaps the pitch surface (court change); without it the surface stays put
+  // while the lighting re-collects + re-applies the chosen time of day. This
+  // is what makes the DAY/NIGHT setting actually reach the rendered match (and
+  // keeps a new court's lights/signs on the selected atmosphere).
+  function refreshEnvironment(courtSwitch) {
+    if (courtSwitch && arenaObj && arenaObj.refreshCourt) arenaObj.refreshCourt();
+    if (LG.Lighting) {
+      LG.Lighting.collect(scene);
+      LG.Lighting.setMode(LG.Settings.timeOfDay());
     }
   }
 
@@ -423,6 +443,9 @@
   function startMatch(playerId) {
     selectedId = playerId;
     enterLandscape();
+    // consume the selected atmosphere now (also re-collects + re-applies if a
+    // court swap added any new lights or emissive signs after boot)
+    refreshEnvironment();
     LG.Input.reset();
     if (match) {
       clearMatchFromScene();
@@ -644,7 +667,7 @@
       t.addEventListener('click', function () {
         if (!LG.Courts) return;
         LG.Courts.set('');
-        if (arenaObj && arenaObj.refreshCourt) arenaObj.refreshCourt();
+        refreshEnvironment(true);
         LG.Audio.sfx.click();
         refreshCourtGrid();
       });
@@ -663,7 +686,7 @@
         t.addEventListener('click', function () {
           if (!LG.Courts) return;
           LG.Courts.set(c.id);
-          if (arenaObj && arenaObj.refreshCourt) arenaObj.refreshCourt();
+          refreshEnvironment(true);
           LG.Audio.sfx.click();
           refreshCourtGrid();
         });
