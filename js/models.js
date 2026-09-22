@@ -442,6 +442,46 @@ var bw = w / 5, bh = h / 7;
     }, 160, 224);
   }
 
+  // city building facade: colored wall with a grid of windows (lit/dark mix)
+  function cityBuildingTex(hexColor, cols, rows) {
+    cols = cols || 4; rows = rows || 5;
+    return LG.Util.makeCanvasTexture(function (g, w, h) {
+      g.fillStyle = hexColor; g.fillRect(0, 0, w, h);
+      var bw = w / cols, bh = h / rows;
+      for (var r = 0; r < rows; r++) {
+        for (var c = 0; c < cols; c++) {
+          var lit = Math.random() > 0.45;
+          g.fillStyle = lit ? 'rgba(255,225,130,0.75)' : 'rgba(20,25,35,0.85)';
+          g.fillRect(c * bw + bw * 0.14, r * bh + bh * 0.14, bw * 0.72, bh * 0.65);
+        }
+      }
+    }, cols * 8, rows * 8);
+  }
+
+  // striped awning texture (canvas for a shop front canopy)
+  function awningTex(c1, c2) {
+    c1 = c1 || '#cc3333'; c2 = c2 || '#ffffff';
+    return LG.Util.makeCanvasTexture(function (g, w, h) {
+      var sw = 8;
+      for (var i = 0; i < Math.ceil(w / sw); i++) {
+        g.fillStyle = i % 2 === 0 ? c1 : c2;
+        g.fillRect(i * sw, 0, sw, h);
+      }
+    }, 64, 16);
+  }
+
+  // shop sign texture with text
+  function shopSignTex(text, bgColor, fgColor) {
+    bgColor = bgColor || '#1a2233'; fgColor = fgColor || '#ffd23f';
+    return LG.Util.makeCanvasTexture(function (g, w, h) {
+      g.fillStyle = bgColor; g.fillRect(0, 0, w, h);
+      g.font = 'bold ' + Math.floor(h * 0.52) + 'px Arial';
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.fillStyle = fgColor;
+      g.fillText(text, w / 2, h * 0.5);
+    }, 128, 48);
+  }
+
   return {
     buildCharacter: buildCharacter,
     animateChar: animateChar,
@@ -452,5 +492,8 @@ var bw = w / 5, bh = h / 7;
     spectator: spectator,
     billboardTex: billboardTex,
     buildingTex: buildingTex,
+    cityBuildingTex: cityBuildingTex,
+    awningTex: awningTex,
+    shopSignTex: shopSignTex,
   };
 })();

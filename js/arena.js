@@ -360,87 +360,222 @@ LG.Arena = (function () {
   }
 
   // ---------------- buildings & billboards ----------------
+  // Dense city blocks wrap the court on all sides.  Ground floors are shops
+  // with awnings; upper floors are apartments with coloured facades.  The
+  // buildings sit just outside the playable zone so the court stays clear
+  // while the environment feels like a real urban neighbourhood.
   function buildings() {
     var g = new THREE.Group();
-    var brick = LG.Models.buildingTex();
     var dark = new THREE.MeshStandardMaterial({ color: 0x222a34, roughness: 0.9 });
-    function addBlock(x, z, w, h, d, tex) {
-      var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), tex ? new THREE.MeshLambertMaterial({ map: tex }) : new THREE.MeshStandardMaterial({ color: 0x232a34, roughness: 0.9 }));
+
+    // facade palette — warm, saturated tones matching the reference art
+    var facades = [
+      { hex: '#b83c2c', cols: 3, rows: 5 },   // red brick
+      { hex: '#c98830', cols: 3, rows: 4 },   // warm ochre
+      { hex: '#2a6b8a', cols: 3, rows: 5 },   // teal blue
+      { hex: '#d4a853', cols: 4, rows: 4 },   // sandy beige
+      { hex: '#7a4a2e', cols: 3, rows: 5 },   // brown brick
+      { hex: '#3a7a5a', cols: 3, rows: 4 },   // deep green
+      { hex: '#9a3a3a', cols: 4, rows: 5 },   // crimson
+      { hex: '#4a5a8a', cols: 3, rows: 5 },   // slate blue
+      { hex: '#c47a30', cols: 3, rows: 4 },   // orange
+      { hex: '#6a4a7a', cols: 3, rows: 5 },   // purple
+    ];
+    var fi = 0;
+    function facade() { var f = facades[fi % facades.length]; fi++; return f; }
+
+    // shop sign names — short street-food / urban names
+    var shopNames = [
+      'THE CORNER CAFE', 'GROCERY', 'BURGER JOINT', 'BIKE SHOP',
+      'RESIDENCY', 'BARBERSHOP', 'PIZZA PLACE', 'LAUNDROMAT',
+      'TACO SHOP', 'NEWSSTAND', 'COFFEE HOUSE', 'RECORD STORE',
+      'BAKERY', 'FISH MARKET', 'NAIL SALON', 'FLOWER SHOP',
+    ];
+    var si = 0;
+    function shopName() { var s = shopNames[si % shopNames.length]; si++; return s; }
+
+    // awning colours — alternating warm stripes
+    var awningPairs = [
+      ['#cc3333', '#ffffff'], ['#2288cc', '#ffffff'],
+      ['#33aa55', '#ffffff'], ['#dd8822', '#ffffff'],
+      ['#8844aa', '#ffffff'], ['#cc5588', '#ffffff'],
+    ];
+    var ai = 0;
+    function awningPair() { var p = awningPairs[ai % awningPairs.length]; ai++; return p; }
+
+    // ---- addBlock: a coloured building with windows + optional shop front ----
+    function addBlock(x, z, w, h, d, fc, hasShop, shopZ) {
+      // building body
+      var tex = LG.Models.cityBuildingTex(fc.hex, fc.cols, fc.rows);
+      var mat = new THREE.MeshLambertMaterial({ map: tex });
+      var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
       m.position.set(x, h / 2, z);
       m.receiveShadow = true; m.castShadow = true;
       g.add(m);
-      return m;
+
+      // roof slab (flat, slightly wider)
+      var roofM = new THREE.MeshStandardMaterial({ color: 0x3a3a44, roughness: 0.9 });
+      var roof = new THREE.Mesh(new THREE.BoxGeometry(w + 0.3, 0.22, d + 0.3), roofM);
+      roof.position.set(x, h + 0.11, z);
+      roof.receiveShadow = true;
+      g.add(roof);
+
+      // shop front (ground floor facing the court)
+      if (hasShop) {
+        var sz = shopZ != null ? shopZ : (z > 0 ? z + d / 2 + 0.02 : z - d / 2 - 0.02);
+        var shopFace = z > 0 ? 1 : -1;
+        // shop awning
+        var ap = awningPair();
+        var awnTex = LG.Models.awningTex(ap[0], ap[1]);
+        var awn = new THREE.Mesh(
+          new THREE.PlaneGeometry(w * 0.9, 0.8),
+          new THREE.MeshLambertMaterial({ map: awnTex, side: THREE.DoubleSide })
+        );
+        awn.position.set(x, 3.2, sz);
+        awn.rotation.x = shopFace > 0 ? -0.25 : 0.25;
+        g.add(awn);
+        // shop sign
+        var signTex = LG.Models.shopSignTex(shopName(), '#1a2233', '#ffd23f');
+        var sign = new THREE.Mesh(
+          new THREE.PlaneGeometry(w * 0.75, 0.6),
+          new THREE.MeshBasicMaterial({ map: signTex })
+        );
+        sign.position.set(x, 2.8, sz);
+        sign.rotation.y = shopFace > 0 ? 0 : Math.PI;
+        g.add(sign);
+        // shop door (dark recess)
+        var doorM = new THREE.MeshStandardMaterial({ color: 0x1a1e26, roughness: 0.9 });
+        var door = new THREE.Mesh(new THREE.BoxGeometry(1.0, 2.2, 0.15), doorM);
+        door.position.set(x, 1.1, sz);
+        g.add(door);
+        // shop window (lighter panel beside door)
+        var shopWinM = new THREE.MeshBasicMaterial({ color: 0x88aacc, transparent: true, opacity: 0.35 });
+        var shopWin = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.4, 1.4), shopWinM);
+        shopWin.position.set(x + (w * 0.25), 1.5, sz + shopFace * 0.01);
+        g.add(shopWin);
+      }
+
+      // window details on side faces (x-direction)
+      if (w > 6) {
+        var winSide = new THREE.MeshBasicMaterial({ color: 0x5577aa, transparent: true, opacity: 0.25 });
+        var ws = new THREE.Mesh(new THREE.PlaneGeometry(d * 0.8, h * 0.7), winSide);
+        ws.position.set(x + w / 2 + 0.01, h * 0.55, z);
+        ws.rotation.y = Math.PI / 2;
+        g.add(ws);
+      }
     }
-    // main block buildings (original 4 + new ones for a denser city feel)
-    addBlock(-27, -34, 18, 26, 16, brick);
-    addBlock(26, -30, 16, 18, 14);
-    addBlock(-28, 34, 16, 22, 15);
-    addBlock(27, 30, 20, 30, 18, brick);
-    // additional smaller buildings for city density
-    addBlock(-38, -20, 10, 14, 10, brick);
-    addBlock(38, -18, 12, 20, 11);
-    addBlock(-36, 22, 11, 16, 12, brick);
-    addBlock(36, 24, 9, 12, 9);
-    addBlock(-20, -40, 14, 10, 10);
-    addBlock(20, 40, 12, 8, 8, brick);
-    addBlock(-40, 0, 8, 18, 10, brick);
-    addBlock(40, 0, 10, 14, 12);
-    // windows on buildings via emissive plane textures
-    function addWindows(bx, bz, bw, bh, bd, cols, rows) {
-      var winT = LG.Util.makeCanvasTexture(function(c, w, h) {
-        c.fillStyle = '#11161e'; c.fillRect(0, 0, w, h);
-        var cw = w / cols, ch = h / rows;
-        for (var r = 0; r < rows; r++) {
-          for (var c2 = 0; c2 < cols; c2++) {
-            var lit = Math.random() > 0.55;
-            c.fillStyle = lit ? 'rgba(255,230,150,0.7)' : 'rgba(40,50,65,0.8)';
-            c.fillRect(c2 * cw + cw * 0.15, r * ch + ch * 0.15, cw * 0.7, ch * 0.65);
-          }
-        }
-      }, cols * 8, rows * 8);
-      var side1 = new THREE.Mesh(new THREE.PlaneGeometry(bw, bh), new THREE.MeshBasicMaterial({ map: winT }));
-      side1.position.set(bx, bh / 2, bz + bd / 2 + 0.01);
-      g.add(side1);
-      var side2 = new THREE.Mesh(new THREE.PlaneGeometry(bw, bh), new THREE.MeshBasicMaterial({ map: winT }));
-      side2.position.set(bx, bh / 2, bz - bd / 2 - 0.01);
-      side2.rotation.y = Math.PI;
-      g.add(side2);
-      var side3 = new THREE.Mesh(new THREE.PlaneGeometry(bd, bh), new THREE.MeshBasicMaterial({ map: winT }));
-      side3.position.set(bx + bw / 2 + 0.01, bh / 2, bz);
-      side3.rotation.y = Math.PI / 2;
-      g.add(side3);
-    }
-    addWindows(-27, -34, 18, 26, 16, 4, 6);
-    addWindows(26, -30, 16, 18, 14, 3, 4);
-    addWindows(-28, 34, 16, 22, 15, 3, 5);
-    addWindows(27, 30, 20, 30, 18, 4, 7);
-    addWindows(-38, -20, 10, 14, 10, 2, 3);
-    addWindows(38, -18, 12, 20, 11, 2, 4);
-    // rooftop details: water tanks + AC units
+
+    // ================================================================
+    // SOUTH SIDE (z = +24..+36) — shops facing the court
+    // ================================================================
+    addBlock(-12, 26, 10, 12, 8, facade(), true);
+    addBlock(0,   26, 8,  16, 7, facade(), true);
+    addBlock(10,  26, 10, 10, 8, facade(), true);
+    addBlock(-12, 34, 8,  18, 7, facade(), false);
+    addBlock(0,   35, 10, 14, 8, facade(), false);
+    addBlock(12,  34, 9,  20, 7, facade(), false);
+
+    // ================================================================
+    // NORTH SIDE (z = -24..-36) — shops facing the court
+    // ================================================================
+    addBlock(-10, -26, 10, 14, 8, facade(), true);
+    addBlock(2,   -26, 8,  12, 7, facade(), true);
+    addBlock(12,  -26, 10, 16, 8, facade(), true);
+    addBlock(-12, -35, 9,  20, 7, facade(), false);
+    addBlock(0,   -35, 8,  15, 8, facade(), false);
+    addBlock(12,  -35, 10, 18, 7, facade(), false);
+
+    // ================================================================
+    // EAST SIDE (x = +18..+40) — along the touchline
+    // ================================================================
+    addBlock(20, -12, 8, 15, 9, facade(), true);
+    addBlock(20,  0,  9, 12, 8, facade(), true);
+    addBlock(20,  12, 8, 18, 9, facade(), true);
+    addBlock(30, -10, 7, 22, 7, facade(), false);
+    addBlock(30,  4,  8, 16, 8, facade(), false);
+    addBlock(38, -4,  7, 24, 8, facade(), false);
+    addBlock(38,  12, 6, 14, 7, facade(), false);
+
+    // ================================================================
+    // WEST SIDE (x = -18..-40) — along the touchline
+    // ================================================================
+    addBlock(-20, -10, 8, 16, 9, facade(), true);
+    addBlock(-20,  4,  9, 12, 8, facade(), true);
+    addBlock(-20,  14, 8, 20, 9, facade(), true);
+    addBlock(-30, -8,  7, 18, 7, facade(), false);
+    addBlock(-30,  6,  8, 14, 8, facade(), false);
+    addBlock(-38,  0,  7, 22, 8, facade(), false);
+    addBlock(-38,  14, 6, 12, 7, facade(), false);
+
+    // ================================================================
+    // CORNER BUILDINGS — denser corners like the reference
+    // ================================================================
+    addBlock(-22, -22, 7, 14, 7, facade(), false);
+    addBlock( 22, -22, 7, 12, 7, facade(), false);
+    addBlock(-22,  22, 7, 16, 7, facade(), false);
+    addBlock( 22,  22, 7, 10, 7, facade(), false);
+
+    // ================================================================
+    // ROOFTOP DETAILS — water tanks, AC units, railings
+    // ================================================================
     var tankM = new THREE.MeshStandardMaterial({ color: 0x5a4632, roughness: 0.85 });
-    var tank = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.05, 1.5, 12), tankM);
-    tank.position.set(-27, 27.7, -32);
-    tank.castShadow = true;
-    g.add(tank);
-    var tank2 = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 1.2, 10), tankM);
-    tank2.position.set(38, 21.6, -16);
-    tank2.castShadow = true;
-    g.add(tank2);
     var acM = new THREE.MeshStandardMaterial({ color: 0x9aa4ad, roughness: 0.7, metalness: 0.4 });
-    var ac1 = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.5, 0.9), acM);
-    ac1.position.set(28.6, 16.6, -27);
-    ac1.castShadow = true;
-    g.add(ac1);
-    var ac2 = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.55, 1.1), acM);
-    ac2.position.set(-26, 23.2, 33);
-    ac2.castShadow = true;
-    g.add(ac2);
-    g.add(LG.Models.bar(dark, -27, 27, -36, 2.4, 4));
-    // billboards
-    var bb = new THREE.Mesh(new THREE.BoxGeometry(7, 3.2, 0.3), new THREE.MeshLambertMaterial({ map: LG.Models.billboardTex('BLOCK OUT CUP') }));
-    bb.position.set(8, 5.5, -34.2); bb.castShadow = true; g.add(bb);
-    var bb2 = new THREE.Mesh(new THREE.BoxGeometry(6, 2.8, 0.3), new THREE.MeshLambertMaterial({ map: LG.Models.billboardTex('STREET LEAGUE') }));
-    bb2.position.set(-10, 4.6, 33.8); g.add(bb2);
+    var railM = new THREE.MeshStandardMaterial({ color: 0x3a4050, roughness: 0.7, metalness: 0.3 });
+    var tankSpots = [
+      [-12, 12.1, 26], [0, 16.1, 26], [20, 15.1, -12], [-20, 16.1, 14],
+      [30, 22.1, -10], [-30, 18.1, 6], [-12, 20.1, -26], [12, 16.1, -26],
+    ];
+    for (var t = 0; t < tankSpots.length; t++) {
+      var tp = tankSpots[t];
+      var tank = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.65, 1.2, 10), tankM);
+      tank.position.set(tp[0], tp[1], tp[2]);
+      tank.castShadow = true;
+      g.add(tank);
+    }
+    var acSpots = [
+      [8.5, 10.1, 26], [-6, 14.1, 26], [24.5, 12.1, 0],
+      [-24.5, 14.1, 4], [34.5, 20.1, -4], [-34.5, 16.1, 0],
+    ];
+    for (var a = 0; a < acSpots.length; a++) {
+      var ap2 = acSpots[a];
+      var ac = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.45, 0.8), acM);
+      ac.position.set(ap2[0], ap2[1], ap2[2]);
+      ac.castShadow = true;
+      g.add(ac);
+    }
+
+    // ================================================================
+    // BILLBOARDS — larger, on building faces
+    // ================================================================
+    var bb1 = new THREE.Mesh(
+      new THREE.BoxGeometry(7, 3.2, 0.3),
+      new THREE.MeshLambertMaterial({ map: LG.Models.billboardTex('BLOCK OUT CUP') })
+    );
+    bb1.position.set(8, 6.5, -34.2); bb1.castShadow = true; g.add(bb1);
+
+    var bb2 = new THREE.Mesh(
+      new THREE.BoxGeometry(6, 2.8, 0.3),
+      new THREE.MeshLambertMaterial({ map: LG.Models.billboardTex('STREET LEAGUE') })
+    );
+    bb2.position.set(-10, 5.6, 33.8); g.add(bb2);
+
+    // additional shop signs on building sides (facing the streets)
+    var sideSign1 = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.5, 1.2),
+      new THREE.MeshBasicMaterial({ map: LG.Models.shopSignTex('GROCERY', '#2a5530', '#ffffff') })
+    );
+    sideSign1.position.set(24.1, 3.5, 0);
+    sideSign1.rotation.y = Math.PI / 2;
+    g.add(sideSign1);
+
+    var sideSign2 = new THREE.Mesh(
+      new THREE.PlaneGeometry(3.5, 1.2),
+      new THREE.MeshBasicMaterial({ map: LG.Models.shopSignTex('PIZZA', '#cc3333', '#ffffff') })
+    );
+    sideSign2.position.set(-24.1, 3.5, 4);
+    sideSign2.rotation.y = -Math.PI / 2;
+    g.add(sideSign2);
+
     return g;
   }
 
@@ -532,6 +667,44 @@ LG.Arena = (function () {
     return g;
   }
 
+  // ---------------- crosswalks & road markings ----------------
+  function crosswalks() {
+    var g = new THREE.Group();
+    var whiteM = new THREE.MeshBasicMaterial({ color: 0xf0f0f0 });
+    // zebra stripe crosswalk: rows of white bars on a road surface
+    function addCrosswalk(cx, cz, rot, width, depth) {
+      var barCount = 5;
+      var barW = width / (barCount * 2 - 1);
+      var barD = depth;
+      for (var b = 0; b < barCount; b++) {
+        var bar = new THREE.Mesh(new THREE.BoxGeometry(barW * 0.85, 0.02, barD), whiteM);
+        bar.position.set(cx + (b - (barCount - 1) / 2) * barW * 2, 0.035, cz);
+        bar.rotation.y = rot;
+        g.add(bar);
+      }
+    }
+    // four crosswalks at the corners of the court zone
+    addCrosswalk(-6,  22, 0, 12, 3);
+    addCrosswalk( 6,  22, 0, 12, 3);
+    addCrosswalk(-6, -22, 0, 12, 3);
+    addCrosswalk( 6, -22, 0, 12, 3);
+    // road edge lines (yellow centre lines)
+    var yellowM = new THREE.MeshBasicMaterial({ color: 0xddaa33 });
+    var edgeLines = [
+      { x: 0, z: 25, w: 52, d: 0.15 },
+      { x: 0, z: -25, w: 52, d: 0.15 },
+      { x: 23, z: 0, w: 0.15, d: 50 },
+      { x: -23, z: 0, w: 0.15, d: 50 },
+    ];
+    for (var i = 0; i < edgeLines.length; i++) {
+      var el = edgeLines[i];
+      var line = new THREE.Mesh(new THREE.BoxGeometry(el.w, 0.02, el.d), yellowM);
+      line.position.set(el.x, 0.032, el.z);
+      g.add(line);
+    }
+    return g;
+  }
+
   // ---------------- concrete Jersey barriers ----------------
   function barriers() {
     var g = new THREE.Group();
@@ -588,7 +761,14 @@ LG.Arena = (function () {
     var woodM = new THREE.MeshStandardMaterial({ color: 0x6d4a2c, roughness: 0.9 });
     var legM = new THREE.MeshStandardMaterial({ color: 0x2c3038, roughness: 0.8 });
     var spots = [
-      { x: 11.6, z: -27.4, rot: 0 }, { x: -11.6, z: 27.4, rot: Math.PI },
+      { x: 11.6, z: -27.4, rot: 0 },
+      { x: -11.6, z: 27.4, rot: Math.PI },
+      { x: 11.6, z: 27.4, rot: 0 },
+      { x: -11.6, z: -27.4, rot: Math.PI },
+      { x: -17.5, z: 10, rot: -Math.PI / 2 },
+      { x: -17.5, z: -6, rot: -Math.PI / 2 },
+      { x: 17.5, z: 10, rot: Math.PI / 2 },
+      { x: 17.5, z: -6, rot: Math.PI / 2 },
     ];
     for (var i = 0; i < spots.length; i++) {
       var s = spots[i];
@@ -617,12 +797,18 @@ LG.Arena = (function () {
     var trunkM = new THREE.MeshStandardMaterial({ color: 0x4a3520, roughness: 0.95 });
     var leafM = new THREE.MeshStandardMaterial({ color: 0x2d6b35, roughness: 0.85 });
     var leafM2 = new THREE.MeshStandardMaterial({ color: 0x3a7d42, roughness: 0.85 });
+    var leafM3 = new THREE.MeshStandardMaterial({ color: 0x4a8a50, roughness: 0.85 });
     var spots = [
       { x: -32, z: -28, s: 1.0 }, { x: 34, z: -24, s: 0.85 },
       { x: -34, z: 20, s: 0.95 }, { x: 32, z: 28, s: 1.1 },
       { x: -18, z: -32, s: 0.7 }, { x: 18, z: 32, s: 0.8 },
       { x: -42, z: -8, s: 0.9 }, { x: 42, z: 8, s: 0.75 },
       { x: -30, z: 36, s: 1.05 }, { x: 30, z: -36, s: 0.9 },
+      // closer trees — at sidewalk / street corners
+      { x: -16, z: 21, s: 0.65 }, { x: 16, z: 21, s: 0.6 },
+      { x: -16, z: -21, s: 0.6 }, { x: 16, z: -21, s: 0.65 },
+      { x: 21, z: -14, s: 0.55 }, { x: 21, z: 14, s: 0.55 },
+      { x: -21, z: -14, s: 0.55 }, { x: -21, z: 14, s: 0.55 },
     ];
     for (var i = 0; i < spots.length; i++) {
       var s = spots[i];
@@ -631,12 +817,11 @@ LG.Arena = (function () {
       trunk.position.y = 1.25 * s.s;
       trunk.castShadow = true;
       tree.add(trunk);
-      var leafMat = Math.random() > 0.5 ? leafM : leafM2;
+      var leafMat = [leafM, leafM2, leafM3][i % 3];
       var crown = new THREE.Mesh(new THREE.SphereGeometry(1.2 * s.s, 8, 6), leafMat);
       crown.position.y = 3.2 * s.s;
       crown.castShadow = true;
       tree.add(crown);
-      // smaller secondary crown for fullness
       var crown2 = new THREE.Mesh(new THREE.SphereGeometry(0.8 * s.s, 6, 5), leafMat);
       crown2.position.set(0.4 * s.s, 2.8 * s.s, 0.3 * s.s);
       crown2.castShadow = true;
@@ -644,7 +829,6 @@ LG.Arena = (function () {
       tree.position.set(s.x, 0, s.z);
       tree.rotation.y = Math.random() * 6.28;
       g.add(tree);
-      // gentle sway animation
       anims.push({ g: crown, t: Math.random() * 6, amp: 0.03 + Math.random() * 0.02, sway: true });
     }
     return g;
@@ -653,27 +837,29 @@ LG.Arena = (function () {
   // ---------------- parked vehicles ----------------
   function vehicles() {
     var g = new THREE.Group();
-    var bodyM = new THREE.MeshStandardMaterial({ color: 0x3a4455, roughness: 0.6, metalness: 0.3 });
-    var bodyM2 = new THREE.MeshStandardMaterial({ color: 0x8a2222, roughness: 0.6, metalness: 0.3 });
-    var bodyM3 = new THREE.MeshStandardMaterial({ color: 0x2a5530, roughness: 0.6, metalness: 0.3 });
     var wheelM = new THREE.MeshStandardMaterial({ color: 0x1a1a1e, roughness: 0.95 });
     var glassM = new THREE.MeshStandardMaterial({ color: 0x5588aa, roughness: 0.3, metalness: 0.4, transparent: true, opacity: 0.5 });
+    // car body colour palette — bright, visible from gameplay camera
+    var colours = [
+      0x3a4455, 0x8a2222, 0x2a5530, 0xccaa22,
+      0x2244aa, 0xaa4488, 0xdd6622, 0x556688,
+      0x227744, 0x993333,
+    ];
+    var mats = colours.map(function(c) {
+      return new THREE.MeshStandardMaterial({ color: c, roughness: 0.6, metalness: 0.3 });
+    });
     function addCar(x, z, rot, col) {
       var car = new THREE.Group();
-      // body
       var body = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.7, 3.6), col);
       body.position.y = 0.55;
       car.add(body);
-      // roof
       var roof = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.55, 1.8), col);
       roof.position.set(0, 1.1, -0.2);
       car.add(roof);
-      // windows
       var win = new THREE.Mesh(new THREE.BoxGeometry(1.52, 0.4, 0.05), glassM);
       win.position.set(0, 1.1, 0.65);
       car.add(win);
       var win2 = win.clone(); win2.position.z = -1.1; car.add(win2);
-      // wheels
       var wGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.15, 8);
       var wPos = [[-0.85, 0.22, 1.0], [0.85, 0.22, 1.0], [-0.85, 0.22, -1.0], [0.85, 0.22, -1.0]];
       for (var w = 0; w < wPos.length; w++) {
@@ -687,10 +873,21 @@ LG.Arena = (function () {
       car.traverse(function(o) { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
       g.add(car);
     }
-    addCar(-33, -10, 0.15, bodyM);
-    addCar(35, 12, -0.2, bodyM2);
-    addCar(-35, 8, 0.1, bodyM3);
-    addCar(33, -12, -0.15, bodyM);
+    // south street (z ~ +26)
+    addCar(-10, 27, 0.1, mats[0]);
+    addCar(2, 27.5, -0.05, mats[3]);
+    addCar(10, 27, 0.15, mats[4]);
+    // north street (z ~ -26)
+    addCar(-8, -27, Math.PI + 0.1, mats[1]);
+    addCar(5, -27.5, Math.PI - 0.08, mats[5]);
+    // east street (x ~ +23)
+    addCar(24, -10, Math.PI / 2, mats[2]);
+    addCar(24.5, 4, -Math.PI / 2, mats[6]);
+    addCar(24, 14, Math.PI / 2, mats[7]);
+    // west street (x ~ -23)
+    addCar(-24, -8, -Math.PI / 2, mats[8]);
+    addCar(-24.5, 6, Math.PI / 2, mats[9]);
+    addCar(-24, 16, -Math.PI / 2, mats[0]);
     return g;
   }
 
@@ -698,14 +895,13 @@ LG.Arena = (function () {
   function streetFurniture() {
     var g = new THREE.Group();
     var poleM = new THREE.MeshStandardMaterial({ color: 0x2a2e38, roughness: 0.6, metalness: 0.4 });
-    var signM = new THREE.MeshStandardMaterial({ color: 0x3388cc, roughness: 0.7 });
-    // additional street lamps around the perimeter
+    var lampHeadM = new THREE.MeshStandardMaterial({ color: 0xfff6d8, emissive: 0xfff2c9, emissiveIntensity: 1.2 });
+    // ---- street lamps ----
     var lampSpots = [
       { x: -20, z: -28 }, { x: 20, z: -28 },
       { x: -20, z: 28 }, { x: 20, z: 28 },
       { x: -34, z: 0 }, { x: 34, z: 0 },
     ];
-    var lampHeadM = new THREE.MeshStandardMaterial({ color: 0xfff6d8, emissive: 0xfff2c9, emissiveIntensity: 1.2 });
     for (var i = 0; i < lampSpots.length; i++) {
       var s = lampSpots[i];
       var pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 7.5, 6), poleM);
@@ -719,7 +915,104 @@ LG.Arena = (function () {
       pl.position.set(s.x, 7.2, s.z);
       g.add(pl);
     }
-    // small chain-link fence sections around the outer perimeter
+    // ---- fire hydrants ----
+    var hydrM = new THREE.MeshStandardMaterial({ color: 0xcc2222, roughness: 0.6, metalness: 0.3 });
+    var hydrSpots = [
+      { x: -18, z: 24 }, { x: 18, z: -24 },
+      { x: 22, z: 18 }, { x: -22, z: -18 },
+    ];
+    for (var h = 0; h < hydrSpots.length; h++) {
+      var hs = hydrSpots[h];
+      var hydr = new THREE.Group();
+      var body = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.18, 0.6, 8), hydrM);
+      body.position.y = 0.3;
+      hydr.add(body);
+      var cap = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.15, 0.12, 8), hydrM);
+      cap.position.y = 0.66;
+      hydr.add(cap);
+      // side nozzles
+      for (var n = 0; n < 2; n++) {
+        var nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.18, 6), hydrM);
+        nozzle.position.set(n === 0 ? 0.16 : -0.16, 0.4, 0);
+        nozzle.rotation.z = Math.PI / 2;
+        hydr.add(nozzle);
+      }
+      hydr.position.set(hs.x, 0, hs.z);
+      hydr.traverse(function(o) { if (o.isMesh) o.castShadow = true; });
+      g.add(hydr);
+    }
+    // ---- trash bins ----
+    var binM = new THREE.MeshStandardMaterial({ color: 0x3a4a3a, roughness: 0.85 });
+    var binSpots = [
+      { x: -16, z: 24.5 }, { x: 16, z: 24.5 },
+      { x: -16, z: -24.5 }, { x: 16, z: -24.5 },
+      { x: 23.5, z: -6 }, { x: -23.5, z: 6 },
+    ];
+    for (var b = 0; b < binSpots.length; b++) {
+      var bs = binSpots[b];
+      var bin = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.28, 0.8, 8), binM);
+      bin.position.set(bs.x, 0.4, bs.z);
+      bin.castShadow = true;
+      g.add(bin);
+    }
+    // ---- bike racks (U-shaped bars) ----
+    var rackM = new THREE.MeshStandardMaterial({ color: 0x4a5060, roughness: 0.7, metalness: 0.5 });
+    var rackSpots = [
+      { x: -18, z: 22.5, r: 0 },
+      { x: 18, z: 22.5, r: 0 },
+      { x: 22, z: -16, r: Math.PI / 2 },
+      { x: -22, z: 16, r: Math.PI / 2 },
+    ];
+    for (var r = 0; r < rackSpots.length; r++) {
+      var rs = rackSpots[r];
+      var rack = new THREE.Group();
+      for (var ri = 0; ri < 3; ri++) {
+        var loop = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.04, 6, 8, Math.PI), rackM);
+        loop.position.set(ri * 0.6 - 0.6, 0.35, 0);
+        loop.rotation.x = Math.PI / 2;
+        loop.castShadow = true;
+        rack.add(loop);
+      }
+      rack.position.set(rs.x, 0, rs.z);
+      rack.rotation.y = rs.r;
+      g.add(rack);
+    }
+    // ---- bollards (short posts along sidewalks) ----
+    var bollM = new THREE.MeshStandardMaterial({ color: 0x5a6070, roughness: 0.7, metalness: 0.3 });
+    var bollSpots = [
+      [-14, 23], [-10, 23], [-6, 23], [6, 23], [10, 23], [14, 23],
+      [-14, -23], [-10, -23], [-6, -23], [6, -23], [10, -23], [14, -23],
+      [22, -10], [22, -4], [22, 4], [22, 10],
+      [-22, -10], [-22, -4], [-22, 4], [-22, 10],
+    ];
+    for (var bi = 0; bi < bollSpots.length; bi++) {
+      var bs2 = bollSpots[bi];
+      var boll = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.65, 6), bollM);
+      boll.position.set(bs2[0], 0.325, bs2[1]);
+      boll.castShadow = true;
+      g.add(boll);
+    }
+    // ---- planters (concrete boxes with small shrubs) ----
+    var planterM = new THREE.MeshStandardMaterial({ color: 0x8a8070, roughness: 0.9 });
+    var shrubM = new THREE.MeshStandardMaterial({ color: 0x3a7a3a, roughness: 0.9 });
+    var planterSpots = [
+      { x: -12, z: 22.5 }, { x: 12, z: 22.5 },
+      { x: -12, z: -22.5 }, { x: 12, z: -22.5 },
+    ];
+    for (var p = 0; p < planterSpots.length; p++) {
+      var ps = planterSpots[p];
+      var planter = new THREE.Group();
+      var box = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.5, 1.2), planterM);
+      box.position.y = 0.25;
+      planter.add(box);
+      var shrub = new THREE.Mesh(new THREE.SphereGeometry(0.4, 6, 5), shrubM);
+      shrub.position.y = 0.8;
+      shrub.castShadow = true;
+      planter.add(shrub);
+      planter.position.set(ps.x, 0, ps.z);
+      g.add(planter);
+    }
+    // ---- chain-link fence posts around the outer perimeter ----
     var fencePostM = new THREE.MeshStandardMaterial({ color: 0x3a4050, roughness: 0.7, metalness: 0.5 });
     var fencePositions = [
       { x: -44, z: -15, r: 0 }, { x: -44, z: 15, r: 0 },
@@ -783,6 +1076,7 @@ LG.Arena = (function () {
     root.add(buildings());
     root.add(props());
     root.add(graffiti());
+    root.add(crosswalks());
     root.add(barriers());
     root.add(lamps());
     root.add(benches());

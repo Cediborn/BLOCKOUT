@@ -46,9 +46,9 @@ LG.Living = (function () {
   }
 
   // ---- little car ----
-  function makeCar() {
+  function makeCar(color) {
     var g = new THREE.Group();
-    var body = mesh(0xe74c3c);
+    var body = mesh(color || 0xe74c3c);
     body.scale.set(2.2, 0.8, 1.0);
     body.position.y = 0.55;
     var roof = mesh(0xffffff);
@@ -105,32 +105,65 @@ LG.Living = (function () {
     if (movers.length) return;          // build once
     scene = ctx.scenemode || ctx.scene;
 
-    var CARS = 6, BIKES = 5, PEDS = 7, i, k, m, p;
+    var CARS = 12, BIKES = 8, PEDS = 14, WATCHERS = 10, i, k, m, p;
 
-    var carCols = [0xe74c3c, 0x3498db, 0xf1c40f, 0x2ecc71, 0x9b59b6, 0xe67e22];
+    // ---- cars: two rings at different radii for density ----
+    var carCols = [0xe74c3c, 0x3498db, 0xf1c40f, 0x2ecc71, 0x9b59b6, 0xe67e22,
+                   0x1abc9c, 0xd35400, 0x34495e, 0xc0392b, 0x2980b9, 0x27ae60];
     for (i = 0; i < CARS; i++) {
-      var car = makeCar();
+      var car = makeCar(carCols[i % carCols.length]);
       car.rotation.y = Math.random() * Math.PI;
-      p = ringPos(52, (i / CARS) % 1);
+      var R = i < 8 ? 52 : 56;
+      p = ringPos(R, (i / CARS) % 1);
       car.position.set(p.x, 0, p.z);
       scene.add(car);
-      movers.push({ kind: 'car', g: car, t: (i / CARS) % 1, speed: 0.045, R: 52, dir: 1 });
+      movers.push({ kind: 'car', g: car, t: (i / CARS) % 1, speed: 0.04 + Math.random() * 0.015, R: R, dir: i % 3 === 0 ? -1 : 1 });
     }
+
+    // ---- bikes: inner ring ----
     for (i = 0; i < BIKES; i++) {
       var bike = makeBike();
       p = ringPos(48, (i / BIKES) % 1);
       bike.position.set(p.x, 0, p.z);
       scene.add(bike);
-      movers.push({ kind: 'bike', g: bike, t: (i / BIKES) % 1, speed: 0.085, R: 48, dir: -1 });
+      movers.push({ kind: 'bike', g: bike, t: (i / BIKES) % 1, speed: 0.07 + Math.random() * 0.03, R: 48, dir: i % 2 === 0 ? -1 : 1 });
     }
+
+    // ---- pedestrians: walking on the sidewalk ring ----
+    var pedCols = [0xe74c3c, 0x3498db, 0xf39c12, 0x2ecc71, 0x9b59b6, 0xe67e22,
+                   0x1abc9c, 0xd35400, 0x8e44ad, 0x2c3e50, 0x27ae60, 0xc0392b,
+                   0x2980b9, 0xf1c40f];
     for (i = 0; i < PEDS; i++) {
       var ped = null;
-      try { ped = LG.Models.buildCharacter({ team: 'visitor' }); } catch (e) { ped = null; }
+      try { ped = LG.Models.buildCharacter({ team: i % 2 === 0 ? 'visitor' : 'home' }); } catch (e) { ped = null; }
       if (!ped) continue;
       p = ringPos(27, (i / PEDS) % 1);
       ped.position.set(p.x, 0, p.z);
       scene.add(ped);
-      movers.push({ kind: 'ped', g: ped, t: (i / PEDS) % 1, speed: 0.03, R: 27, dir: 1, phase: Math.random() * 10 });
+      movers.push({ kind: 'ped', g: ped, t: (i / PEDS) % 1, speed: 0.025 + Math.random() * 0.015, R: 27, dir: 1, phase: Math.random() * 10 });
+    }
+
+    // ---- watchers: stationary pedestrians standing near the fence watching the game ----
+    var watchR = 24;
+    for (i = 0; i < WATCHERS; i++) {
+      var w = null;
+      try { w = LG.Models.buildCharacter({ team: i % 2 === 0 ? 'home' : 'visitor' }); } catch (e) { w = null; }
+      if (!w) continue;
+      var wi = i / WATCHERS;
+      var side = Math.floor(wi * 4);
+      var u = (wi * 4) % 1;
+      var wx = 0, wz = 0;
+      // place them just outside the fence on all four sides
+      if (side === 0) { wx = -10 + u * 20; wz = watchR; }
+      else if (side === 1) { wx = 10; wz = watchR - u * 20; }
+      else if (side === 2) { wx = 10 - u * 20; wz = -watchR; }
+      else { wx = -10; wz = -watchR + u * 20; }
+      w.position.set(wx, 0, wz);
+      // face the court
+      w.rotation.y = Math.atan2(-wx, -wz);
+      scene.add(w);
+      // idle animation (slight bob)
+      movers.push({ kind: 'watcher', g: w, t: Math.random() * 10, phase: Math.random() * 10 });
     }
 
     if (!sub && LG.eventBus && LG.eventBus.on) {
@@ -146,6 +179,12 @@ LG.Living = (function () {
     for (i = 0; i < movers.length; i++) {
       m2 = movers[i];
       m2.prev = (m2.prev || 0) + 1+ 1;
+      if (m2.kind === 'watcher') {
+        // watchers just idle-bob, they don't move
+        m2.t += dt;
+        m2.g.position.y = Math.sin(m2.t * 1.5 + m2.phase) * 0.04;
+        continue;
+      }
       m2.t = (m2.t + (m2.dir * m2.speed * step * 0.02)) % 1;
       if (m2.t < 0) m2.t += 1;
       p = ringPos(m2.R, m2.t);
@@ -161,8 +200,8 @@ LG.Living = (function () {
       pulse -= dt;
       // quick pulse: gently bob everyone so the block feels alive
       for (i = 0; i < movers.length; i++) {
-        if (movers[i].kind === 'ped') {
-          movers[i].g.position.y = Math.sin((pulse * 40)) * 0.12;
+        if (movers[i].kind === 'ped' || movers[i].kind === 'watcher') {
+          movers[i].g.position.y += Math.sin((pulse * 40)) * 0.12;
         }
       }
     }
