@@ -362,8 +362,9 @@ LG.Arena = (function () {
   // ---------------- buildings & billboards ----------------
   // Dense city blocks wrap the court on all sides.  Ground floors are shops
   // with awnings; upper floors are apartments with coloured facades.  The
-  // buildings sit just outside the playable zone so the court stays clear
-  // while the environment feels like a real urban neighbourhood.
+  // buildings sit OUTSIDE the buffer zone (court fence ±13/±22 + ~17 units
+  // clear space) so the gameplay camera always has an unobstructed view of
+  // the pitch, players and ball.
   function buildings() {
     var g = new THREE.Group();
     var dark = new THREE.MeshStandardMaterial({ color: 0x222a34, roughness: 0.9 });
@@ -400,8 +401,8 @@ LG.Arena = (function () {
       ['#33aa55', '#ffffff'], ['#dd8822', '#ffffff'],
       ['#8844aa', '#ffffff'], ['#cc5588', '#ffffff'],
     ];
-    var ai = 0;
-    function awningPair() { var p = awningPairs[ai % awningPairs.length]; ai++; return p; }
+    var aii = 0;
+    function awningPair() { var p = awningPairs[aii % awningPairs.length]; aii++; return p; }
 
     // ---- addBlock: a coloured building with windows + optional shop front ----
     function addBlock(x, z, w, h, d, fc, hasShop, shopZ) {
@@ -466,54 +467,54 @@ LG.Arena = (function () {
     }
 
     // ================================================================
-    // SOUTH SIDE (z = +24..+36) — shops facing the court
+    // SOUTH SIDE (z = +38..+48) — shops facing the court
     // ================================================================
-    addBlock(-12, 26, 10, 12, 8, facade(), true);
-    addBlock(0,   26, 8,  16, 7, facade(), true);
-    addBlock(10,  26, 10, 10, 8, facade(), true);
-    addBlock(-12, 34, 8,  18, 7, facade(), false);
-    addBlock(0,   35, 10, 14, 8, facade(), false);
-    addBlock(12,  34, 9,  20, 7, facade(), false);
+    addBlock(-12, 40, 10, 12, 8, facade(), true);
+    addBlock(0,   40, 8,  16, 7, facade(), true);
+    addBlock(10,  40, 10, 10, 8, facade(), true);
+    addBlock(-12, 48, 8,  18, 7, facade(), false);
+    addBlock(0,   49, 10, 14, 8, facade(), false);
+    addBlock(12,  48, 9,  20, 7, facade(), false);
 
     // ================================================================
-    // NORTH SIDE (z = -24..-36) — shops facing the court
+    // NORTH SIDE (z = -38..-48) — shops facing the court
     // ================================================================
-    addBlock(-10, -26, 10, 14, 8, facade(), true);
-    addBlock(2,   -26, 8,  12, 7, facade(), true);
-    addBlock(12,  -26, 10, 16, 8, facade(), true);
-    addBlock(-12, -35, 9,  20, 7, facade(), false);
-    addBlock(0,   -35, 8,  15, 8, facade(), false);
-    addBlock(12,  -35, 10, 18, 7, facade(), false);
+    addBlock(-10, -40, 10, 14, 8, facade(), true);
+    addBlock(2,   -40, 8,  12, 7, facade(), true);
+    addBlock(12,  -40, 10, 16, 8, facade(), true);
+    addBlock(-12, -49, 9,  20, 7, facade(), false);
+    addBlock(0,   -49, 8,  15, 8, facade(), false);
+    addBlock(12,  -49, 10, 18, 7, facade(), false);
 
     // ================================================================
-    // EAST SIDE (x = +18..+40) — along the touchline
+    // EAST SIDE (x = +30..+48) — along the touchline
     // ================================================================
-    addBlock(20, -12, 8, 15, 9, facade(), true);
-    addBlock(20,  0,  9, 12, 8, facade(), true);
-    addBlock(20,  12, 8, 18, 9, facade(), true);
-    addBlock(30, -10, 7, 22, 7, facade(), false);
-    addBlock(30,  4,  8, 16, 8, facade(), false);
-    addBlock(38, -4,  7, 24, 8, facade(), false);
-    addBlock(38,  12, 6, 14, 7, facade(), false);
+    addBlock(32, -12, 8, 15, 9, facade(), true);
+    addBlock(32,  0,  9, 12, 8, facade(), true);
+    addBlock(32,  12, 8, 18, 9, facade(), true);
+    addBlock(42, -10, 7, 22, 7, facade(), false);
+    addBlock(42,  4,  8, 16, 8, facade(), false);
+    addBlock(48, -4,  7, 24, 8, facade(), false);
+    addBlock(48,  12, 6, 14, 7, facade(), false);
 
     // ================================================================
-    // WEST SIDE (x = -18..-40) — along the touchline
+    // WEST SIDE (x = -30..-48) — along the touchline
     // ================================================================
-    addBlock(-20, -10, 8, 16, 9, facade(), true);
-    addBlock(-20,  4,  9, 12, 8, facade(), true);
-    addBlock(-20,  14, 8, 20, 9, facade(), true);
-    addBlock(-30, -8,  7, 18, 7, facade(), false);
-    addBlock(-30,  6,  8, 14, 8, facade(), false);
-    addBlock(-38,  0,  7, 22, 8, facade(), false);
-    addBlock(-38,  14, 6, 12, 7, facade(), false);
+    addBlock(-32, -10, 8, 16, 9, facade(), true);
+    addBlock(-32,  4,  9, 12, 8, facade(), true);
+    addBlock(-32,  14, 8, 20, 9, facade(), true);
+    addBlock(-42, -8,  7, 18, 7, facade(), false);
+    addBlock(-42,  6,  8, 14, 8, facade(), false);
+    addBlock(-48,  0,  7, 22, 8, facade(), false);
+    addBlock(-48,  14, 6, 12, 7, facade(), false);
 
     // ================================================================
     // CORNER BUILDINGS — denser corners like the reference
     // ================================================================
-    addBlock(-22, -22, 7, 14, 7, facade(), false);
-    addBlock( 22, -22, 7, 12, 7, facade(), false);
-    addBlock(-22,  22, 7, 16, 7, facade(), false);
-    addBlock( 22,  22, 7, 10, 7, facade(), false);
+    addBlock(-30, -30, 7, 14, 7, facade(), false);
+    addBlock( 30, -30, 7, 12, 7, facade(), false);
+    addBlock(-30,  30, 7, 16, 7, facade(), false);
+    addBlock( 30,  30, 7, 10, 7, facade(), false);
 
     // ================================================================
     // ROOFTOP DETAILS — water tanks, AC units, railings
@@ -522,8 +523,8 @@ LG.Arena = (function () {
     var acM = new THREE.MeshStandardMaterial({ color: 0x9aa4ad, roughness: 0.7, metalness: 0.4 });
     var railM = new THREE.MeshStandardMaterial({ color: 0x3a4050, roughness: 0.7, metalness: 0.3 });
     var tankSpots = [
-      [-12, 12.1, 26], [0, 16.1, 26], [20, 15.1, -12], [-20, 16.1, 14],
-      [30, 22.1, -10], [-30, 18.1, 6], [-12, 20.1, -26], [12, 16.1, -26],
+      [-12, 12.1, 40], [0, 16.1, 40], [32, 15.1, -12], [-32, 16.1, 14],
+      [42, 22.1, -10], [-42, 18.1, 6], [-12, 20.1, -40], [12, 16.1, -40],
     ];
     for (var t = 0; t < tankSpots.length; t++) {
       var tp = tankSpots[t];
@@ -533,8 +534,8 @@ LG.Arena = (function () {
       g.add(tank);
     }
     var acSpots = [
-      [8.5, 10.1, 26], [-6, 14.1, 26], [24.5, 12.1, 0],
-      [-24.5, 14.1, 4], [34.5, 20.1, -4], [-34.5, 16.1, 0],
+      [8.5, 10.1, 40], [-6, 14.1, 40], [36.5, 12.1, 0],
+      [-36.5, 14.1, 4], [44.5, 20.1, -4], [-44.5, 16.1, 0],
     ];
     for (var a = 0; a < acSpots.length; a++) {
       var ap2 = acSpots[a];
@@ -551,20 +552,20 @@ LG.Arena = (function () {
       new THREE.BoxGeometry(7, 3.2, 0.3),
       new THREE.MeshLambertMaterial({ map: LG.Models.billboardTex('BLOCK OUT CUP') })
     );
-    bb1.position.set(8, 6.5, -34.2); bb1.castShadow = true; g.add(bb1);
+    bb1.position.set(8, 6.5, -46.2); bb1.castShadow = true; g.add(bb1);
 
     var bb2 = new THREE.Mesh(
       new THREE.BoxGeometry(6, 2.8, 0.3),
       new THREE.MeshLambertMaterial({ map: LG.Models.billboardTex('STREET LEAGUE') })
     );
-    bb2.position.set(-10, 5.6, 33.8); g.add(bb2);
+    bb2.position.set(-10, 5.6, 45.8); g.add(bb2);
 
     // additional shop signs on building sides (facing the streets)
     var sideSign1 = new THREE.Mesh(
       new THREE.PlaneGeometry(3.5, 1.2),
       new THREE.MeshBasicMaterial({ map: LG.Models.shopSignTex('GROCERY', '#2a5530', '#ffffff') })
     );
-    sideSign1.position.set(24.1, 3.5, 0);
+    sideSign1.position.set(36.1, 3.5, 0);
     sideSign1.rotation.y = Math.PI / 2;
     g.add(sideSign1);
 
@@ -572,7 +573,7 @@ LG.Arena = (function () {
       new THREE.PlaneGeometry(3.5, 1.2),
       new THREE.MeshBasicMaterial({ map: LG.Models.shopSignTex('PIZZA', '#cc3333', '#ffffff') })
     );
-    sideSign2.position.set(-24.1, 3.5, 4);
+    sideSign2.position.set(-36.1, 3.5, 4);
     sideSign2.rotation.y = -Math.PI / 2;
     g.add(sideSign2);
 
@@ -684,17 +685,17 @@ LG.Arena = (function () {
       }
     }
     // four crosswalks at the corners of the court zone
-    addCrosswalk(-6,  22, 0, 12, 3);
-    addCrosswalk( 6,  22, 0, 12, 3);
-    addCrosswalk(-6, -22, 0, 12, 3);
-    addCrosswalk( 6, -22, 0, 12, 3);
+    addCrosswalk(-6,  34, 0, 12, 3);
+    addCrosswalk( 6,  34, 0, 12, 3);
+    addCrosswalk(-6, -34, 0, 12, 3);
+    addCrosswalk( 6, -34, 0, 12, 3);
     // road edge lines (yellow centre lines)
     var yellowM = new THREE.MeshBasicMaterial({ color: 0xddaa33 });
     var edgeLines = [
-      { x: 0, z: 25, w: 52, d: 0.15 },
-      { x: 0, z: -25, w: 52, d: 0.15 },
-      { x: 23, z: 0, w: 0.15, d: 50 },
-      { x: -23, z: 0, w: 0.15, d: 50 },
+      { x: 0, z: 37, w: 52, d: 0.15 },
+      { x: 0, z: -37, w: 52, d: 0.15 },
+      { x: 35, z: 0, w: 0.15, d: 50 },
+      { x: -35, z: 0, w: 0.15, d: 50 },
     ];
     for (var i = 0; i < edgeLines.length; i++) {
       var el = edgeLines[i];
@@ -765,10 +766,10 @@ LG.Arena = (function () {
       { x: -11.6, z: 27.4, rot: Math.PI },
       { x: 11.6, z: 27.4, rot: 0 },
       { x: -11.6, z: -27.4, rot: Math.PI },
-      { x: -17.5, z: 10, rot: -Math.PI / 2 },
-      { x: -17.5, z: -6, rot: -Math.PI / 2 },
-      { x: 17.5, z: 10, rot: Math.PI / 2 },
-      { x: 17.5, z: -6, rot: Math.PI / 2 },
+      { x: -27.5, z: 10, rot: -Math.PI / 2 },
+      { x: -27.5, z: -6, rot: -Math.PI / 2 },
+      { x: 27.5, z: 10, rot: Math.PI / 2 },
+      { x: 27.5, z: -6, rot: Math.PI / 2 },
     ];
     for (var i = 0; i < spots.length; i++) {
       var s = spots[i];
@@ -799,16 +800,16 @@ LG.Arena = (function () {
     var leafM2 = new THREE.MeshStandardMaterial({ color: 0x3a7d42, roughness: 0.85 });
     var leafM3 = new THREE.MeshStandardMaterial({ color: 0x4a8a50, roughness: 0.85 });
     var spots = [
-      { x: -32, z: -28, s: 1.0 }, { x: 34, z: -24, s: 0.85 },
-      { x: -34, z: 20, s: 0.95 }, { x: 32, z: 28, s: 1.1 },
-      { x: -18, z: -32, s: 0.7 }, { x: 18, z: 32, s: 0.8 },
-      { x: -42, z: -8, s: 0.9 }, { x: 42, z: 8, s: 0.75 },
-      { x: -30, z: 36, s: 1.05 }, { x: 30, z: -36, s: 0.9 },
+      { x: -38, z: -36, s: 1.0 }, { x: 40, z: -32, s: 0.85 },
+      { x: -40, z: 28, s: 0.95 }, { x: 38, z: 36, s: 1.1 },
+      { x: -24, z: -40, s: 0.7 }, { x: 24, z: 40, s: 0.8 },
+      { x: -50, z: -8, s: 0.9 }, { x: 50, z: 8, s: 0.75 },
+      { x: -36, z: 44, s: 1.05 }, { x: 36, z: -44, s: 0.9 },
       // closer trees — at sidewalk / street corners
-      { x: -16, z: 21, s: 0.65 }, { x: 16, z: 21, s: 0.6 },
-      { x: -16, z: -21, s: 0.6 }, { x: 16, z: -21, s: 0.65 },
-      { x: 21, z: -14, s: 0.55 }, { x: 21, z: 14, s: 0.55 },
-      { x: -21, z: -14, s: 0.55 }, { x: -21, z: 14, s: 0.55 },
+      { x: -22, z: 30, s: 0.65 }, { x: 22, z: 30, s: 0.6 },
+      { x: -22, z: -30, s: 0.6 }, { x: 22, z: -30, s: 0.65 },
+      { x: 30, z: -20, s: 0.55 }, { x: 30, z: 20, s: 0.55 },
+      { x: -30, z: -20, s: 0.55 }, { x: -30, z: 20, s: 0.55 },
     ];
     for (var i = 0; i < spots.length; i++) {
       var s = spots[i];
@@ -873,21 +874,21 @@ LG.Arena = (function () {
       car.traverse(function(o) { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
       g.add(car);
     }
-    // south street (z ~ +26)
-    addCar(-10, 27, 0.1, mats[0]);
-    addCar(2, 27.5, -0.05, mats[3]);
-    addCar(10, 27, 0.15, mats[4]);
-    // north street (z ~ -26)
-    addCar(-8, -27, Math.PI + 0.1, mats[1]);
-    addCar(5, -27.5, Math.PI - 0.08, mats[5]);
-    // east street (x ~ +23)
-    addCar(24, -10, Math.PI / 2, mats[2]);
-    addCar(24.5, 4, -Math.PI / 2, mats[6]);
-    addCar(24, 14, Math.PI / 2, mats[7]);
-    // west street (x ~ -23)
-    addCar(-24, -8, -Math.PI / 2, mats[8]);
-    addCar(-24.5, 6, Math.PI / 2, mats[9]);
-    addCar(-24, 16, -Math.PI / 2, mats[0]);
+    // south street (z ~ +38)
+    addCar(-10, 39, 0.1, mats[0]);
+    addCar(2, 39.5, -0.05, mats[3]);
+    addCar(10, 39, 0.15, mats[4]);
+    // north street (z ~ -38)
+    addCar(-8, -39, Math.PI + 0.1, mats[1]);
+    addCar(5, -39.5, Math.PI - 0.08, mats[5]);
+    // east street (x ~ +34)
+    addCar(35, -10, Math.PI / 2, mats[2]);
+    addCar(35.5, 4, -Math.PI / 2, mats[6]);
+    addCar(35, 14, Math.PI / 2, mats[7]);
+    // west street (x ~ -34)
+    addCar(-35, -8, -Math.PI / 2, mats[8]);
+    addCar(-35.5, 6, Math.PI / 2, mats[9]);
+    addCar(-35, 16, -Math.PI / 2, mats[0]);
     return g;
   }
 
@@ -898,9 +899,9 @@ LG.Arena = (function () {
     var lampHeadM = new THREE.MeshStandardMaterial({ color: 0xfff6d8, emissive: 0xfff2c9, emissiveIntensity: 1.2 });
     // ---- street lamps ----
     var lampSpots = [
-      { x: -20, z: -28 }, { x: 20, z: -28 },
-      { x: -20, z: 28 }, { x: 20, z: 28 },
-      { x: -34, z: 0 }, { x: 34, z: 0 },
+      { x: -30, z: -38 }, { x: 30, z: -38 },
+      { x: -30, z: 38 }, { x: 30, z: 38 },
+      { x: -44, z: 0 }, { x: 44, z: 0 },
     ];
     for (var i = 0; i < lampSpots.length; i++) {
       var s = lampSpots[i];
@@ -918,8 +919,8 @@ LG.Arena = (function () {
     // ---- fire hydrants ----
     var hydrM = new THREE.MeshStandardMaterial({ color: 0xcc2222, roughness: 0.6, metalness: 0.3 });
     var hydrSpots = [
-      { x: -18, z: 24 }, { x: 18, z: -24 },
-      { x: 22, z: 18 }, { x: -22, z: -18 },
+      { x: -28, z: 34 }, { x: 28, z: -34 },
+      { x: 34, z: 28 }, { x: -34, z: -28 },
     ];
     for (var h = 0; h < hydrSpots.length; h++) {
       var hs = hydrSpots[h];
@@ -944,9 +945,9 @@ LG.Arena = (function () {
     // ---- trash bins ----
     var binM = new THREE.MeshStandardMaterial({ color: 0x3a4a3a, roughness: 0.85 });
     var binSpots = [
-      { x: -16, z: 24.5 }, { x: 16, z: 24.5 },
-      { x: -16, z: -24.5 }, { x: 16, z: -24.5 },
-      { x: 23.5, z: -6 }, { x: -23.5, z: 6 },
+      { x: -26, z: 34.5 }, { x: 26, z: 34.5 },
+      { x: -26, z: -34.5 }, { x: 26, z: -34.5 },
+      { x: 34.5, z: -6 }, { x: -34.5, z: 6 },
     ];
     for (var b = 0; b < binSpots.length; b++) {
       var bs = binSpots[b];
@@ -958,10 +959,10 @@ LG.Arena = (function () {
     // ---- bike racks (U-shaped bars) ----
     var rackM = new THREE.MeshStandardMaterial({ color: 0x4a5060, roughness: 0.7, metalness: 0.5 });
     var rackSpots = [
-      { x: -18, z: 22.5, r: 0 },
-      { x: 18, z: 22.5, r: 0 },
-      { x: 22, z: -16, r: Math.PI / 2 },
-      { x: -22, z: 16, r: Math.PI / 2 },
+      { x: -28, z: 32.5, r: 0 },
+      { x: 28, z: 32.5, r: 0 },
+      { x: 32, z: -26, r: Math.PI / 2 },
+      { x: -32, z: 26, r: Math.PI / 2 },
     ];
     for (var r = 0; r < rackSpots.length; r++) {
       var rs = rackSpots[r];
@@ -980,10 +981,10 @@ LG.Arena = (function () {
     // ---- bollards (short posts along sidewalks) ----
     var bollM = new THREE.MeshStandardMaterial({ color: 0x5a6070, roughness: 0.7, metalness: 0.3 });
     var bollSpots = [
-      [-14, 23], [-10, 23], [-6, 23], [6, 23], [10, 23], [14, 23],
-      [-14, -23], [-10, -23], [-6, -23], [6, -23], [10, -23], [14, -23],
-      [22, -10], [22, -4], [22, 4], [22, 10],
-      [-22, -10], [-22, -4], [-22, 4], [-22, 10],
+      [-24, 33], [-20, 33], [-16, 33], [16, 33], [20, 33], [24, 33],
+      [-24, -33], [-20, -33], [-16, -33], [16, -33], [20, -33], [24, -33],
+      [33, -14], [33, -4], [33, 4], [33, 14],
+      [-33, -14], [-33, -4], [-33, 4], [-33, 14],
     ];
     for (var bi = 0; bi < bollSpots.length; bi++) {
       var bs2 = bollSpots[bi];
@@ -996,8 +997,8 @@ LG.Arena = (function () {
     var planterM = new THREE.MeshStandardMaterial({ color: 0x8a8070, roughness: 0.9 });
     var shrubM = new THREE.MeshStandardMaterial({ color: 0x3a7a3a, roughness: 0.9 });
     var planterSpots = [
-      { x: -12, z: 22.5 }, { x: 12, z: 22.5 },
-      { x: -12, z: -22.5 }, { x: 12, z: -22.5 },
+      { x: -22, z: 32.5 }, { x: 22, z: 32.5 },
+      { x: -22, z: -32.5 }, { x: 22, z: -32.5 },
     ];
     for (var p = 0; p < planterSpots.length; p++) {
       var ps = planterSpots[p];
@@ -1015,10 +1016,10 @@ LG.Arena = (function () {
     // ---- chain-link fence posts around the outer perimeter ----
     var fencePostM = new THREE.MeshStandardMaterial({ color: 0x3a4050, roughness: 0.7, metalness: 0.5 });
     var fencePositions = [
-      { x: -44, z: -15, r: 0 }, { x: -44, z: 15, r: 0 },
-      { x: 44, z: -15, r: 0 }, { x: 44, z: 15, r: 0 },
-      { x: -15, z: -44, r: Math.PI / 2 }, { x: 15, z: -44, r: Math.PI / 2 },
-      { x: -15, z: 44, r: Math.PI / 2 }, { x: 15, z: 44, r: Math.PI / 2 },
+      { x: -52, z: -15, r: 0 }, { x: -52, z: 15, r: 0 },
+      { x: 52, z: -15, r: 0 }, { x: 52, z: 15, r: 0 },
+      { x: -15, z: -52, r: Math.PI / 2 }, { x: 15, z: -52, r: Math.PI / 2 },
+      { x: -15, z: 52, r: Math.PI / 2 }, { x: 15, z: 52, r: Math.PI / 2 },
     ];
     for (var f = 0; f < fencePositions.length; f++) {
       var fp = fencePositions[f];

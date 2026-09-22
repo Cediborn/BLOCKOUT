@@ -113,7 +113,7 @@ LG.Living = (function () {
     for (i = 0; i < CARS; i++) {
       var car = makeCar(carCols[i % carCols.length]);
       car.rotation.y = Math.random() * Math.PI;
-      var R = i < 8 ? 52 : 56;
+      var R = i < 8 ? 56 : 60;
       p = ringPos(R, (i / CARS) % 1);
       car.position.set(p.x, 0, p.z);
       scene.add(car);
@@ -123,10 +123,10 @@ LG.Living = (function () {
     // ---- bikes: inner ring ----
     for (i = 0; i < BIKES; i++) {
       var bike = makeBike();
-      p = ringPos(48, (i / BIKES) % 1);
+      p = ringPos(52, (i / BIKES) % 1);
       bike.position.set(p.x, 0, p.z);
       scene.add(bike);
-      movers.push({ kind: 'bike', g: bike, t: (i / BIKES) % 1, speed: 0.07 + Math.random() * 0.03, R: 48, dir: i % 2 === 0 ? -1 : 1 });
+      movers.push({ kind: 'bike', g: bike, t: (i / BIKES) % 1, speed: 0.07 + Math.random() * 0.03, R: 52, dir: i % 2 === 0 ? -1 : 1 });
     }
 
     // ---- pedestrians: walking on the sidewalk ring ----
@@ -137,14 +137,14 @@ LG.Living = (function () {
       var ped = null;
       try { ped = LG.Models.buildCharacter({ team: i % 2 === 0 ? 'visitor' : 'home' }); } catch (e) { ped = null; }
       if (!ped) continue;
-      p = ringPos(27, (i / PEDS) % 1);
+      p = ringPos(36, (i / PEDS) % 1);
       ped.position.set(p.x, 0, p.z);
       scene.add(ped);
-      movers.push({ kind: 'ped', g: ped, t: (i / PEDS) % 1, speed: 0.025 + Math.random() * 0.015, R: 27, dir: 1, phase: Math.random() * 10 });
+      movers.push({ kind: 'ped', g: ped, t: (i / PEDS) % 1, speed: 0.025 + Math.random() * 0.015, R: 36, dir: 1, phase: Math.random() * 10 });
     }
 
     // ---- watchers: stationary pedestrians standing near the fence watching the game ----
-    var watchR = 24;
+    var watchR = 33;
     for (i = 0; i < WATCHERS; i++) {
       var w = null;
       try { w = LG.Models.buildCharacter({ team: i % 2 === 0 ? 'home' : 'visitor' }); } catch (e) { w = null; }
