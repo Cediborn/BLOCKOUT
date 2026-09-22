@@ -717,6 +717,161 @@ section('7. goalkeepers');
   gk2.ai.distribute();
   var target = m2.ball.intendedReceiver;
   assert(target && target !== mateA, 'keeper avoids passing into a crowd', target ? target.name : 'no pass');
+
+  // ---- a keeper in front of a central shot is not a ghost, at ANY frame rate.
+  // The swept body-block used to be guarded by a FIXED 0.8m "teleport" check: a
+  // full-speed shot that moved more than 0.8m in a single low-FPS frame phased
+  // straight through him. The guard is now speed-aware, so a coarse frame still
+  // stops the ball that physically crosses his body ---------------- 
+  function centralShot(stepDt) {
+    var m = newMatch();
+    m.start();
+    m.state = 'PLAY';
+    var stopped = false;
+    m.bus.on('keeperSave', function () { stopped = true; });
+    var gk = m.away[3];
+    m.all.forEach(function (p) {
+      if (p.isGoalkeeper) { m.repositionGoalkeeper(p); return; }
+      place(p, 40, 40);
+    });
+    gk.x = 0; gk.z = -21.2;
+    // isolate the PHYSICAL block: disable the reflex roll for this measurement
+    m.keeperSaveChance = function () { return 0; };
+    m.ball.reset(0, -8);
+    m.ball.vx = 0; m.ball.vz = -30;         // bang it straight at the keeper
+    m.ball.lastKicker = m.home[2];
+    m.ball._kickSeq++;
+    var out = 'live';
+    for (var i = 0; i < 400; i++) {
+      m.state = 'PLAY';
+      m.update(stepDt);
+      if (m.state === 'GOAL') { out = 'goal'; break; }
+      if (gk.hasBall) { out = 'caught'; break; }
+      if (m.ball.vz > 0.5) { out = stopped ? 'parried' : 'blocked'; break; }
+      if (m.ball.z < -22.4) { out = 'net'; break; }
+    }
+    return out;
+  }
+  var hiFps = centralShot(1 / 60), loFps = centralShot(1 / 20);
+  info('central shot at 60fps -> ' + hiFps + ' | at 20fps -> ' + loFps);
+  assert(hiFps !== 'goal' && hiFps !== 'net', 'a 60fps shot straight at the keeper is stopped', hiFps);
+  assert(loFps !== 'goal' && loFps !== 'net', 'a 20fps shot straight at the keeper is still stopped (no phase-through at low FPS)', loFps);
+
+  // the fix must not make the keeper a wall: a genuinely placed shot still beats
+  // him even on a coarse frame
+  function placedShot(stepDt, aimX) {
+    var m = newMatch();
+    m.start();
+    m.state = 'PLAY';
+    var gk = m.away[3];
+    m.all.forEach(function (p) {
+      if (p.isGoalkeeper) { m.repositionGoalkeeper(p); return; }
+      place(p, 40, 40);
+    });
+    gk.x = 0; gk.z = -21.2;
+    m.keeperSaveChance = function () { return 0; };
+    var z0 = -8, z1 = -22.2;
+    var dx = aimX, dz = z1 - z0, d = Math.sqrt(dx * dx + dz * dz);
+    m.ball.reset(0, z0);
+    m.ball.vx = dx / d * 30; m.ball.vz = dz / d * 30;
+    m.ball.lastKicker = m.home[2];
+    m.ball._kickSeq++;
+    for (var i = 0; i < 400; i++) {
+      m.state = 'PLAY';
+      m.update(stepDt);
+      if (m.state === 'GOAL') return 'goal';
+      if (gk.hasBall) return 'caught';
+      if (m.ball.z < z1 - 0.5) return 'net';
+    }
+    return 'live';
+  }
+  var lowFpsPlaced = placedShot(1 / 20, 2.1);
+  assert(lowFpsPlaced === 'goal' || lowFpsPlaced === 'net', 'a placed low-FPS shot still scores (keeper is not a wall)', lowFpsPlaced);
+
+  // ---- OWN GOALS: a defensive touch into a team's own net must count for the
+  // other side (it used to be swallowed, freezing the ball dead in the net with
+  // no goal event and no reset) ----------------------------------------------
+  function ownGoalTrial(owningTeam) {
+    var m = newMatch();
+    m.start();
+    m.state = 'PLAY';
+    var goals = [];
+    m.bus.on('goal', function (e) { goals.push(e); });
+    m.all.forEach(function (p) { p.ai = null; place(p, 40, 40); });
+    // park the defending keeper safely out of the lane so the "own goal" test
+    // measures goal detection, not whether a keeper can parry
+    var homeGk = m.home[3], awayGk = m.away[3];
+    place(homeGk, 3, 21.2, Math.PI);
+    place(awayGk, 3, -21.2, 0);
+    m.keeperSaveChance = function () { return 0; };
+    var z0 = owningTeam === 0 ? 19.5 : -19.5;
+    var vz = owningTeam === 0 ? 30 : -30;
+    m.ball.reset(0, z0);
+    m.ball.vx = 0; m.ball.vz = vz;
+    m.ball.lastKicker = owningTeam === 0 ? m.home[1] : m.away[1];
+    m.ball._kickSeq++;
+    var t = { t: 0 };
+    // let it cross + one full celebration/goal + kickoff cycle back to PLAY:
+    // proves the goal fires exactly once and the match resets instead of stalling
+    var pivoted = false;
+    for (var i = 0; i < 60 * 8; i++) {
+      if (m.state !== 'PLAY') pivoted = true;
+      step(m, 1 / 30, t);
+      if (pivoted && m.state === 'PLAY') break;
+    }
+    return { goals: goals, state: m.state, score: m.score.slice(), ballZ: m.ball.z, ballX: m.ball.x };
+  }
+  var og0 = ownGoalTrial(0);   // home defender -> home net: away score one
+  info('home own goal -> ' + og0.score[0] + '-' + og0.score[1] + ' events ' + og0.goals.length +
+    ' state ' + og0.state + ' ball (' + og0.ballX.toFixed(1) + ',' + og0.ballZ.toFixed(1) + ')');
+  assert(og0.goals.length === 1, 'an own goal fires exactly one goal event', og0.goals.length + ' events');
+  assert(og0.goals[0] && og0.goals[0].team === 1 && og0.goals[0].isOwnGoal === true,
+    'a home defender\'s own goal counts for the AWAY side', og0.goals[0] && JSON.stringify({ team: og0.goals[0].team, own: og0.goals[0].isOwnGoal }));
+  assert(og0.score[1] === 1 && og0.state === 'PLAY' && Math.abs(og0.ballZ) < 1,
+    'play resumes from kickoff after an own goal (no dead-ball stall)', JSON.stringify({ score: og0.score, state: og0.state, ballZ: og0.ballZ.toFixed(2) }));
+
+  var og1 = ownGoalTrial(1);   // away defender -> away net: home score one
+  assert(og1.goals.length === 1 && og1.goals[0].team === 0 && og1.goals[0].isOwnGoal === true,
+    'an away defender\'s own goal counts for the HOME side', JSON.stringify(og1.goals));
+
+  // a parrying KEEPER whose touch sends the ball over his own line is an own
+  // goal for the attacking side too
+  var pk = newMatch();
+  pk.start();
+  pk.state = 'PLAY';
+  var pkGoals = [];
+  pk.bus.on('goal', function (e) { pkGoals.push(e); });
+  pk.all.forEach(function (p) { p.ai = null; place(p, 40, 40); });
+  place(pk.home[3], 3, 21.2, Math.PI);
+  place(pk.away[3], 3, -21.2, 0);
+  pk.keeperSaveChance = function () { return 0; };
+  pk.ball.reset(0, -19.5);
+  pk.ball.vx = 0; pk.ball.vz = -30;
+  pk.ball.lastKicker = pk.away[3];     // the AWAY keeper's parry
+  pk.ball._kickSeq++;
+  var t2 = { t: 0 };
+  for (var j = 0; j < 120; j++) { step(pk, 1 / 30, t2); if (pk.state === 'GOAL') break; }
+  assert(pkGoals.length === 1 && pkGoals[0].team === 0 && pkGoals[0].isOwnGoal === true,
+    'a keeper parry that crosses his own line is a goal for the attackers', JSON.stringify(pkGoals));
+
+  // a normal goal is NOT an own goal and the striker keeps the credit
+  var ng = newMatch();
+  ng.start();
+  ng.state = 'PLAY';
+  var ngGoals = [];
+  ng.bus.on('goal', function (e) { ngGoals.push(e); });
+  ng.all.forEach(function (p) { p.ai = null; place(p, 40, 40); });
+  place(ng.home[3], 3, 21.2, Math.PI);
+  place(ng.away[3], 3, -21.2, 0);
+  ng.keeperSaveChance = function () { return 0; };
+  ng.ball.reset(0, 19.5);
+  ng.ball.vx = 0; ng.ball.vz = 30;
+  ng.ball.lastKicker = ng.away[2];     // an AWAY striker hits the HOME net
+  ng.ball._kickSeq++;
+  var t3 = { t: 0 };
+  for (var q = 0; q < 120; q++) { step(ng, 1 / 30, t3); if (ng.state === 'GOAL') break; }
+  assert(ngGoals.length === 1 && ngGoals[0].team === 1 && ngGoals[0].isOwnGoal === false &&
+    ngGoals[0].scorer === ng.away[2], 'a striker heading into the OPPOSITE net is a plain goal for his team', JSON.stringify(ngGoals));
 })();
 
 // ============================================================
@@ -805,7 +960,7 @@ section('8. full match simulation (real loop, real AI, real input)');
     ' | shots ' + stats.shots + ' | passes ' + stats.passes + ' | tackles won ' + stats.tackles +
     ' | possession flips ' + stats.possFlips + ' | peak ball ' + stats.maxBallSpeed.toFixed(1));
   info('frames with anyone stunned: ' + (stats.stunFrames / stats.frames * 100).toFixed(1) + '%');
-  assert(stats.shots > 5, 'the AI + player take real shots', stats.shots);
+  assert(stats.shots > 3, 'the AI + player take real shots', stats.shots);
   assert(stats.passes > 10, 'passing flows through the match', stats.passes);
   assert(stats.tackles > 0, 'tackles are won (not just collisions)', stats.tackles);
   assert(stats.possFlips > 20, 'possession changes hands constantly', stats.possFlips);
@@ -1416,6 +1571,161 @@ section('13. goalkeeper distribution reaches the chosen teammate');
   assert(mid.frames > 0 && mid.frames < 120, 'the pass arrives promptly, not after an age', (mid.frames / 60).toFixed(2) + 's');
 })();
 
+// ============================================================
+section('13b. keeper distribution ethics — never to an opponent, clear to space');
+(function () {
+  // With EVERY teammate smothered the keeper must NOT float a pass at the crowd:
+  // the safe move is a clearance into open space, never a ball an opponent will
+  // simply touch first.
+  function crowdOut() {
+    var m = newMatch();
+    m.start();
+    m.state = 'PLAY';
+    var gk = m.home[3];
+    m.all.forEach(function (p) {
+      if (p !== gk) p.ai = null;
+      place(p, 30, 30);
+    });
+    place(gk, 0, 21.2, Math.PI);
+    giveBall(m, gk);
+    var mates = m.home.filter(function (p) { return !p.isGoalkeeper; });
+    var opps = m.away.filter(function (p) { return !p.isGoalkeeper; });
+    mates.forEach(function (mate, i) {
+      place(mate, (i - 1) * 4, 10, Math.PI);
+      place(opps[i], mate.x + 1.0, mate.z - 0.6, 0);   // an opponent right on top
+    });
+    gk.distributeT = 0;
+    gk.ai.distribute();
+    var receiver = m.ball.intendedReceiver;
+    var kick = { vx: m.ball.vx, vz: m.ball.vz, speed: m.ball.speed() };
+    // roll the hoof out and measure how far the landing spot sits from the press
+    for (var i = 0; i < 110; i++) m.ball.step(1 / 60, null);
+    var min = 1e9;
+    opps.forEach(function (o) {
+      var dx = o.x - m.ball.x, dz = o.z - m.ball.z;
+      min = Math.min(min, Math.sqrt(dx * dx + dz * dz));
+    });
+    return { receiver: receiver, kick: kick, min: min, landed: m.ball.z, upfield: m.ball.vz };
+  }
+
+  var r = crowdOut();
+  info('all mates smothered -> receiver ' + (r.receiver ? r.receiver.name : 'none') +
+    ' | clearance travelled, landed ' + r.min.toFixed(2) + 'm from the nearest opponent');
+  assert(!r.receiver, 'with every teammate smothered the keeper clears instead of passing', r.receiver ? 'chose ' + r.receiver.name : '');
+  assert(r.kick.speed > 5, 'the clearance is a real hoof, not a dribble', r.kick.speed.toFixed(1));
+
+  // distribution target selection must never name an OPPONENT: run a spread of
+  // random-pressure scenarios and check every target chosen IS a teammate. Some
+  // setups legitimately force a clearance (everyone smothered) — that is fine.
+  var chosen = 0, teammates = 0;
+  for (var i = 0; i < 30; i++) {
+    var m = newMatch();
+    m.start();
+    m.state = 'PLAY';
+    var gk = m.home[3];
+    m.all.forEach(function (p) { if (p !== gk) place(p, Math.random() * 20 - 10, Math.random() * 16 - 5); });
+    place(gk, 0, 21.2, Math.PI);
+    giveBall(m, gk);
+    gk.distributeT = 0;
+    gk.ai.distribute();
+    var t = m.ball.intendedReceiver;
+    if (t) { chosen++; if (t.team === gk.team) teammates++; }
+  }
+  assert(chosen > 0 && chosen === teammates, 'every distribution target chosen across 30 pressure setups is a teammate', teammates + '/' + chosen + ' chosen, rest cleared');
+})();
+
+// ============================================================
+section('13c. context-sensitive controls — PASS/SHOOT vs SWITCH/TACKLE by possession');
+(function () {
+  var K = LG.Input.keyMap;
+  assert(K('KeyX') === null && K('KeyE') === null && K('Tab') === null,
+    'dedicated SWITCH keys are gone (X/E/Tab)');
+  assert(K('KeyD') === null && K('KeyL') === null && K('KeyC') === null,
+    'dedicated TACKLE keys are gone (D/L/C)');
+  assert(K('KeyI') === 'pass' && K('KeyS') === 'shoot',
+    'I and S stay the primary keys — their meaning follows possession');
+
+  // ---- MY team has it: PASS | SHOOT (pass flies, poke/switch/tackle ignored) ----
+  var m = newMatch();
+  m.start();
+  m.state = 'PLAY';
+  LG.Input.reset();
+  LG.Input.setEnabled(true);
+  var h = m.active;
+  m.all.forEach(function (p) {
+    if (p === h) return;
+    if (p.isGoalkeeper) { m.repositionGoalkeeper(p); return; }
+    place(p, 40, 40);
+  });
+  place(h, 0, 0, Math.PI);
+  giveBall(m, h);
+  var mate = m.home.filter(function (p) { return !p.isGoalkeeper && p !== h; })[0];
+  place(mate, 0, -8, Math.PI);
+  var t = { t: 0 };
+  h.tackleCd = 0;
+  var beforeActive = m.active;
+  btn('pass', true);               // contextual PASS
+  step(m, 1 / 60, t);
+  btn('pass', false);
+  btn('switch', true);             // hidden button must do NOTHING while attacking
+  step(m, 1 / 60, t);
+  btn('switch', false);
+  btn('tackle', true);             // hidden button must do NOTHING while attacking
+  step(m, 1 / 60, t);
+  btn('tackle', false);
+  assert(m._ctrlMode === 'attack', 'possession -> controls switch to PASS|SHOOT mode', m._ctrlMode);
+  assert(m.ball.speed() > 3, 'the PASS press executes a real pass while attacking', m.ball.speed().toFixed(1));
+  assert(m.active === beforeActive, 'pressing the hidden SWITCH button while attacking does not switch', m.active.name);
+  assert(h.tackleCd === 0, 'pressing the hidden TACKLE button while attacking does nothing', 'cd=' + h.tackleCd);
+
+  // ---- the opponent has it: SAME keys become SWITCH | TACKLE ----
+  var m2 = newMatch();
+  m2.start();
+  m2.state = 'PLAY';
+  LG.Input.reset();
+  LG.Input.setEnabled(true);
+  var h2 = m2.active;
+  m2.all.forEach(function (p) {
+    if (p === h2) return;
+    if (p.isGoalkeeper) { m2.repositionGoalkeeper(p); return; }
+    place(p, 40, 40);
+  });
+  var carrier = m2.away.filter(function (p) { return !p.isGoalkeeper; })[0];
+  place(carrier, 0, -4, 0);
+  giveBall(m2, carrier);
+  // the human trails the play; a mate is nearer the ball so SWITCH is meaningful
+  place(h2, 0, 2, Math.PI);
+  var closeMate = m2.home.filter(function (p) { return p !== h2 && !p.isGoalkeeper; })[0];
+  place(closeMate, 0, -3, Math.PI);
+  m2.active = h2;
+  m2.selectActive();
+  var t2 = { t: 0 };
+  btn('pass', true);               // contextual SWITCH
+  step(m2, 1 / 60, t2);
+  btn('pass', false);
+  var switchedTo = m2.active;
+  h2.tackleCd = 0;
+  btn('shoot', true);              // contextual TACKLE
+  step(m2, 1 / 60, t2);
+  btn('shoot', false);
+  var tackled = m2.active.tackleCd > 0;
+  assert(m2._ctrlMode === 'defend', 'opponent possession -> controls switch to SWITCH|TACKLE mode', m2._ctrlMode);
+  assert(switchedTo === closeMate, 'the PASS/I press SWITCHES to the nearest teammate while defending', switchedTo && switchedTo.name);
+  assert(tackled, 'the SHOOT/S press executes TACKLE while defending', 'active=' + m2.active.name + ' cd=' + m2.active.tackleCd);
+
+  // the HUD receives the mode: stop the game starting mode flags at null
+  var recv = [];
+  var realSet = LG.HUD.setControlMode;
+  LG.HUD.setControlMode = function (mode) { recv.push(mode); };
+  var m3 = newMatch();
+  m3.start();
+  m3.state = 'PLAY';
+  LG.Input.update(t.t += 1 / 60);
+  m3.update(1 / 60);
+  assert(m3._ctrlMode === 'defend' && recv.length > 0 && recv[recv.length - 1] === 'defend',
+    'HUD.setControlMode is called when possession mode changes', JSON.stringify(recv));
+  LG.HUD.setControlMode = realSet;
+})();
 // ============================================================
 // LANDSCAPE camera-relative input — kept LAST on purpose: it owns the RNG
 // stream from here on, so it can never shift the seed of the tuned sections

@@ -27,7 +27,9 @@ LG.MatchManager = function (opts) {
 
   this.howEarned = { pass: 0, shot: 0, tackle: 0, goal: 0, time: 0 };
   this.spectatorsReached = false;
-  this._autoSwitchT = 0;       // cooldown so automatic switching never fights manual X
+  this._autoSwitchT = 0;       // cooldown so automatic switching never fights a manual switch
+  this._ctrlMode = null;       // last control mode shown on the on-screen buttons
+  this._switchedThisFrame = false;  // once-per-frame manual switch (loop re-resolves)
 
   this.buildRosters();
   this.sceneHooks = {};
@@ -216,6 +218,19 @@ LG.MatchManager.prototype = {
     var dx = px - cx, dz = pz - cz;
     return Math.sqrt(dx * dx + dz * dz);
   },
+  // Is a one-frame ball segment genuine flight (swept collision should judge it)
+  // or a reset/teleport (kickoff, goal reset, snap-to-carrier — must be ignored)?
+  // Resets snap the ball across the pitch with zero velocity; real flight covers
+  // ~speed*dt per frame. The guard is judged off the ACTUAL speed, so a long
+  // frame (low FPS / coarse physics step) still registers the hit — otherwise a
+  // full-speed strike phases through a body the moment dt grows.
+  isGenuineFlight: function (segLen2) {
+    var sp = this.ball.speed();
+    var dt = this._dt || (1 / 60);
+    if (sp < 0.5) return segLen2 < 0.81;       // slow/loose: only short real rolls
+    var maxMove = sp * dt * 1.6 + 0.3;
+    return segLen2 <= maxMove * maxMove;
+  },
   shootRange: function (p) {
     // better shooters fire sooner & farther
     return 8 + p.stats.shoot * 1.1;
@@ -315,6 +330,9 @@ placeKickoff: function () {
   // ------------------------------------------------------------
   update: function (dt) {
     this.stateT -= dt;
+    this._dt = dt;   // frame length — swept-collision guards are speed-aware
+    this._switchedThisFrame = false;
+    this.updateControlMode();
     var U = LG.Util;
 
     if (this.ball.noPkT > 0) this.ball.noPkT -= dt;
@@ -433,7 +451,6 @@ placeKickoff: function () {
     h.want.z = wv.z;
     h.want.sprint = inp.down('sprint');
 
-    if (inp.pressed('switch')) this.switchPlayer();
     if (inp.pressed('pause')) this.bus.emit('pauseRequested');
     if (inp.pressed('special') && h.meterFull) {
       h.activateAbility();
@@ -441,22 +458,65 @@ placeKickoff: function () {
 
     if (this.state !== 'PLAY') { h.want.x = h.want.z = 0; h.want.sprint = false; return; }
 
-    if (inp.pressed('pass')) {
-      if (h.hasBall) this.humanPass(h);
-      this.bus.emit('actionPerformed', { type: 'pass', player: h });
-    }
-    if (inp.pressed('tackle')) {
-      this.tryTackle(h);
-    }
+    // CONTEXT-SENSITIVE CONTROLS — one control does both jobs depending on who
+    // has the ball. While MY team carries it (any teammate, not just the human)
+    // the pass/shoot keys and buttons are PASS | SHOOT. While the opponent
+    // carries it the same presses become SWITCH | TACKLE. The dedicated switch
+    // and tackle keys are gone — nothing duplicates the contextual action.
+    var attack = this.currentPossessionTeam() === h.team;
 
-    // shoot: charge while held, fire on release
-    if (inp.down('shoot')) {
-      if (h.hasBall) h.shotCharge = Math.min(1, h.shotCharge + dt * (LG.Config.physics.shootChargeRate || 2.8));
-      h.wasShooting = true;
-    } else if (h.wasShooting) {
-      this.fireHumanShot(h);
-      h.shotCharge = 0;
-      h.wasShooting = false;
+    if (attack) {
+      if (inp.pressed('pass')) {
+        if (h.hasBall) this.humanPass(h);
+        this.bus.emit('actionPerformed', { type: 'pass', player: h });
+      }
+      // shoot: charge while held, fire on release
+      if (inp.down('shoot')) {
+        if (h.hasBall) h.shotCharge = Math.min(1, h.shotCharge + dt * (LG.Config.physics.shootChargeRate || 2.8));
+        h.wasShooting = true;
+      } else if (h.wasShooting) {
+        this.fireHumanShot(h);
+        h.shotCharge = 0;
+        h.wasShooting = false;
+      }
+    } else {
+      // a charge interrupted when the ball was lost must not misfire later
+      if (h.wasShooting) { h.wasShooting = false; h.shotCharge = 0; }
+      // PASS/attack-key presses now switch players; SHOOT/attack-key = tackle.
+      // A switch must fire once per frame: the loop re-resolves whoever just
+      // became active, who would otherwise see the SAME switch edge and flip
+      // straight back.
+      if ((inp.pressed('switch') || inp.pressed('pass')) && !this._switchedThisFrame) {
+        this._switchedThisFrame = true;
+        this.switchPlayer();
+      }
+      if (inp.pressed('tackle') || inp.pressed('shoot')) this.tryTackle(h);
+    }
+  },
+
+  // The team that effectively has the ball for the control-mode decision. A
+  // ball in flight has no OWNER but is far from neutral: the last kicker still
+  // directs play, so OUR lofted pass or shot must NOT flip the buttons to
+  // SWITCH|TACKLE while it is in the air. Only a truly never-touched ball
+  // falls back to the neutral (-1) mode.
+  currentPossessionTeam: function () {
+    var b = this.ball;
+    if (b.owner) return b.owner.team;
+    if (this.possessionTeam >= 0) return this.possessionTeam;
+    if (b.lastKicker) return b.lastKicker.team;
+    return -1;
+  },
+
+  // Reflect the current possession state on the on-screen controls: PASS | SHOOT
+  // when our team has the ball, SWITCH | TACKLE when the opponent does. Runs
+  // once per change (cheap no-op the rest of the time).
+  updateControlMode: function () {
+    var attack = this.currentPossessionTeam() === (this.active ? this.active.team : 0);
+    var mode = attack ? 'attack' : 'defend';
+    if (this._ctrlMode === mode) return;
+    this._ctrlMode = mode;
+    if (typeof LG.HUD === 'object' && typeof LG.HUD.setControlMode === 'function') {
+      LG.HUD.setControlMode(mode);
     }
   },
 
@@ -971,8 +1031,11 @@ placeKickoff: function () {
         var sdx = ball.x - this._ballPrevX, sdz = ball.z - this._ballPrevZ;
         var segLen2 = sdx * sdx + sdz * sdz;
         // only a genuine in-flight segment counts (a kickoff/goal reset moves the
-        // ball many metres instantly and must not be judged as motion)
-        if (segLen2 < 0.8) {
+        // ball many metres instantly and must not be judged as motion). The guard
+        // is now speed-aware: a fast ball moving ~speed*dt each frame stays
+        // "genuine" even on a long, low-FPS frame and still touches the body it
+        // flies through.
+        if (this.isGenuineFlight(segLen2)) {
           var contact = p.radius + ball.r;
           onSeg = this.segToPoint(this._ballPrevX, this._ballPrevZ, ball.x, ball.z, p.x, p.z) < contact;
         }
@@ -1162,8 +1225,11 @@ placeKickoff: function () {
       var bgx = ball.x - pAx, bgz = ball.z - pAz;
       var bSeg2 = bgx * bgx + bgz * bgz;
       var reach = gk.radius + ball.r + 0.06;
-      // (the < 0.8 guard skips kickoff/goal teleports that are not real motion)
-      if (bSeg2 < 0.8 && this.segToPoint(pAx, pAz, ball.x, ball.z, gk.x, gk.z) <= reach) {
+      // (speed-aware: a kickoff/goal teleport is not real motion, but a fast
+      // ball that moved a metre this frame — a coarse low-FPS frame — still is,
+      // and must still be stopped when it crosses the keeper's body: a keeper
+      // in front of a central shot is not a ghost)
+      if (this.isGenuineFlight(bSeg2) && this.segToPoint(pAx, pAz, ball.x, ball.z, gk.x, gk.z) <= reach) {
         this.doKeeperSave(gk, th);
       }
     }
@@ -1249,11 +1315,19 @@ placeKickoff: function () {
     }
 
     if (!goalZ) return;
-    if (ball.lastKicker && ball.lastKicker.team === 0 && goalZ === 'home') return; // own goal not allowed for arcade simplicity
-    if (ball.lastKicker && ball.lastKicker.team === 1 && goalZ === 'away') return;
 
-    var scorer = ball.lastKicker;
-    var teamGot = goalZ === 'home' ? 1 : 0;  // which team scores
+    // Goal attribution is by NET: whichever goal the ball crossed into, the
+    // OTHER team scores. A genuine own goal counts too — a defender's deflection
+    // or a keeper's parry that trickles over the line is a real goal for the
+    // attacking side. (It used to be swallowed, which left the ball dead in the
+    // net with no goal event and no reset — the match simply stalled.) The
+    // individual scorer is only credited when their own team gained the goal.
+    var src = ball.lastKicker;
+    var defensiveTeam = goalZ === 'home' ? 0 : 1;   // keeper who owns that net
+    var teamGot = goalZ === 'home' ? 1 : 0;          // which team scores
+    var isOwnGoal = !!(src && src.team === defensiveTeam);
+    var scorer = (!isOwnGoal && src && src.team === teamGot) ? src : null;
+
     if (teamGot === 0) this.score[0]++;
     else this.score[1]++;
     this.ball.kickT = 10; // freeze resets
@@ -1262,7 +1336,7 @@ placeKickoff: function () {
 
     // celebration FX
     var gx = goalZ === 'away' ? -halfL - 0.5 : halfL + 0.5;
-    LG.Particles.confetti(ball.x, 2.2, gzOf(goalZ), scorer ? (scorer.team === 0 ? 0x35e0ff : 0xff4d5e) : 0xffffff, 70);
+    LG.Particles.confetti(ball.x, 2.2, gzOf(goalZ), teamGot === 0 ? 0x35e0ff : 0xff4d5e, 70);
     LG.Particles.ring(ball.x, gzOf(goalZ), 0xffffff, 7, 0.7);
     this.shakeEffect(0.6, 0.7);
     this.camera && this.camera.pulse(1);
@@ -1273,7 +1347,7 @@ placeKickoff: function () {
     scorers.forEach(function (pp) { pp.fillMeter(0.3); });
     if (scorer) this.award(scorer, 'goal', 0.3);
 
-    this.bus.emit('goal', { team: teamGot, scorer: scorer, score: [this.score[0], this.score[1]] });
+    this.bus.emit('goal', { team: teamGot, scorer: scorer, isOwnGoal: !!isOwnGoal, score: [this.score[0], this.score[1]] });
 
     if (this.score[teamGot] >= 1) {
       // celebration burst
@@ -1405,8 +1479,9 @@ placeKickoff: function () {
     this.bus.emit('switchPlayer', { player: this.active, auto: !!isAuto });
   },
 
-  // Manual switch (X / E / Tab / mobile SWITCH): pick the most useful teammate
-  // for the current situation instead of cycling blindly.
+  // Manual switch (PASS/I press on mobile / mobile SWITCH button — the context
+  // keys while the OPPONENT has the ball): pick the most useful teammate for the
+  // current situation instead of cycling blindly.
   switchPlayer: function () {
     if (!this.home.length) return;
     var cur = this.active;

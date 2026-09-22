@@ -200,6 +200,11 @@ LG.KeeperBrain.prototype = {
       if (!M.lineClear(me, m)) continue;           // defender on the distribution lane
       var space = this.crowdOf(m);                 // nearest opponent distance
       var open = U.clamp((space - 1.9) / 1.6, 0, 1);
+      // a smothered mate is NOT a distribution target: a ball floated to a
+      // player an opponent can touch both first is handing the ball straight
+      // back. Only a teammate with genuine room is worth the pass — otherwise
+      // clear() hooves it into space.
+      if (open < 0.25) continue;
       var forward = (m.z - me.z) * (goal.z > 0 ? 1 : -1);
       // own-goal safety: a mate standing toward OUR goal (or level with us) is
       // not a distribution target — the pass would travel backward, and a
@@ -215,18 +220,33 @@ LG.KeeperBrain.prototype = {
     return best ? best.p : null;
   },
 
-  // Safety valve: no reliable teammate -> hoof it upfield toward open space.
+  // Safety valve: no reliable teammate -> hoof it upfield toward OPEN space.
+  // The landing spot is chosen from sampled candidates by how far it stays from
+  // every opponent, so a clearance clears instead of dropping at an opponent
+  // striker's feet for the tap-in back.
   clear: function () {
     var me = this.p;
     var M = LG.Match;
     var U = LG.Util;
-    var goal = M.enemyGoal(me.team);
     var dir = me.team === 0 ? -1 : 1;               // toward the opponent half
-    var ax = (U.rand() - 0.5) * 9;
-    var az = me.z + dir * (11 + U.rand() * 5);
-    ax = U.clamp(ax, -11, 11);
-    az = U.clamp(az, -20, 20);
-    var dx = ax - me.x, dz = az - me.z;
+    var opps = M.teamPlayers(1 - me.team).filter(function (o) { return !o.isGoalkeeper; });
+    var best = null, bestScore = -1;
+    for (var i = 0; i < 14; i++) {
+      var ax = U.clamp((U.rand() - 0.5) * 18, -11, 11);
+      var az = U.clamp(me.z + dir * (11 + U.rand() * 7), -20, 20);
+      var dist = (az - me.z) * dir;                 // metres upfield
+      var min = 1e9;
+      for (var k = 0; k < opps.length; k++) {
+        var o = opps[k];
+        var ddx = o.x - ax, ddz = o.z - az;
+        var d2 = ddx * ddx + ddz * ddz;
+        if (d2 < min) min = d2;
+      }
+      // weight the open space most, nudge by distance, jitter so it isn't robotic
+      var score = min * 1.4 + dist * 0.12 + U.rand() * 0.5;
+      if (score > bestScore) { bestScore = score; best = { x: ax, z: az }; }
+    }
+    var dx = best.x - me.x, dz = best.z - me.z;
     var dd = Math.sqrt(dx * dx + dz * dz) || 1;
     var P = LG.Config.physics;
     M.release(me);

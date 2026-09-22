@@ -33,11 +33,11 @@ LG.Input = (function () {
       case 'ArrowLeft': return 'left';
       case 'ArrowRight': return 'right';
       case 'KeyW': case 'ShiftLeft': case 'ShiftRight': return 'sprint';
+      // CONTEXT-SENSITIVE: PASS | SHOOT while your team has the ball, SWITCH |
+      // TACKLE while the opponent does. There are no separate switch/tackle keys.
       case 'KeyI': case 'KeyA': case 'Space': case 'KeyJ': return 'pass';
       case 'KeyS': case 'KeyK': return 'shoot';
-      case 'KeyD': case 'KeyL': case 'KeyC': return 'tackle';
       case 'KeyQ': return 'special';
-      case 'KeyX': case 'KeyE': case 'Tab': return 'switch';
       case 'KeyP': case 'Escape': return 'pause';
       case 'KeyR': return 'rematch';
     }

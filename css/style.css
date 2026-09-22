@@ -259,6 +259,9 @@ html, body {
   justify-content: center;
 }
 #actions button:active, #actions button.held { transform: scale(0.91); filter: brightness(1.6); }
+/* context-sensitive controls: only PASS | SHOOT (attacking) or SWITCH | TACKLE
+   (defending) are shown — LG.HUD.setControlMode toggles this class */
+#actions button.hidden-control { display: none; }
 #actions button.primary {
   border-width: 3px;
   font-size: clamp(12px, 2.7vmin, 17px);

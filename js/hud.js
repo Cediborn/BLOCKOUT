@@ -213,6 +213,23 @@ LG.HUD = (function () {
 
   function flashAmm() { /* noop */ }
 
+  // CONTEXT-SENSITIVE on-screen controls: PASS | SHOOT while our team has the
+  // ball, SWITCH | TACKLE while the opponent does. Hiding the other two action
+  // buttons (SPRINT and SPECIAL stay) means there is exactly one set either
+  // way, and it flips the moment possession changes.
+  function setControlMode(mode) {
+    var attack = mode === 'attack';
+    function show(id, on) {
+      var b = document.getElementById(id);
+      if (!b) return;
+      b.classList.toggle('hidden-control', !on);
+    }
+    show('btn-pass', attack);
+    show('btn-shoot', attack);
+    show('btn-tackle', !attack);
+    show('btn-switch', !attack);
+  }
+
   function updateCoins() {
     if (coinEl) coinEl.textContent = LG.Util.fmtMoney(LG.Progression.coins());
   }
@@ -232,5 +249,6 @@ LG.HUD = (function () {
     updateSpecial: updateSpecial, showSpecialName: showSpecialName,
     banner: banner, flash: flash, toast: toast, aim: aim,
     updateCoins: updateCoins, setTeamNames: setTeamNames,
+    setControlMode: setControlMode,
   };
 })();
