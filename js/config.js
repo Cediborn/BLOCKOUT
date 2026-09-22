@@ -45,8 +45,8 @@ LG.Config = {
     passSpeedMin: 6.5,
     dribbleRadius: 0.85,    // ball rides in front of the carrier
 
-    playerAccel: 52,        // how hard a player chases their desired velocity
-    stopBoost: 1.8,         // extra bite when the stick is released (crisp stops)
+    playerAccel: 46,        // smooth: not twitchy, not sluggish
+    stopBoost: 1.6,         // extra bite when the stick is released (crisp stops)
 
     sprintDrain: 0.2,       // stamina / second while sprinting (tactical, not punishing)
     sprintRecover: 0.24,    // stamina / second while not sprinting

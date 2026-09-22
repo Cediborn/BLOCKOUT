@@ -41,7 +41,7 @@ LG.Arena = (function () {
   function ground() {
     var g = new THREE.Group();
 
-    // asphalt surroundings
+    // asphalt road (the outermost surface — city streets)
     var asphaltT = LG.Util.makeCanvasTexture(function (c, w, h) {
       c.fillStyle = '#2b2f37';
       c.fillRect(0, 0, w, h);
@@ -52,30 +52,78 @@ LG.Arena = (function () {
         c.fillRect(Math.random() * w, Math.random() * h, 2, 1);
       }
     }, 256, 256);
-    asphaltT.repeat.set(6, 6);
-    var asphalt = new THREE.Mesh(new THREE.PlaneGeometry(90, 90), new THREE.MeshLambertMaterial({ map: asphaltT }));
+    asphaltT.repeat.set(8, 8);
+    var asphalt = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), new THREE.MeshLambertMaterial({ map: asphaltT }));
     asphalt.rotation.x = -Math.PI / 2;
     asphalt.position.y = -0.03;
     asphalt.receiveShadow = true;
     g.add(asphalt);
 
-    // surrounding sidewalk ring
+    // concrete sidewalk — continuous ring around the court
+    // Built from 4 panels: 2 long sides + 2 end sides, forming a border
+    // between the court fence and the road zone
     var walkT = LG.Util.makeCanvasTexture(function (c, w, h) {
-      c.fillStyle = '#454b56';
+      c.fillStyle = '#505862';
       c.fillRect(0, 0, w, h);
-      c.strokeStyle = 'rgba(0,0,0,0.3)';
-      c.lineWidth = 4;
-      for (var i = 0; i <= 4; i++) { c.beginPath(); c.moveTo(i * w / 4, 0); c.lineTo(i * w / 4, h); c.stroke(); }
-      for (var j = 0; j <= 4; j++) { c.beginPath(); c.moveTo(0, j * h / 4); c.lineTo(w, j * h / 4); c.stroke(); }
+      // slab joint lines
+      c.strokeStyle = 'rgba(0,0,0,0.25)';
+      c.lineWidth = 2;
+      var step = w / 6;
+      for (var i = 1; i < 6; i++) {
+        c.beginPath(); c.moveTo(i * step, 0); c.lineTo(i * step, h); c.stroke();
+      }
+      var step2 = h / 4;
+      for (var j = 1; j < 4; j++) {
+        c.beginPath(); c.moveTo(0, j * step2); c.lineTo(w, j * step2); c.stroke();
+      }
+      // surface noise — small cracks and grime
+      for (var n = 0; n < 60; n++) {
+        c.fillStyle = 'rgba(0,0,0,' + (0.04 + Math.random() * 0.08) + ')';
+        c.fillRect(Math.random() * w, Math.random() * h, 2 + Math.random() * 4, 1);
+      }
     });
-    var ringL = 30, ringW = 12;
-    var walk = new THREE.Mesh(new THREE.PlaneGeometry(ringL + ringW * 2, ringW), new THREE.MeshLambertMaterial({ map: walkT }));
-    walk.rotation.x = -Math.PI / 2; walk.position.z = C.length / 2 + ringW / 2 - 1; walk.receiveShadow = true;
-    g.add(walk);
-    var walk2 = walk.clone(); walk2.position.z = -C.length / 2 - ringW / 2 + 1; g.add(walk2);
-    var walk3 = new THREE.Mesh(new THREE.PlaneGeometry(ringW, C.length + ringW * 2), new THREE.MeshLambertMaterial({ map: walkT }));
-    walk3.rotation.x = -Math.PI / 2; walk3.position.x = C.width / 2 + ringW / 2 - 1; walk3.receiveShadow = true; g.add(walk3);
-    var walk4 = walk3.clone(); walk4.position.x = -C.width / 2 - ringW / 2 + 1; g.add(walk4);
+
+    // south sidewalk (court fence z=22 to road z=35)
+    var southW = 26, southD = 13;
+    var walkS = new THREE.Mesh(new THREE.PlaneGeometry(southW + 2, southD), new THREE.MeshLambertMaterial({ map: walkT }));
+    walkS.rotation.x = -Math.PI / 2;
+    walkS.position.set(0, 0.005, C.length / 2 + southD / 2);
+    walkS.receiveShadow = true;
+    g.add(walkS);
+
+    // north sidewalk
+    var walkN = walkS.clone();
+    walkN.position.z = -(C.length / 2 + southD / 2);
+    g.add(walkN);
+
+    // east sidewalk (court fence x=13 to road x=30)
+    var sideW = 17, sideL = C.length + southD * 2;
+    var walkE = new THREE.Mesh(new THREE.PlaneGeometry(sideW, sideL), new THREE.MeshLambertMaterial({ map: walkT }));
+    walkE.rotation.x = -Math.PI / 2;
+    walkE.position.set(C.width / 2 + sideW / 2, 0.005, 0);
+    walkE.receiveShadow = true;
+    g.add(walkE);
+
+    // west sidewalk
+    var walkW = walkE.clone();
+    walkW.position.x = -(C.width / 2 + sideW / 2);
+    g.add(walkW);
+
+    // curb edges (thin raised concrete strips at sidewalk/road boundary)
+    var curbM = new THREE.MeshStandardMaterial({ color: 0x6a7080, roughness: 0.9 });
+    var curbH = 0.08, curbW = 0.18;
+    // south curb
+    var curbS = new THREE.Mesh(new THREE.BoxGeometry(southW + 2, curbH, curbW), curbM);
+    curbS.position.set(0, curbH / 2, C.length / 2 + southD);
+    g.add(curbS);
+    // north curb
+    var curbN = curbS.clone(); curbN.position.z = -(C.length / 2 + southD); g.add(curbN);
+    // east curb
+    var curbE = new THREE.Mesh(new THREE.BoxGeometry(curbW, curbH, sideL), curbM);
+    curbE.position.set(C.width / 2 + sideW, curbH / 2, 0);
+    g.add(curbE);
+    // west curb
+    var curbW = curbE.clone(); curbW.position.x = -(C.width / 2 + sideW); g.add(curbW);
 
     return g;
   }
@@ -583,32 +631,8 @@ LG.Arena = (function () {
   // ---------------- props ----------------
   function props() {
     var g = new THREE.Group();
-    var darkM = new THREE.MeshStandardMaterial({ color: 0x2f3540, roughness: 0.85 });
-    var redM = new THREE.MeshStandardMaterial({ color: 0x8a3f3f, roughness: 0.7 });
 
-    // dumpster
-    var dump = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.2, 1.3), darkM);
-    dump.position.set(C.width / 2 + 3.4, 0.6, 2.1);
-    dump.castShadow = true;
-    g.add(dump);
-
-    // crates
-    var crateM = new THREE.MeshStandardMaterial({ color: 0x8a6a3f, roughness: 0.9 });
-    for (var i = 0; i < 3; i++) {
-      var crate = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9), crateM);
-      crate.position.set(-C.width / 2 - 2.8 + i * 1.1, 0.45, -3 + i * 0.9);
-      crate.castShadow = true; g.add(crate);
-    }
-
-    // tire stack
-    var tireM = new THREE.MeshStandardMaterial({ color: 0x1d1d22, roughness: 1 });
-    for (var j = 0; j < 3; j++) {
-      var tire = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.3, 14), tireM);
-      tire.position.set(C.width / 2 + 3.6, 0.15 + j * 0.28, -4.4);
-      tire.castShadow = true; g.add(tire);
-    }
-
-    // corner floodlight poles
+    // corner floodlight poles (at the goal ends)
     var poleM = new THREE.MeshStandardMaterial({ color: 0x3a4250, roughness: 0.6 });
     var lampM = new THREE.MeshStandardMaterial({ color: 0xfff2c9, emissive: 0xfff6d8, emissiveIntensity: 1.4 });
     var poles = [[-C.width / 2 - 2, -C.length / 2 - 1.4], [C.width / 2 + 2, C.length / 2 + 1.4]];
@@ -706,27 +730,66 @@ LG.Arena = (function () {
     return g;
   }
 
-  // ---------------- concrete Jersey barriers ----------------
+  // ---------------- short court railing ----------------
+  // A low waist-height metal railing that marks the court boundary — just
+  // enough to say "this is the pitch" without blocking the camera.
   function barriers() {
     var g = new THREE.Group();
-    var conM = new THREE.MeshStandardMaterial({ color: 0x7d838f, roughness: 0.95 });
-    var stripeM = new THREE.MeshStandardMaterial({ color: 0x343b47, roughness: 0.9 });
-    var spots = [
-      { x: 14.9, z: -14.4, rot: 0.7 }, { x: -14.9, z: -14.7, rot: -0.7 },
-      { x: 14.9, z: 14.6, rot: -0.7 }, { x: -14.9, z: 14.5, rot: 0.7 },
-    ];
-    for (var i = 0; i < spots.length; i++) {
-      var s = spots[i];
-      var grp = new THREE.Group();
-      grp.add(new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.72, 2.6), conM).translateY(0.36));
-      grp.add(new THREE.Mesh(new THREE.BoxGeometry(0.94, 0.5, 2.6), conM).translateY(0.9));
-      grp.add(new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.16, 2.7), stripeM).translateY(0.7));
-      grp.position.set(s.x, 0, s.z);
-      grp.rotation.y = s.rot;
-      grp.traverse(function (o) { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
-      g.add(grp);
-    }
+    var railM = new THREE.MeshStandardMaterial({ color: 0x4a5565, roughness: 0.65, metalness: 0.4 });
+    var postM = new THREE.MeshStandardMaterial({ color: 0x3a4050, roughness: 0.7, metalness: 0.5 });
+
+    // railing runs along all four sides of the court, just outside the fence
+    // with gaps at the goal mouths
+    var halfW = C.width / 2 + 0.8;
+    var halfL = C.length / 2 + 0.8;
+    var railH = 0.65;  // waist height — low, not blocking
+    var postH = 0.85;
+    var railR = 0.04;
+    var postR = 0.06;
+
+    // south railing (z = +halfL), gap at the goal mouth
+    addRailSegment(-halfW, halfL, halfW, halfL, railM, postM, railH, postH, railR, postR, g);
+    // north railing (z = -halfL), gap at the goal mouth
+    addRailSegment(-halfW, -halfL, halfW, -halfL, railM, postM, railH, postH, railR, postR, g);
+    // east railing (x = +halfW)
+    addRailSegment(halfW, -halfL + 6, halfW, halfL - 6, railM, postM, railH, postH, railR, postR, g);
+    // west railing (x = -halfW)
+    addRailSegment(-halfW, -halfL + 6, -halfW, halfL - 6, railM, postM, railH, postH, railR, postR, g);
+
     return g;
+  }
+
+  // helper: a single railing segment (horizontal bar + evenly-spaced posts)
+  function addRailSegment(x1, z1, x2, z2, railM, postM, railH, postH, railR, postR, parent) {
+    var dx = x2 - x1, dz = z2 - z1;
+    var len = Math.sqrt(dx * dx + dz * dz);
+    var yaw = Math.atan2(dx, dz);
+    var cx = (x1 + x2) / 2, cz = (z1 + z2) / 2;
+
+    // horizontal bar
+    var bar = new THREE.Mesh(new THREE.CylinderGeometry(railR, railR, len, 6), railM);
+    bar.rotation.x = Math.PI / 2;
+    bar.rotation.z = yaw;
+    bar.position.set(cx, railH, cz);
+    bar.castShadow = true;
+    parent.add(bar);
+
+    // second lower bar
+    var bar2 = bar.clone();
+    bar2.position.y = railH * 0.45;
+    parent.add(bar2);
+
+    // posts every ~3 units
+    var postCount = Math.max(2, Math.ceil(len / 3));
+    for (var i = 0; i < postCount; i++) {
+      var t = i / (postCount - 1);
+      var px = x1 + dx * t;
+      var pz = z1 + dz * t;
+      var post = new THREE.Mesh(new THREE.CylinderGeometry(postR, postR, postH, 6), postM);
+      post.position.set(px, postH / 2, pz);
+      post.castShadow = true;
+      parent.add(post);
+    }
   }
 
   // ---------------- street lamps (behind the end lines) ----------------
@@ -735,7 +798,7 @@ LG.Arena = (function () {
     var poleM = new THREE.MeshStandardMaterial({ color: 0x20242b, roughness: 0.6, metalness: 0.5 });
     var headM = new THREE.MeshStandardMaterial({ color: 0xfff6d8, emissive: 0xfff2c9, emissiveIntensity: 1.5 });
     var spots = [
-      { x: 9.2, z: -28.8 }, { x: -9.2, z: 28.8 },
+      { x: 9.2, z: -26 }, { x: -9.2, z: 26 },
     ];
     for (var i = 0; i < spots.length; i++) {
       var s = spots[i];
@@ -762,14 +825,14 @@ LG.Arena = (function () {
     var woodM = new THREE.MeshStandardMaterial({ color: 0x6d4a2c, roughness: 0.9 });
     var legM = new THREE.MeshStandardMaterial({ color: 0x2c3038, roughness: 0.8 });
     var spots = [
-      { x: 11.6, z: -27.4, rot: 0 },
-      { x: -11.6, z: 27.4, rot: Math.PI },
-      { x: 11.6, z: 27.4, rot: 0 },
-      { x: -11.6, z: -27.4, rot: Math.PI },
-      { x: -27.5, z: 10, rot: -Math.PI / 2 },
-      { x: -27.5, z: -6, rot: -Math.PI / 2 },
-      { x: 27.5, z: 10, rot: Math.PI / 2 },
-      { x: 27.5, z: -6, rot: Math.PI / 2 },
+      { x: 11.6, z: 25, rot: 0 },
+      { x: -11.6, z: -25, rot: Math.PI },
+      { x: 11.6, z: -25, rot: Math.PI },
+      { x: -11.6, z: 25, rot: 0 },
+      { x: 25, z: 10, rot: -Math.PI / 2 },
+      { x: 25, z: -6, rot: -Math.PI / 2 },
+      { x: -25, z: 10, rot: Math.PI / 2 },
+      { x: -25, z: -6, rot: Math.PI / 2 },
     ];
     for (var i = 0; i < spots.length; i++) {
       var s = spots[i];
@@ -1031,6 +1094,61 @@ LG.Arena = (function () {
     return g;
   }
 
+  // ---------------- perimeter spectators ----------------
+  // Static crowd standing just outside the court railing, watching the game.
+  // Uses the existing spectator model with simple idle animations.
+  function perimeterSpectators() {
+    var g = new THREE.Group();
+    var halfW = C.width / 2 + 1.5;
+    var halfL = C.length / 2 + 1.5;
+
+    // spectator positions around the court — groups on the long sides,
+    // sparser on the ends (behind the goals where bleachers already are)
+    var spots = [];
+
+    // south side (z = +halfL + a bit)
+    for (var i = 0; i < 8; i++) {
+      var x = -halfW + 3 + i * ((halfW * 2 - 6) / 7);
+      spots.push({ x: x, z: halfL + 1.2 + Math.random() * 1.5, rot: Math.PI });
+    }
+    // north side (z = -halfL - a bit)
+    for (var i = 0; i < 8; i++) {
+      var x = -halfW + 3 + i * ((halfW * 2 - 6) / 7);
+      spots.push({ x: x, z: -(halfL + 1.2 + Math.random() * 1.5), rot: 0 });
+    }
+    // east side (x = +halfW + a bit)
+    for (var i = 0; i < 5; i++) {
+      var z = -halfL + 6 + i * ((halfL * 2 - 12) / 4);
+      spots.push({ x: halfW + 1.2 + Math.random() * 1.2, z: z, rot: -Math.PI / 2 });
+    }
+    // west side (x = -halfW - a bit)
+    for (var i = 0; i < 5; i++) {
+      var z = -halfL + 6 + i * ((halfL * 2 - 12) / 4);
+      spots.push({ x: -(halfW + 1.2 + Math.random() * 1.2), z: z, rot: Math.PI / 2 });
+    }
+
+    for (var i = 0; i < spots.length; i++) {
+      var s = spots[i];
+      var spec = LG.Models.spectator();
+      if (!spec) continue;
+      spec.position.set(s.x, 0, s.z);
+      spec.rotation.y = s.rot + (Math.random() - 0.5) * 0.3;
+      g.add(spec);
+
+      // idle animation — gentle sway or arm raise
+      var phase = Math.random() * 10;
+      var animKind = Math.random();
+      if (animKind < 0.3) {
+        // arm raise cheer
+        anims.push({ g: spec, t: phase, amp: 0.04, cheer: true });
+      } else {
+        // gentle idle bob
+        anims.push({ g: spec, t: phase, amp: 0.02, bob: true });
+      }
+    }
+    return g;
+  }
+
   // ---------------- assemble ----------------
   // The pitch surface group holds ONLY what changes with the selected court:
   // the slab texture + its painted lines/logo. Swapping a court rebuilds this
@@ -1084,6 +1202,7 @@ LG.Arena = (function () {
     root.add(trees());
     root.add(vehicles());
     root.add(streetFurniture());
+    root.add(perimeterSpectators());
 
     var halfW = C.width / 2, halfL = C.length / 2;
     var gw = C.goalWidth / 2;
@@ -1116,9 +1235,16 @@ LG.Arena = (function () {
           var a = anims[i];
           a.t += dt;
           if (a.sway) {
-            // tree sway: gentle side-to-side + vertical bob
             a.g.rotation.z = Math.sin(a.t * 0.7) * a.amp * 2;
             a.g.rotation.x = Math.cos(a.t * 0.5) * a.amp;
+          } else if (a.cheer) {
+            // spectator arm-raise: periodic raise-and-lower
+            var v = Math.sin(a.t * 1.8) * 0.5 + 0.5;
+            a.g.position.y = v * 0.08;
+          } else if (a.bob) {
+            // spectator idle sway
+            a.g.rotation.y += Math.sin(a.t * 1.2) * 0.0003;
+            a.g.position.y = Math.sin(a.t * 1.5) * 0.015;
           } else {
             a.g.position.y += Math.sin(a.t * 6) * a.amp * 0.1;
           }

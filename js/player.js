@@ -12,8 +12,8 @@ LG.Player = function (def, team, idx) {
   this.idx = idx;
   this.stats = def.stats;
 
-  this.maxSpeed = 5.0 + this.stats.speed * 0.34;
-  this.accel = LG.Config.physics.playerAccel || 52;   // responsive: no skating, no drag
+  this.maxSpeed = 4.2 + this.stats.speed * 0.32;
+  this.accel = LG.Config.physics.playerAccel || 46;   // smooth, not twitchy
   this.sprintMul = LG.Config.physics.sprintMul || 1.55;
 
   var wide = (def.body && def.body.wide) || 1;
