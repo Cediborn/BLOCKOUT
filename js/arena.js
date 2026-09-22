@@ -639,7 +639,7 @@ LG.Arena = (function () {
     for (var p = 0; p < poles.length; p++) {
       var pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 9, 8), poleM);
       pole.position.set(poles[p][0], 4.5, poles[p][1]);
-      pole.castShadow = true; g.add(pole);
+      pole.castShadow = false; g.add(pole);
       var lamp = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.5, 0.9), lampM);
       lamp.position.set(poles[p][0], 9.2, poles[p][1]);
       g.add(lamp);
@@ -960,7 +960,7 @@ LG.Arena = (function () {
     var g = new THREE.Group();
     var poleM = new THREE.MeshStandardMaterial({ color: 0x2a2e38, roughness: 0.6, metalness: 0.4 });
     var lampHeadM = new THREE.MeshStandardMaterial({ color: 0xfff6d8, emissive: 0xfff2c9, emissiveIntensity: 1.2 });
-    // ---- street lamps ----
+    // ---- street lamps (visual only, no point lights) ----
     var lampSpots = [
       { x: -30, z: -38 }, { x: 30, z: -38 },
       { x: -30, z: 38 }, { x: 30, z: 38 },
@@ -970,14 +970,11 @@ LG.Arena = (function () {
       var s = lampSpots[i];
       var pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 7.5, 6), poleM);
       pole.position.set(s.x, 3.75, s.z);
-      pole.castShadow = true;
+      pole.castShadow = false;
       g.add(pole);
       var lamp = new THREE.Mesh(new THREE.SphereGeometry(0.3, 6, 4), lampHeadM);
       lamp.position.set(s.x, 7.6, s.z);
       g.add(lamp);
-      var pl = new THREE.PointLight(0xffe8b0, 0.35, 16, 2);
-      pl.position.set(s.x, 7.2, s.z);
-      g.add(pl);
     }
     // ---- fire hydrants ----
     var hydrM = new THREE.MeshStandardMaterial({ color: 0xcc2222, roughness: 0.6, metalness: 0.3 });

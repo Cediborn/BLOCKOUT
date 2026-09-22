@@ -96,7 +96,7 @@
         </div>
       </div>
       <div class="row-btns">
-        <button id="btn-sides-back" class="big-btn" style="min-width:150px; background:linear-gradient(180deg,#9aa6b8,#5d6a7d); box-shadow:0 6px 0 #3c4757">BACK</button>
+        <button id="btn-sides-back" class="big-btn secondary">BACK</button>
         <button id="btn-sides-go" class="big-btn gold" style="min-width:240px">CONTINUE</button>
       </div>
     </div>
@@ -120,7 +120,7 @@
         </button>
       </div>
       <div class="row-btns">
-        <button id="btn-diff-back" class="big-btn" style="min-width:150px; background:linear-gradient(180deg,#9aa6b8,#5d6a7d); box-shadow:0 6px 0 #3c4757">BACK</button>
+        <button id="btn-diff-back" class="big-btn secondary">BACK</button>
         <button id="btn-diff-go" class="big-btn gold" style="min-width:240px">CONTINUE</button>
       </div>
     </div>
@@ -151,9 +151,9 @@
 
       <div id="char-grid" class="char-grid"></div>
       <div class="row-btns">
-        <button id="btn-back" class="big-btn" style="min-width:150px; background:linear-gradient(180deg,#9aa6b8,#5d6a7d); box-shadow:0 6px 0 #3c4757">BACK</button>
-        <button id="btn-style" class="big-btn" style="min-width:200px; background:linear-gradient(180deg,#9aa6b8,#5d6a7d); box-shadow:0 6px 0 #3c4757">PLAYER STYLE</button>
-        <button id="btn-court" class="big-btn" style="min-width:200px; background:linear-gradient(180deg,#9aa6b8,#5d6a7d); box-shadow:0 6px 0 #3c4757">COURT</button>
+        <button id="btn-back" class="big-btn secondary">BACK</button>
+        <button id="btn-style" class="big-btn secondary" style="min-width:200px">PLAYER STYLE</button>
+        <button id="btn-court" class="big-btn secondary" style="min-width:200px">COURT</button>
         <button id="btn-start-match" class="big-btn gold" style="min-width:240px">KICK OFF</button>
       </div>
     </div>
@@ -167,7 +167,7 @@
       <div id="court-grid" class="court-grid"></div>
       <div id="court-preview" class="court-preview"></div>
       <div class="row-btns">
-        <button id="btn-court-back" class="big-btn" style="min-width:150px; background:linear-gradient(180deg,#9aa6b8,#5d6a7d); box-shadow:0 6px 0 #3c4757">BACK</button>
+        <button id="btn-court-back" class="big-btn secondary">BACK</button>
         <button id="btn-court-go" class="big-btn gold" style="min-width:240px">CONFIRM</button>
       </div>
     </div>
@@ -187,7 +187,7 @@
       <div id="away-kit-note" class="kit-note"></div>
 
       <div class="row-btns" style="margin-top:20px">
-        <button id="btn-style-back" class="big-btn" style="min-width:150px; background:linear-gradient(180deg,#9aa6b8,#5d6a7d); box-shadow:0 6px 0 #3c4757">BACK</button>
+        <button id="btn-style-back" class="big-btn secondary">BACK</button>
         <button id="btn-style-go" class="big-btn gold" style="min-width:240px">CONFIRM</button>
       </div>
     </div>
@@ -197,19 +197,33 @@
   <div id="how-overlay" class="overlay hidden">
     <div class="panel">
       <div class="title-xl" style="font-size:clamp(30px,7vmin,54px)"><span class="t1">HOW</span> <span class="t2">TO PLAY</span></div>
-      <div class="row-btns" style="margin-top:18px">
-        <div class="help-list">
-          <div>🕹️ <b>MOVE</b> — Arrow Keys (or left joystick on mobile)</div>
-          <div>💨 <b>PACE / SPRINT</b> — hold [W] — sprinting burns stamina, jogging restores it</div>
-          <div>⚡ <b>SHOOT / TACKLE</b> — [S] — with the ball: hold to charge a strike · the opponent has it: press to tackle from the front or side, never from behind</div>
-          <div>🔗 <b>PASS / SWITCH</b> — [I] — with the ball: pass to whoever you are pointing at · the opponent has it: jump to the best teammate</div>
-          <div>🌟 <b>SPECIAL</b> — [Q] when the meter is full</div>
-          <div>🏁 First to the most goals when the clock hits zero wins.</div>
-          <div style="opacity:0.65">📱 Mobile: joystick moves, the action buttons change between PASS|SHOOT and SWITCH|TACKLE with which team has the ball.</div>
+      <div class="help-sections">
+        <div class="help-section">
+          <div class="help-section-title">MOVEMENT</div>
+          <div class="help-row"><span class="help-key">ARROWS</span><span class="help-desc">Move your player</span></div>
+          <div class="help-row"><span class="help-key">W</span><span class="help-desc"><b>Sprint</b> — burns stamina, jogging restores it</span></div>
+        </div>
+        <div class="help-section">
+          <div class="help-section-title">ATTACK</div>
+          <div class="help-row"><span class="help-key">S</span><span class="help-desc"><b>Shoot</b> — hold to charge a strike</span></div>
+          <div class="help-row"><span class="help-key">I</span><span class="help-desc"><b>Pass</b> — point and fire to a teammate</span></div>
+          <div class="help-row"><span class="help-key">Q</span><span class="help-desc"><b>Special</b> — when the meter is full</span></div>
+        </div>
+        <div class="help-divider"></div>
+        <div class="help-section">
+          <div class="help-section-title">DEFENSE</div>
+          <div class="help-row"><span class="help-key">S</span><span class="help-desc"><b>Tackle</b> — from front or side, never behind</span></div>
+          <div class="help-row"><span class="help-key">I</span><span class="help-desc"><b>Switch</b> — jump to the best teammate</span></div>
+        </div>
+        <div class="help-section">
+          <div class="help-section-title">MOBILE</div>
+          <div class="help-row"><span class="help-key">STICK</span><span class="help-desc">Joystick to move</span></div>
+          <div class="help-row"><span class="help-desc">Action buttons flip between <b>PASS | SHOOT</b> (attacking) and <b>SWITCH | TACKLE</b> (defending) based on who has the ball</span></div>
         </div>
       </div>
+      <div style="margin-top:16px;font-size:12px;letter-spacing:0.1em;opacity:0.5">First to the most goals when the clock hits zero wins.</div>
       <div class="row-btns">
-        <button id="btn-how-back" class="big-btn" style="min-width:150px; background:linear-gradient(180deg,#9aa6b8,#5d6a7d); box-shadow:0 6px 0 #3c4757">BACK</button>
+        <button id="btn-how-back" class="big-btn secondary">BACK</button>
       </div>
     </div>
   </div>
@@ -220,8 +234,12 @@
       <h2 style="color:#fff;text-shadow:0 4px 0 rgba(0,0,0,0.4)">PAUSED</h2>
       <div class="row-btns">
         <button id="btn-resume" class="big-btn">RESUME</button>
-        <button id="btn-quit-menu" class="big-btn" style="background:linear-gradient(180deg,#9aa6b8,#5d6a7d);box-shadow:0 6px 0 #3c4757">QUIT TO MENU</button>
+        <button id="btn-restart" class="big-btn gold">RESTART</button>
+        <button id="btn-pause-how" class="big-btn secondary">HOW TO PLAY</button>
+        <button id="btn-quit-menu" class="big-btn secondary">QUIT TO MENU</button>
       </div>
+    </div>
+  </div>
     </div>
   </div>
 
@@ -233,7 +251,7 @@
       <div class="result-coins" id="res-coins"><span class="coin"></span><span id="res-coins-n">+0</span></div>
       <div class="row-btns">
         <button id="btn-rematch" class="big-btn gold">REMATCH</button>
-        <button id="btn-result-menu" class="big-btn" style="background:linear-gradient(180deg,#9aa6b8,#5d6a7d);box-shadow:0 6px 0 #3c4757">MAIN MENU</button>
+        <button id="btn-result-menu" class="big-btn secondary">MAIN MENU</button>
       </div>
       <div class="ko">+ COINS UNLOCK MORE STARS</div>
     </div>

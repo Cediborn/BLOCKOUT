@@ -9,6 +9,7 @@
   var match = null;
   var arenaObj = null;
   var UIState = 'menu';          // menu | sides | diff | select | style | court | how | match | paused | result
+  var howFromPause = false;      // track if how-to-play was opened from pause
   var selectedId = 'blaze';
   var outfitColor = null;        // null = regular clothes, or LG.OutfitColors entry
   var awayColor = null;          // null = default rogue kit, or LG.OutfitColors entry
@@ -203,12 +204,23 @@
     });
 
     bus.on('howRequested', function () {
+      howFromPause = false;
       showOverlay('menu-overlay', false);
+      showOverlay('how-overlay', true);
+    });
+    bus.on('pauseHowRequested', function () {
+      howFromPause = true;
+      showOverlay('pause-overlay', false);
       showOverlay('how-overlay', true);
     });
     bus.on('howBackRequested', function () {
       showOverlay('how-overlay', false);
-      showOverlay('menu-overlay', true);
+      if (howFromPause) {
+        showOverlay('pause-overlay', true);
+      } else {
+        showOverlay('menu-overlay', true);
+      }
+      howFromPause = false;
     });
 
     bus.on('menuBackRequested', function () {
@@ -558,7 +570,7 @@
     var html = '';
     for (var i = 0; i < names.length; i++) {
       var v = stats[names[i]];
-      html += '<div style="text-align:left">' + names[i] + ' <b>' + v + '</b></div>';
+      html += '<div class="stat-row">' + names[i] + ' <b>' + v + '</b></div>';
     }
     return html;
   }

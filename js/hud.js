@@ -38,6 +38,8 @@ LG.HUD = (function () {
     document.getElementById('btn-result-menu').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('quitRequested'); });
     document.getElementById('btn-resume').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('resumeRequested'); });
     document.getElementById('btn-quit-menu').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('quitRequested'); });
+    document.getElementById('btn-restart').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('rematchRequested'); });
+    document.getElementById('btn-pause-how').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('pauseHowRequested'); });
     document.getElementById('pause-btn').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('pauseRequested'); });
     document.getElementById('btn-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('menuBackRequested'); });
     document.getElementById('btn-play').addEventListener('click', function () { LG.Audio.unlock(); LG.Audio.sfx.click(); LG.eventBus.emit('playRequested'); });

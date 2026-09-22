@@ -396,6 +396,12 @@ body.view-landscape #special-wrap { left: auto; right: clamp(10px, 2.6vmin, 22px
 }
 .big-btn:active { transform: translateY(4px); box-shadow: 0 2px 0 #137a9c; }
 .big-btn.gold { background: linear-gradient(180deg, #ffe07a, #f0a623); box-shadow: 0 6px 0 #b0730e, 0 10px 24px rgba(240,166,35,0.35); }
+.big-btn.secondary {
+  background: linear-gradient(180deg, #9aa6b8, #5d6a7d);
+  box-shadow: 0 6px 0 #3c4757, 0 10px 24px rgba(60,71,87,0.35);
+  color: #e8f0f8;
+  min-width: 150px;
+}
 
 .row-btns { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; }
 
@@ -663,10 +669,70 @@ body.view-landscape #special-wrap { left: auto; right: clamp(10px, 2.6vmin, 22px
 
 /* pause overlay */
 .pause-panel h2 { font-size: clamp(34px, 8vmin, 60px); letter-spacing: 0.3em; }
+.pause-panel .row-btns { gap: 12px; flex-direction: column; align-items: center; }
 
 /* controls help */
 .help-list { margin: 20px auto 0; text-align: left; display: inline-block; font-size: 13px; line-height: 1.9; opacity: 0.85; letter-spacing: 0.04em; }
 .help-list b { color: var(--hud-cyan); }
+
+/* redesigned how-to-play sections */
+.help-sections {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 20px;
+  margin-top: 22px;
+}
+.help-section {
+  flex: 1 1 280px;
+  max-width: 380px;
+  text-align: left;
+}
+.help-section-title {
+  font-size: 11px;
+  letter-spacing: 0.26em;
+  color: var(--hud-cyan);
+  opacity: 0.85;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+.help-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  color: rgba(255,255,255,0.82);
+}
+.help-key {
+  flex-shrink: 0;
+  display: inline-block;
+  min-width: 42px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.18);
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 0.08em;
+  color: #fff;
+  text-align: center;
+  white-space: nowrap;
+}
+.help-desc { color: rgba(255,255,255,0.7); }
+.help-desc b { color: var(--hud-cyan); font-weight: bold; }
+.help-divider {
+  flex-basis: 100%;
+  height: 0;
+}
+
+/* stat rows in character cards */
+.stat-row {
+  text-align: left;
+}
 
 /* toast for generic messages */
 .toast {

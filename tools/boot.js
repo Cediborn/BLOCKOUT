@@ -309,7 +309,7 @@ section('5. match settings are wired into the real game state');
   // collect() walked the built environment, so setMode has something to drive:
   // the lamp/flood point lights, the lamp-head emissives and the sky dome
   var st = LG.Lighting.stats();
-  check(st.points >= 8 && st.emissives >= 3 && st.skies === 1,
+  check(st.points >= 4 && st.emissives >= 3 && st.skies === 1,
     'Lighting.collect found the environment', JSON.stringify(st));
 
   // DAY -> NIGHT through the actual button: the full chain must flip
