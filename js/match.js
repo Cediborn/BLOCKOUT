@@ -282,7 +282,7 @@ LG.MatchManager.prototype = {
     LG.Audio.sfx.matchStart();
   },
 
-placeKickoff: function () {
+  placeKickoff: function () {
     var halfW = LG.Config.court.width / 2 - 0.6;
     var i, p, pos;
     var homePos = [[0, 9], [-6, 13], [6, 13]];
@@ -359,7 +359,9 @@ placeKickoff: function () {
         }
         break;
       case 'GOAL':
-        this.updatePlayers(0.4);
+        // freeze like KICKOFF/END: 0.4 per frame ran AI intent at ~24x during
+        // the celebration, scattering players before placeKickoff snapped them back
+        this.updatePlayers(0);
         if (this.stateT <= 0) {
           this.state = 'KICKOFF';
           this.stateT = LG.Config.match.kickoffDelay;
@@ -456,7 +458,12 @@ placeKickoff: function () {
       h.activateAbility();
     }
 
-    if (this.state !== 'PLAY') { h.want.x = h.want.z = 0; h.want.sprint = false; return; }
+    if (this.state !== 'PLAY') {
+      h.want.x = h.want.z = 0; h.want.sprint = false;
+      // a charge interrupted by a goal/whistle must not misfire on resume
+      h.shotCharge = 0; h.wasShooting = false;
+      return;
+    }
 
     // CONTEXT-SENSITIVE CONTROLS — one control does both jobs depending on who
     // has the ball. While MY team carries it (any teammate, not just the human)
@@ -467,11 +474,22 @@ placeKickoff: function () {
 
     if (attack) {
       if (inp.pressed('pass')) {
-        if (h.hasBall) this.humanPass(h);
-        this.bus.emit('actionPerformed', { type: 'pass', player: h });
+        var carrierNow = this.ownerPlayer();
+        if (h.hasBall) {
+          this.humanPass(h);
+          this.bus.emit('actionPerformed', { type: 'pass', player: h });
+        } else if (carrierNow && carrierNow !== h && !this._switchedThisFrame) {
+          // our team has it but someone else is carrying: jump onto them
+          this._switchedThisFrame = true;
+          this.activatePlayer(carrierNow, false);
+        } else {
+          this.bus.emit('actionPerformed', { type: 'pass', player: h });
+        }
       }
-      // shoot: charge while held, fire on release
-      if (inp.down('shoot')) {
+      // shoot: charge while held, fire on release. A press that is already
+      // released by the next edge still starts a charge so a quick tap
+      // becomes a real shot instead of nothing.
+      if (inp.down('shoot') || inp.pressed('shoot')) {
         if (h.hasBall) h.shotCharge = Math.min(1, h.shotCharge + dt * (LG.Config.physics.shootChargeRate || 2.8));
         h.wasShooting = true;
       } else if (h.wasShooting) {
@@ -598,6 +616,8 @@ placeKickoff: function () {
     if (!p) return;
     p.hasBall = false;
     this.possessionTeam = -1;
+    // never leave a phantom owner on the ball (frozen physics / wrong control mode)
+    if (this.ball.owner === p) this.ball.owner = null;
   },
 
   // ------------------------------------------------------------
@@ -972,6 +992,7 @@ placeKickoff: function () {
     if (thrown) {
       this.ball.lastKicker = p;
       this.ball.kickT = 0.2;
+      this.ball.owner = null;
       this.ball.kick(Math.sin(p.facing) * 10, 3, Math.cos(p.facing) * 10);
       this.award(p, 'tackle', 0.16);
       this.bus.emit('tackleWin', { src: p, victim: null });
@@ -991,7 +1012,13 @@ placeKickoff: function () {
         var dd = Math.sqrt(dx * dx + dz * dz) || 1;
         o.x += (dx / dd) * 2.0;
         o.z += (dz / dd) * 2.0;
-        if (o.hasBall) { o.hasBall = false; this.possessionTeam = -1; }
+        if (o.hasBall) {
+          o.hasBall = false;
+          this.possessionTeam = -1;
+          // the throw must actually free the ball — otherwise ball.owner stays
+          // set, physics freezes, and nobody can pick it up again
+          ball.owner = null;
+        }
       }
     }
     // grab loose ball nearby
@@ -1344,6 +1371,10 @@ placeKickoff: function () {
 
     if (teamGot === 0) this.score[0]++;
     else this.score[1]++;
+    // a dribbler over the line keeps hasBall through the celebration and would
+    // yank the ball off the kickoff spot — drop possession the moment it counts
+    var carrier = this.ownerPlayer();
+    if (carrier) this.release(carrier);
     this.ball.kickT = 10; // freeze resets
     this.state = 'GOAL';
     this.stateT = LG.Config.match.goalDelay;

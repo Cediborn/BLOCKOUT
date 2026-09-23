@@ -30,6 +30,14 @@ LG.Ball.prototype = {
     this.noPk = null;
     this.noPkT = 0;
     this.atRest = true;
+    // a fresh ball at kickoff must not inherit the previous play: a stale
+    // lastKicker would pin the control mode to the wrong team, and a leftover
+    // kickT would keep self-hit protection alive for seconds after the whistle
+    this.lastKicker = null;
+    this.kickT = 0;
+    this.intendedReceiver = null;
+    this.intendedT = 0;
+    this._guided = null;
     this._kickSeq = (this._kickSeq || 0) + 1;   // invalidate old keeper save rolls
     if (this.mesh) this.mesh.position.set(this.x, this.y, this.z);
   },

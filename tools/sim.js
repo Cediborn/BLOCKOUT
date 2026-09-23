@@ -1642,8 +1642,8 @@ section('13c. context-sensitive controls — PASS/SHOOT vs SWITCH/TACKLE by poss
     'dedicated SWITCH keys are gone (X/E/Tab)');
   assert(K('KeyD') === null && K('KeyL') === null && K('KeyC') === null,
     'dedicated TACKLE keys are gone (D/L/C)');
-  assert(K('KeyI') === 'pass' && K('KeyS') === 'shoot',
-    'I and S stay the primary keys — their meaning follows possession');
+  assert(K('KeyA') === 'pass' && K('KeyI') === 'pass' && K('KeyS') === 'shoot',
+    'A and S are the primary keys — their meaning follows possession');
 
   // ---- MY team has it: PASS | SHOOT (pass flies, poke/switch/tackle ignored) ----
   var m = newMatch();

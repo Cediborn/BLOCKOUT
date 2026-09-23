@@ -277,9 +277,15 @@
       LG.Audio.crowdStop();
       LG.Input.setEnabled(false);
       // a charged shot held across the pause must not fire on resume
-      if (match && match.active) {
-        match.active.shotCharge = 0;
-        match.active.wasShooting = false;
+      if (match) {
+        match.all.forEach(function (p) {
+          p.shotCharge = 0;
+          p.wasShooting = false;
+        });
+        if (match.active) {
+          match.active.shotCharge = 0;
+          match.active.wasShooting = false;
+        }
       }
     });
     bus.on('resumeRequested', function () {
@@ -835,7 +841,9 @@
       LG.HUD.updateSpecial(match.active);
       LG.HUD.updateCoins();
       LG.HUD.aim(match.active.shotCharge > 0.15 && match.active.hasBall);
-      if (match.state !== 'GOAL') LG.Particles.update(dt);
+      // particles must keep running through GOAL — otherwise the celebration
+      // confetti freezes in mid-air for the whole goalDelay
+      LG.Particles.update(dt);
       arenaObj.update(dt);
       if (LG.Living) LG.Living.update(dt);
     } else if (UIState === 'menu') {
