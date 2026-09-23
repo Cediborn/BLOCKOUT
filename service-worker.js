@@ -1,6 +1,6 @@
 // ============================================================
-// SERVICE WORKER — PWA offline support for BLOCK OUT
-// Caches the application shell and static assets.
+// SERVICE WORKER — PWA offline support for BLACKOUT
+// Caches the application shell, static assets and the street-art backgrounds.
 //
 // Network-first: while the phone is online it always gets the current build,
 // with the cache used only as an offline fallback. The previous cache-first
@@ -9,12 +9,18 @@
 // every release — that is what makes installed clients pick the new files up.
 // ============================================================
 
-var CACHE_NAME = 'blockout-v5';
+var CACHE_NAME = 'blackout-v1';
 var ASSETS = [
   './',
   './index.html',
   './css/style.css',
   './manifest.json',
+  './art/wall.jpg',
+  './art/mural.jpg',
+  './art/court.jpg',
+  './art/posters.jpg',
+  './art/stencil.jpg',
+  './art/asphalt.jpg',
   './js/config.js',
   './js/difficulty.js',
   './js/util.js',

@@ -192,7 +192,7 @@ LG.HUD = (function () {
 
   function flash(colorStyle, dur) {
     if (!flashEl) return;
-    flashEl.style.background = colorStyle || 'rgba(120,220,255,0.35)';
+    flashEl.style.background = colorStyle || 'rgba(236,225,200,0.3)';
     flashEl.classList.add('hit');
     clearTimeout(flashEl._t);
     flashEl._t = setTimeout(function () { flashEl.classList.remove('hit'); }, dur || 260);

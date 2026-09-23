@@ -312,7 +312,7 @@
     bus.on('goal', function (g) {
       var mine = g.team === 0;
       LG.HUD.banner(mine ? 'GOAL!' : 'CONCEDED', mine ? 'team1' : 'team2', 1800);
-      LG.HUD.flash(mine ? 'rgba(90,225,255,0.35)' : 'rgba(255,77,94,0.35)', 300);
+      LG.HUD.flash(mine ? 'rgba(236,225,200,0.32)' : 'rgba(193,74,53,0.38)', 300);
       LG.HUD.setScore(g.score[0], g.score[1]);
       if (mine) camCtrl.pulse(0.5);
     });
@@ -330,12 +330,12 @@
     bus.on('abilityActivated', function (p) {
       var n = LG.Abilities[p.def.ability].name;
       LG.HUD.banner('★ ' + n + ' ★', 'team1', 1100);
-      LG.HUD.flash('rgba(255,182,46,0.4)', 220);
+      LG.HUD.flash('rgba(196,106,43,0.4)', 220);
       camCtrl.pulse(0.8);
     });
 
     bus.on('tackleWin', function (t) {
-      if (t.src.isHuman) { LG.HUD.toast('ROCKED THEM!', 900); LG.HUD.flash('rgba(120,255,150,0.18)', 180); }
+      if (t.src.isHuman) { LG.HUD.toast('ROCKED THEM!', 900); LG.HUD.flash('rgba(169,199,122,0.2)', 180); }
       camCtrl.shake(0.2, 0.22);
     });
 
@@ -343,7 +343,7 @@
 
     bus.on('keeperSave', function (e) {
       var me = (match.home || []).indexOf(e.gk) >= 0;
-      if (me) { LG.HUD.toast(e.parry ? 'GUARD PUNCHES IT OUT!' : 'GUARD GRABS IT!', 1200); LG.HUD.flash('rgba(120,255,150,0.14)', 180); }
+      if (me) { LG.HUD.toast(e.parry ? 'GUARD PUNCHES IT OUT!' : 'GUARD GRABS IT!', 1200); LG.HUD.flash('rgba(169,199,122,0.16)', 180); }
       else { LG.HUD.toast(e.parry ? 'WHAT A PARADE!' : 'KEEPER CLAIMS IT!', 1200); }
     });
 

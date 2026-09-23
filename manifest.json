@@ -1,13 +1,13 @@
 {
-  "name": "BLOCK OUT — Street Football",
-  "short_name": "BLOCK OUT",
+  "name": "BLACKOUT — Street Football",
+  "short_name": "BLACKOUT",
   "description": "3V3 street football game with goalkeepers",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#0b0e14",
-  "theme_color": "#0b0e14",
+  "background_color": "#141413",
+  "theme_color": "#141413",
   "categories": ["games", "sports"],
   "icons": [
     {

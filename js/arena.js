@@ -287,7 +287,7 @@ LG.Arena = (function () {
       c.textAlign = 'center'; c.textBaseline = 'middle';
       c.fillStyle = 'rgba(26,30,38,0.5)';
       c.font = 'bold ' + h * 0.6 + 'px Arial Black';
-      c.fillText('BLOCK OUT', w / 2, h / 2);
+      c.fillText('BLACKOUT', w / 2, h / 2);
       c.font = 'bold ' + h * 0.16 + 'px Arial';
       c.fillText('STREET FOOTBALL', w / 2, h * 0.72);
     }, 256, 256);
@@ -598,7 +598,7 @@ LG.Arena = (function () {
     // ================================================================
     var bb1 = new THREE.Mesh(
       new THREE.BoxGeometry(7, 3.2, 0.3),
-      new THREE.MeshLambertMaterial({ map: LG.Models.billboardTex('BLOCK OUT CUP') })
+      new THREE.MeshLambertMaterial({ map: LG.Models.billboardTex('BLACKOUT CUP') })
     );
     bb1.position.set(8, 6.5, -46.2); bb1.castShadow = true; g.add(bb1);
 
@@ -674,7 +674,7 @@ LG.Arena = (function () {
     var g = new THREE.Group();
     var spots = [
       { x: -15.6, z: -8.5, rot: 0.16, tex: tagTex('BO ☆', '#ff4d5e') },
-      { x: 16.4, z: 10.5, rot: -0.12, tex: tagTex('BLOCK OUT', '#35e0ff') },
+      { x: 16.4, z: 10.5, rot: -0.12, tex: tagTex('BLACKOUT', '#35e0ff') },
       { x: -17.4, z: 16.2, rot: 0.06, tex: tagTex('STREET KINGS', '#62ff8a') },
       { x: 15.6, z: -16.9, rot: -0.2, tex: tagTex('★ 3v3 ★', '#ffb62e') },
     ];

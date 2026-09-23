@@ -412,17 +412,17 @@ LG.Models = (function () {
 
   function billboardTex(text) {
     return LG.Util.makeCanvasTexture(function (g, w, h) {
-      g.fillStyle = '#14202e';
+      g.fillStyle = '#23231f';
       g.fillRect(0, 0, w, h);
       g.font = 'bold ' + Math.floor(h * 0.34) + 'px Arial';
       g.textAlign = 'center';
       g.textBaseline = 'middle';
-      g.fillStyle = '#ffd23f';
+      g.fillStyle = '#e9e7df';
       g.fillText(text, w / 2, h / 2 - 8);
       g.font = 'bold ' + Math.floor(h * 0.16) + 'px Arial';
-      g.fillStyle = '#35e0ff';
+      g.fillStyle = '#c46a2b';
       g.fillText('STREET LEAGUE', w / 2, h / 2 + 34);
-      g.strokeStyle = '#ffd23f'; g.lineWidth = 8;
+      g.strokeStyle = '#e6d9b4'; g.lineWidth = 8;
       g.strokeRect(6, 6, w - 12, h - 12);
     }, 256, 128);
   }

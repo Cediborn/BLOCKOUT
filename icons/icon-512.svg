@@ -1,11 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="64" fill="#0b0e14"/>
-  <rect width="512" height="512" rx="64" fill="url(#g)"/>
-  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1a2436"/><stop offset="1" stop-color="#0b0e14"/></linearGradient></defs>
-  <circle cx="256" cy="256" r="130" fill="none" stroke="#35e0ff" stroke-width="6" opacity="0.6"/>
-  <circle cx="256" cy="256" r="20" fill="#ffb62e"/>
-  <text x="256" y="180" text-anchor="middle" fill="#35e0ff" font-family="Arial Black" font-size="72" font-weight="900">BLOCK</text>
-  <text x="256" y="275" text-anchor="middle" fill="#ffb62e" font-family="Arial Black" font-size="72" font-weight="900">OUT</text>
-  <circle cx="256" cy="385" r="30" fill="#fff"/>
-  <path d="M234 385 l22-16 l22 16 l-22 16z" fill="#111" opacity="0.3"/>
+  <rect width="512" height="512" rx="64" fill="#23231f"/>
+  <rect x="24" y="24" width="464" height="464" rx="45" fill="none" stroke="#e6d9b4" stroke-width="8" stroke-dasharray="40 26" opacity="0.45"/>
+  <text x="256" y="228" text-anchor="middle" fill="#e9e7df" stroke="#141413" stroke-width="7" paint-order="stroke" font-family="Arial Black, Arial" font-size="88" font-weight="900">BLACK</text>
+  <text x="256" y="336" text-anchor="middle" fill="#f04f9b" stroke="#141413" stroke-width="7" paint-order="stroke" font-family="Arial Black, Arial" font-size="88" font-weight="900">OUT</text>
+  <circle cx="256" cy="420" r="32" fill="#e9e7df"/>
+  <path d="M232 420 l24-18 l24 18 l-24 18z" fill="#23231f" opacity="0.35"/>
 </svg>

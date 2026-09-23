@@ -6,9 +6,9 @@
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-<meta name="theme-color" content="#0b0e14" />
-<meta name="description" content="BLOCK OUT - 3V3 Street Football with goalkeepers" />
-<title>BLOCK OUT — Street Football</title>
+<meta name="theme-color" content="#141413" />
+<meta name="description" content="BLACKOUT - 3V3 street football with goalkeepers" />
+<title>BLACKOUT — Street Football</title>
 <link rel="stylesheet" href="css/style.css" />
 <link rel="manifest" href="manifest.json" />
 <link rel="icon" type="image/svg+xml" href="icons/icon-192.svg" />
@@ -70,10 +70,11 @@
   <!-- Main menu -->
   <div id="menu-overlay" class="overlay">
     <div class="panel">
-      <div class="title-xl"><span class="t1">BLOCK</span> <span class="t2">OUT</span></div>
+      <div class="title-xl"><span class="t1">BLACK</span><span class="t2">OUT</span></div>
+      <div class="street-tag">STREET FOOTBALL</div>
       <div class="row-btns">
-        <button id="btn-play" class="big-btn">KICK OFF</button>
-        <button id="btn-how" class="big-btn gold" style="min-width:150px">HOW TO PLAY</button>
+        <button id="btn-play" class="big-btn gold">KICK OFF</button>
+        <button id="btn-how" class="big-btn secondary">HOW TO PLAY</button>
       </div>
     </div>
   </div>
@@ -203,7 +204,7 @@
           <div class="help-row"><span class="help-desc">Action buttons flip between <b>PASS | SHOOT</b> (attacking) and <b>SWITCH | TACKLE</b> (defending) based on who has the ball</span></div>
         </div>
       </div>
-      <div style="margin-top:16px;font-size:12px;letter-spacing:0.1em;opacity:0.5">First to the most goals when the clock hits zero wins.</div>
+      <div class="help-footer">First to the most goals when the clock hits zero wins.</div>
       <div class="row-btns">
         <button id="btn-how-back" class="big-btn secondary">BACK</button>
       </div>
@@ -213,7 +214,7 @@
   <!-- Pause -->
   <div id="pause-overlay" class="overlay hidden">
     <div class="panel pause-panel">
-      <h2 style="color:#fff;text-shadow:0 4px 0 rgba(0,0,0,0.4)">PAUSED</h2>
+      <h2>PAUSED</h2>
       <div class="row-btns">
         <button id="btn-resume" class="big-btn">RESUME</button>
         <button id="btn-restart" class="big-btn gold">RESTART</button>
