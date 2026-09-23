@@ -150,12 +150,36 @@ function load(rel) {
 if (!window.LG || !window.LG.MatchManager) { console.log('failed to boot LG'); process.exit(1); }
 var LG = window.LG;
 
-// particles + progression + HUD aren't under test
+// particles + progression + HUD aren't under test — progression only needs
+// enough surface for match.js endMatch to package a result (no persistence)
 var pfx = { dust: function () {}, trail: function () {}, burst: function () {}, ring: function () {},
   confetti: function () {}, speedLines: function () {}, update: function () {}, clear: function () {}, init: function () {} };
 LG.Particles = pfx;
-LG.Progression = { addCoins: function () {}, recordResult: function () {}, coins: function () { return 0; },
-  isUnlocked: function () { return true; }, costOf: function () { return 0; }, unlock: function () { return true; } };
+LG.Progression = {
+  addCoins: function () {}, recordResult: function () {}, coins: function () { return 0; },
+  isUnlocked: function () { return true; }, costOf: function () { return 0; }, unlock: function () { return true; },
+  finalizeMatch: function (r) {
+    if (!r || r.finalized) return r;
+    var won = r.won === 1 ? 1 : r.won === -1 ? -1 : 0;
+    var base = won === 1 ? 120 : won === 0 ? 60 : 35;
+    var hf = (r.stats && r.stats.home && r.stats.home.goals) || (r.score && r.score[0]) || 0;
+    var ha = (r.stats && r.stats.away && r.stats.away.goals) || (r.score && r.score[1]) || 0;
+    var adds = hf * 12 + ha * 5 + Math.max(0, hf - ha) * 8;
+    r.coins = Math.round((base + adds) / 10) * 10;
+    r.finalized = true;
+    return r;
+  },
+  career: function () {
+    return { matches: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0,
+      assists: 0, shots: 0, tackles: 0, saves: 0, cleanSheets: 0, playTime: 0 };
+  },
+  history: function () { return []; },
+  winRate: function () { return 0; },
+  rewardFor: function () { return 0; },
+  reset: function () {},
+  reload: function () {},
+  best: function () { return { goals: 0, wins: 0, streak: 0 }; },
+};
 LG.HUD = { toast: function () {}, reset: function () {} };
 
 // models stay REAL (animateChar is part of what we changed)
@@ -1783,6 +1807,80 @@ section('14. LANDSCAPE input: the stick drives the world from the east-side came
     'landscape: pushing screen-up = wanting -x (far touchline)',
     'want(' + h.want.x.toFixed(2) + ',' + h.want.z.toFixed(2) + ')');
   stickRelease();
+})();
+
+section('15. assists + finalize-once bookkeeping (no RNG in the credit path)');
+(function () {
+  var m = newMatch('blaze');
+  m.start();
+  m.state = 'PLAY';
+  var a = m.home[0], b = m.home[1];
+  m.away.forEach(function (p) { place(p, 40, 40); });
+  place(a, 0, 8, Math.PI);
+  place(b, 0, 2, Math.PI);
+  giveBall(m, a);
+  m.passTo(a, b, {});
+  assert(m._assist && m._assist.src === a && m._assist.target === b, 'a completed pass arms the assist window');
+
+  // receiver scores within the window: home scores into the away net (-z)
+  m.t = (m.t || 0);
+  m._assist.t = m.t;
+  giveBall(m, b);
+  place(b, 0, -LG.Config.court.length / 2 - 0.4, 0);
+  m.ball.x = 0;
+  m.ball.z = -LG.Config.court.length / 2 - 0.05;
+  m.ball.y = 0.15;
+  m.ball.vz = -4;
+  m.ball.lastKicker = b;
+  m._ballPrevZ = -LG.Config.court.length / 2 + 0.4;
+  m._ballPrevY = 0.15;
+  m.statSide(0).assists = 0;
+  m.checkGoal();
+  assert(m.statSide(0).assists === 1, 'receiver scoring inside the window credits the assist', m.statSide(0).assists);
+  assert(m._assist === null, 'the assist chain is consumed after the goal');
+  var snap = m.snapshotStats();
+  assert(snap.home.assists === 1, 'snapshotStats carries assists for the results table', snap.home.assists);
+
+  // expired window: same setup, assist older than 8s
+  m._finalized = false;
+  m.state = 'PLAY';
+  m.placeKickoff();
+  m.state = 'PLAY';
+  place(a, 0, 8, Math.PI);
+  place(b, 0, 2, Math.PI);
+  giveBall(m, a);
+  m.passTo(a, b, {});
+  m._assist.t = (m.t || 0) - 9;
+  m.statSide(0).assists = 0;
+  giveBall(m, b);
+  place(b, 0, -LG.Config.court.length / 2 - 0.4, 0);
+  m.ball.x = 0;
+  m.ball.z = -LG.Config.court.length / 2 - 0.05;
+  m.ball.y = 0.15;
+  m.ball.lastKicker = b;
+  m._ballPrevZ = -LG.Config.court.length / 2 + 0.4;
+  m._ballPrevY = 0.15;
+  m.checkGoal();
+  assert(m.statSide(0).assists === 0, 'an expired window does not credit an assist', m.statSide(0).assists);
+
+  // tackle clears the chain
+  place(a, 0, 8, Math.PI);
+  place(b, 0, 2, Math.PI);
+  giveBall(m, a);
+  m.passTo(a, b, {});
+  assert(m._assist, 'assist re-armed');
+  m._assist = null;   // what tryTackle / keeper save / kickoff do
+  assert(!m._assist, 'tackle/save/kickoff clear the assist chain');
+
+  // endMatch finalizes once against the Progression stub
+  var finals = 0;
+  var orig = LG.Progression.finalizeMatch;
+  LG.Progression.finalizeMatch = function (r) { finals++; return orig(r); };
+  m.score = [2, 1];
+  m.endMatch();
+  m.endMatch();
+  LG.Progression.finalizeMatch = orig;
+  assert(finals === 1 && m._finalized === true, 'endMatch finalizes exactly once', 'finals=' + finals);
 })();
 
 // ============================================================

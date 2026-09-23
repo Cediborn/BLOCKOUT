@@ -10,6 +10,8 @@
   var arenaObj = null;
   var UIState = 'menu';          // menu | diff | select | style | court | setup | how | match | paused | result
   var howFromPause = false;      // track if how-to-play was opened from pause
+  var profileResetArmed = false; // two-step confirm on RESET PROFILE
+  var quitting = false;          // mid-quit endMatch must not open the result board
   var selectedId = 'blaze';
   var outfitColor = null;        // null = regular clothes, or LG.OutfitColors entry
   var awayColor = null;          // null = default rogue kit, or LG.OutfitColors entry
@@ -201,6 +203,31 @@
       showOverlay('menu-overlay', false);
       showOverlay('how-overlay', true);
     });
+    bus.on('profileRequested', function () {
+      UIState = 'profile';
+      refreshProfileUI();
+      showOverlay('menu-overlay', false);
+      showOverlay('profile-overlay', true);
+    });
+    bus.on('profileBackRequested', function () {
+      UIState = 'menu';
+      showOverlay('profile-overlay', false);
+      showOverlay('menu-overlay', true);
+    });
+    bus.on('profileResetRequested', function () {
+      if (profileResetArmed) {
+        profileResetArmed = false;
+        if (LG.Progression && LG.Progression.reset) LG.Progression.reset();
+        LG.HUD.updateCoins();
+        refreshProfileUI();
+        var rb = document.getElementById('btn-profile-reset');
+        if (rb) rb.textContent = 'RESET PROFILE';
+      } else {
+        profileResetArmed = true;
+        var rb2 = document.getElementById('btn-profile-reset');
+        if (rb2) rb2.textContent = 'CONFIRM RESET?';
+      }
+    });
     bus.on('pauseHowRequested', function () {
       howFromPause = true;
       showOverlay('pause-overlay', false);
@@ -297,11 +324,19 @@
 
     bus.on('quitRequested', function () {
       UIState = 'menu';
+      profileResetArmed = false;
+      // leaving mid-match still books the unfinished game once (never re-books)
+      if (match && !match._finalized && match.clock !== undefined) {
+        quitting = true;
+        match.endMatch();
+        quitting = false;
+      }
       if (match) clearMatchFromScene();
       LG.Input.reset();
       LG.HUD.clearTags();
       showOverlay('pause-overlay', false);
       showOverlay('result-overlay', false);
+      showOverlay('profile-overlay', false);
       showMatchUI(false);
       showOverlay('menu-overlay', true);
       LG.Particles.clear();
@@ -359,6 +394,8 @@
     });
 
     bus.on('matchEnd', function (r) {
+      // ignore a late end from a match we already replaced (quit/rematch)
+      if (quitting || match === null) return;
       UIState = 'result';
       LG.Input.reset();
       LG.Audio.crowdStop();
@@ -454,6 +491,7 @@
     var a = s.away || {};
     var map = [
       ['st-h-g', 'st-a-g', 'goals', 0],
+      ['st-h-as', 'st-a-as', 'assists', 0],
       ['st-h-s', 'st-a-s', 'shots', 0],
       ['st-h-p', 'st-a-p', 'passes', 0],
       ['st-h-t', 'st-a-t', 'tackles', 0],
@@ -473,6 +511,59 @@
     if (r.won === 1) LG.Audio.sfx.resultWin();
     else if (r.won === 0) LG.Audio.sfx.resultDraw();
     else LG.Audio.sfx.resultLose();
+  }
+
+  // Fill the profile card from the single source of truth (safe on missing nodes).
+  function refreshProfileUI() {
+    var P = LG.Progression;
+    if (!P) return;
+    var c = (P.career && P.career()) || {};
+    var best = (P.best && P.best()) || { goals: 0, wins: 0, streak: 0 };
+    function set(id, v) {
+      var el = document.getElementById(id);
+      if (el) el.textContent = v;
+    }
+    set('pf-coins', U.fmtMoney(P.coins ? P.coins() : 0));
+    set('pf-matches', c.matches || 0);
+    set('pf-wins', c.wins || 0);
+    set('pf-draws', c.draws || 0);
+    set('pf-losses', c.losses || 0);
+    set('pf-winrate', (P.winRate ? P.winRate() : 0) + '%');
+    set('pf-gf', c.goalsFor || 0);
+    set('pf-ga', c.goalsAgainst || 0);
+    set('pf-cs', c.cleanSheets || 0);
+    set('pf-assists', c.assists || 0);
+    set('pf-shots', c.shots || 0);
+    set('pf-tackles', c.tackles || 0);
+    set('pf-saves', c.saves || 0);
+    set('pf-streak', best.streak || 0);
+    set('pf-best', best.goals || 0);
+
+    var list = document.getElementById('pf-history');
+    if (!list) return;
+    var hist = (P.history && P.history()) || [];
+    list.innerHTML = '';
+    if (!hist.length) {
+      var empty = document.createElement('li');
+      empty.className = 'pf-empty';
+      empty.textContent = 'NO MATCHES YET — KICK OFF';
+      list.appendChild(empty);
+      return;
+    }
+    for (var i = 0; i < hist.length && i < 5; i++) {
+      var e = hist[i];
+      var li = document.createElement('li');
+      li.className = 'pf-row ' + (e.won === 1 ? 'w' : e.won === -1 ? 'l' : 'd');
+      var res = e.won === 1 ? 'W' : e.won === -1 ? 'L' : 'D';
+      li.innerHTML = '<span class="pf-res">' + res + '</span>' +
+        '<span class="pf-sc">' + e.score[0] + '–' + e.score[1] + '</span>' +
+        '<span class="pf-meta">' + (e.difficulty || 'match') + (e.court ? ' · ' + e.court : '') + '</span>' +
+        '<span class="pf-c">+' + e.coins + '</span>';
+      list.appendChild(li);
+    }
+    var rb = document.getElementById('btn-profile-reset');
+    if (rb) rb.textContent = 'RESET PROFILE';
+    profileResetArmed = false;
   }
 
   // ---------------- match lifecycle ----------------
@@ -541,7 +632,7 @@
     document.getElementById('scoreboard').classList.toggle('hidden', !on);
     document.getElementById('pause-btn').classList.toggle('hidden', !on);
     document.getElementById('coin-chip').classList.toggle('hidden', false);
-    var overlays = ['menu-overlay', 'diff-overlay', 'select-overlay', 'style-overlay', 'court-overlay', 'setup-overlay', 'how-overlay', 'pause-overlay', 'result-overlay'];
+    var overlays = ['menu-overlay', 'diff-overlay', 'select-overlay', 'style-overlay', 'court-overlay', 'setup-overlay', 'how-overlay', 'profile-overlay', 'pause-overlay', 'result-overlay'];
     for (var i = 0; i < overlays.length; i++) document.getElementById(overlays[i]).classList.add('hidden');
   }
 

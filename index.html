@@ -74,7 +74,45 @@
       <div class="street-tag">STREET FOOTBALL</div>
       <div class="row-btns">
         <button id="btn-play" class="big-btn gold">KICK OFF</button>
+        <button id="btn-profile" class="big-btn secondary">PROFILE</button>
         <button id="btn-how" class="big-btn secondary">HOW TO PLAY</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Player profile / career card -->
+  <div id="profile-overlay" class="overlay hidden">
+    <div class="panel">
+      <div class="title-xl" style="font-size:clamp(26px,6.4vmin,50px)"><span class="t1">YOUR</span> <span class="t2">PROFILE</span></div>
+      <div class="profile-coins"><span class="coin"></span><span id="pf-coins">0</span></div>
+
+      <div class="profile-sections">
+        <div class="help-section profile-card">
+          <div class="help-section-title">CAREER</div>
+          <div class="help-row"><span class="help-key">M</span><span class="help-desc">Matches <b id="pf-matches">0</b></span></div>
+          <div class="help-row"><span class="help-key">W</span><span class="help-desc">Wins <b id="pf-wins">0</b> · Win rate <b id="pf-winrate">0%</b></span></div>
+          <div class="help-row"><span class="help-key">D</span><span class="help-desc">Draws <b id="pf-draws">0</b> · Losses <b id="pf-losses">0</b></span></div>
+          <div class="help-row"><span class="help-key">G</span><span class="help-desc">Goals <b id="pf-gf">0</b> · Against <b id="pf-ga">0</b></span></div>
+          <div class="help-row"><span class="help-key">CS</span><span class="help-desc">Clean sheets <b id="pf-cs">0</b></span></div>
+        </div>
+        <div class="help-section profile-card">
+          <div class="help-section-title">PERFORMANCE</div>
+          <div class="help-row"><span class="help-key">A</span><span class="help-desc">Assists <b id="pf-assists">0</b></span></div>
+          <div class="help-row"><span class="help-key">S</span><span class="help-desc">Shots <b id="pf-shots">0</b></span></div>
+          <div class="help-row"><span class="help-key">T</span><span class="help-desc">Tackles <b id="pf-tackles">0</b></span></div>
+          <div class="help-row"><span class="help-key">SV</span><span class="help-desc">Saves <b id="pf-saves">0</b></span></div>
+          <div class="help-row"><span class="help-key">ST</span><span class="help-desc">Best streak <b id="pf-streak">0</b> · Best goals <b id="pf-best">0</b></span></div>
+        </div>
+      </div>
+
+      <div class="profile-history-wrap">
+        <div class="help-section-title">RECENT MATCHES</div>
+        <ul id="pf-history" class="profile-history" aria-label="Recent matches"></ul>
+      </div>
+
+      <div class="row-btns profile-actions">
+        <button id="btn-profile-reset" class="big-btn secondary">RESET PROFILE</button>
+        <button id="btn-profile-back" class="big-btn">BACK</button>
       </div>
     </div>
   </div>
@@ -235,6 +273,7 @@
         </thead>
         <tbody>
           <tr><td>GOALS</td><td id="st-h-g">0</td><td id="st-a-g">0</td></tr>
+          <tr><td>ASSISTS</td><td id="st-h-as">0</td><td id="st-a-as">0</td></tr>
           <tr><td>SHOTS</td><td id="st-h-s">0</td><td id="st-a-s">0</td></tr>
           <tr><td>PASSES</td><td id="st-h-p">0</td><td id="st-a-p">0</td></tr>
           <tr><td>TACKLES</td><td id="st-h-t">0</td><td id="st-a-t">0</td></tr>

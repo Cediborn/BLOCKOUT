@@ -45,6 +45,9 @@ LG.HUD = (function () {
     document.getElementById('btn-play').addEventListener('click', function () { LG.Audio.unlock(); LG.Audio.sfx.click(); LG.eventBus.emit('playRequested'); });
     document.getElementById('btn-how').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('howRequested'); });
     document.getElementById('btn-how-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('howBackRequested'); });
+    document.getElementById('btn-profile').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('profileRequested'); });
+    document.getElementById('btn-profile-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('profileBackRequested'); });
+    document.getElementById('btn-profile-reset').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('profileResetRequested'); });
     var startBtn = document.getElementById('btn-start-match');
     if (startBtn) startBtn.addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('startMatchRequested'); });
     // linear pre-match flow: STAR -> STYLE -> COURT -> MATCH SETUP

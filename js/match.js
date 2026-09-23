@@ -32,6 +32,9 @@ LG.MatchManager = function (opts) {
   this._switchedThisFrame = false;  // once-per-frame manual switch (loop re-resolves)
   // authoritative per-match statistics (observational — never drives gameplay)
   this.stats = this.freshStats();
+  this._finalized = false;    // endMatch runs its progression write at most once
+  this._assist = null;        // last same-team pass: { src, target, t }
+  this._playTime = 0;         // seconds of real PLAY, for career playTime
   if (LG.Celebration && LG.Celebration.bind) LG.Celebration.bind();
 
   this.buildRosters();
@@ -51,7 +54,7 @@ LG.MatchManager.prototype = {
   // so nothing can leak forward from a previous round.
   freshStats: function () {
     function side() {
-      return { goals: 0, shots: 0, passes: 0, tackles: 0, saves: 0, possTime: 0 };
+      return { goals: 0, assists: 0, shots: 0, passes: 0, tackles: 0, saves: 0, possTime: 0 };
     }
     return { home: side(), away: side() };
   },
@@ -328,6 +331,7 @@ LG.MatchManager.prototype = {
     this.possessionTeam = -1;
     this.owner = null;
     this.slowOwner = null;
+    this._assist = null;
     this.bus.emit('kickoff', { match: this });
   },
 
@@ -394,6 +398,7 @@ LG.MatchManager.prototype = {
         this.updatePlayers(dt);
         if (this.clock <= 0) { this.endMatch(); return; }
         this.resolvePossession();
+        this._playTime += dt;
         // possession clock: only real controlled time accrues (no loose-ball pad)
         if (this.possessionTeam === 0 || this.possessionTeam === 1) {
           this.statSide(this.possessionTeam).possTime += dt;
@@ -732,6 +737,9 @@ LG.MatchManager.prototype = {
     ball.kickT = 0.3;
     this.award(src, 'pass', 0.1);
     this.statSide(src.team).passes++;
+    // assist candidate: same-team pass to a named receiver. Consumed in
+    // checkGoal only if that receiver scores within ASSIST_WINDOW seconds.
+    this._assist = { src: src, target: target, t: this.t || 0 };
     LG.Audio.sfx.pass();
     LG.Particles.dust(src.x, src.z, 1.6);
     this.bus.emit('pass', { src: src, target: target, perfect: perfect });
@@ -960,6 +968,7 @@ LG.MatchManager.prototype = {
         this.award(p, 'tackle', 0.16);
         this.gainMetersQuickly(p, 0.02);
         this.statSide(p.team).tackles++;
+        this._assist = null;   // contested ball — the previous pass chain is dead
         this.bus.emit('tackleWin', { src: p, victim: victim });
       } else {
         // a failed challenge is contact, not a freeze: the carrier stumbles for
@@ -1027,6 +1036,7 @@ LG.MatchManager.prototype = {
       this.ball.kick(Math.sin(p.facing) * 10, 3, Math.cos(p.facing) * 10);
       this.award(p, 'tackle', 0.16);
       this.statSide(p.team).tackles++;
+      this._assist = null;
       this.bus.emit('tackleWin', { src: p, victim: null });
     }
   },
@@ -1351,6 +1361,7 @@ LG.MatchManager.prototype = {
 
     // visible/audible feedback for the save
     this.statSide(gk.team).saves++;
+    this._assist = null;   // the shot chain is dead
     LG.Particles.ring(ball.x, ball.z, 0xffffff, 4, 0.5);
     LG.Particles.dust(ball.x, ball.z, 3.2);
     LG.Audio.sfx.save();
@@ -1402,6 +1413,17 @@ LG.MatchManager.prototype = {
     var isOwnGoal = !!(src && src.team === defensiveTeam);
     var scorer = (!isOwnGoal && src && src.team === teamGot) ? src : null;
 
+    // assist: a prior same-team pass to this scorer, still inside the window.
+    // Never for own goals. Clears either way so a rebound chain can't double-count.
+    var assist = null;
+    var A = this._assist;
+    if (scorer && A && A.target === scorer && A.src && A.src !== scorer &&
+        A.src.team === teamGot && ((this.t || 0) - A.t) <= 8) {
+      assist = A.src;
+      this.statSide(teamGot).assists++;
+    }
+    this._assist = null;
+
     if (teamGot === 0) this.score[0]++;
     else this.score[1]++;
     this.statSide(teamGot).goals++;
@@ -1425,17 +1447,25 @@ LG.MatchManager.prototype = {
     var scorers = this.teamPlayers(teamGot);
     scorers.forEach(function (pp) { pp.fillMeter(0.3); });
     if (scorer) this.award(scorer, 'goal', 0.3);
+    if (assist) this.award(assist, 'pass', 0.06);
 
     // start the celebration choreography (presentation only, private PRNG)
     if (LG.Celebration) LG.Celebration.start(scorer, teamGot, isOwnGoal);
 
-    this.bus.emit('goal', { team: teamGot, scorer: scorer, isOwnGoal: !!isOwnGoal, score: [this.score[0], this.score[1]] });
+    this.bus.emit('goal', {
+      team: teamGot, scorer: scorer, assist: assist, isOwnGoal: !!isOwnGoal,
+      score: [this.score[0], this.score[1]],
+    });
 
     LG.Particles.confetti(scorer ? scorer.x : 0, 1.5, scorer ? scorer.z : 0, teamGot === 0 ? 0x35e0ff : 0xff4d5e, 44);
   },
 
   // ------------------------------------------------------------
+  // The FINAL career write for this match — runs at most once (rematch/quit
+  // cannot double-count). Progression owns coins + history; we only package.
   endMatch: function () {
+    if (this._finalized) return;
+    this._finalized = true;
     this.state = 'END';
     this.stateT = LG.Config.match.endDelay;
     LG.Audio.crowdStop();
@@ -1445,19 +1475,24 @@ LG.MatchManager.prototype = {
     else if (this.score[1] > this.score[0]) won = -1;
     else won = 0;
 
-    var base = won === 1 ? 120 : won === 0 ? 60 : 35;
-    var adds = this.score[0] * 12 + this.score[1] * 5 + Math.max(0, this.score[0] - this.score[1]) * 8;
-    var coins = Math.round((base + adds) / 10) * 10;
-    LG.Progression.addCoins(coins);
-    LG.Progression.recordResult(this.score[0], this.score[1], won === 1);
-
-    this.bus.emit('matchEnd', {
+    var snap = this.snapshotStats();
+    var result = {
       score: [this.score[0], this.score[1]],
       won: won,
-      coins: coins,
-      activeName: this.active.name,
-      stats: this.snapshotStats(),
-    });
+      coins: 0,
+      activeName: this.active ? this.active.name : '',
+      homeName: this.opts.homeName || 'YOU',
+      awayName: this.opts.awayName || 'ROGUE',
+      difficulty: (LG.Difficulty && LG.Difficulty.get) ? LG.Difficulty.get() : '',
+      court: (LG.Courts && typeof LG.Courts.selected === 'function') ? LG.Courts.selected() : '',
+      playTime: Math.max(0, Math.round(this._playTime || 0)),
+      ts: Date.now(),
+      stats: snap,
+    };
+    if (LG.Progression && LG.Progression.finalizeMatch) {
+      result = LG.Progression.finalizeMatch(result) || result;
+    }
+    this.bus.emit('matchEnd', result);
   },
 
   // Frozen copy for the results screen — possession as integer percentages
@@ -1467,8 +1502,8 @@ LG.MatchManager.prototype = {
     var total = h.possTime + a.possTime;
     var hp = total > 0.05 ? Math.round((h.possTime / total) * 100) : 50;
     return {
-      home: { goals: h.goals, shots: h.shots, passes: h.passes, tackles: h.tackles, saves: h.saves, poss: hp },
-      away: { goals: a.goals, shots: a.shots, passes: a.passes, tackles: a.tackles, saves: a.saves, poss: 100 - hp },
+      home: { goals: h.goals, assists: h.assists, shots: h.shots, passes: h.passes, tackles: h.tackles, saves: h.saves, poss: hp },
+      away: { goals: a.goals, assists: a.assists, shots: a.shots, passes: a.passes, tackles: a.tackles, saves: a.saves, poss: 100 - hp },
     };
   },
 

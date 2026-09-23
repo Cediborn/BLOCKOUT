@@ -166,7 +166,15 @@ global.window.innerHeight = 390;
 global.window.devicePixelRatio = 3;
 global.window.ontouchstart = null;                              // makes 'ontouchstart' in window true
 global.window.matchMedia = function () { return { matches: true, addListener: function () {}, addEventListener: function () {} }; };
-global.localStorage = undefined;                                 // exercise the no-storage path too
+// in-memory storage so Phase 3A persistence can be exercised end-to-end;
+// progression/settings still ship their own try/catch for the no-storage path
+var _lsStore = {};
+global.localStorage = {
+  getItem: function (k) { return Object.prototype.hasOwnProperty.call(_lsStore, k) ? _lsStore[k] : null; },
+  setItem: function (k, v) { _lsStore[k] = String(v); },
+  removeItem: function (k) { delete _lsStore[k]; },
+  clear: function () { _lsStore = {}; },
+};
 
 var winHandlers = {};
 global.window.addEventListener = function (ev, fn) { (winHandlers[ev] = winHandlers[ev] || []).push(fn); };
@@ -481,6 +489,147 @@ section('6. rematch + return to menu keep the session choices (no re-config)');
   elements['btn-court-go'].fire('click');
   elements['btn-start-match'].fire('click');
   check(window.LGMain.getState() === 'match', 'the full flow starts a second match', window.LGMain.getState());
+})();
+
+section('7. progression foundation (career, history, rewards, once-only finalize)');
+(function () {
+  var P = LG.Progression;
+  check(!!(P && typeof P.finalizeMatch === 'function' && typeof P.career === 'function'),
+    'LG.Progression exposes the Phase 3A API');
+
+  // defaults on a fresh profile
+  P.reset();
+  check(P.coins() === 0 && P.career().matches === 0 && P.history().length === 0,
+    'fresh profile starts empty');
+
+  // finalize a win once
+  var r1 = {
+    score: [3, 1], won: 1, playTime: 120, difficulty: 'medium', court: 'classic', ts: 1,
+    stats: { home: { goals: 3, assists: 2, shots: 7, tackles: 5, saves: 2, poss: 58 }, away: { goals: 1, assists: 0, shots: 3, tackles: 4, saves: 1, poss: 42 } },
+  };
+  P.finalizeMatch(r1);
+  var c1 = P.career();
+  check(r1.finalized === true && r1.coins > 0, 'finalizeMatch marks the result + pays coins', JSON.stringify({ coins: r1.coins }));
+  check(c1.matches === 1 && c1.wins === 1 && c1.goalsFor === 3 && c1.assists === 2 && c1.cleanSheets === 0,
+    'win updates career aggregates', JSON.stringify(c1));
+  check(P.history().length === 1 && P.history()[0].score[0] === 3,
+    'history keeps the finished match');
+
+  // double-finalize of the same object is a no-op
+  var coinsAfter = P.coins();
+  var matchesAfter = P.career().matches;
+  P.finalizeMatch(r1);
+  check(P.coins() === coinsAfter && P.career().matches === matchesAfter,
+    'finalizeMatch is idempotent on the same result object', P.career().matches);
+
+  // draw + loss bookkeeping + clean sheet
+  P.finalizeMatch({
+    score: [0, 0], won: 0, playTime: 90, difficulty: 'hard', court: '', ts: 2,
+    stats: { home: { goals: 0, assists: 0, shots: 4, tackles: 6, saves: 5, poss: 45 }, away: { goals: 0, assists: 0, shots: 6, tackles: 5, saves: 4, poss: 55 } },
+  });
+  P.finalizeMatch({
+    score: [1, 2], won: -1, playTime: 100, difficulty: 'easy', court: '', ts: 3,
+    stats: { home: { goals: 1, assists: 1, shots: 5, tackles: 3, saves: 1, poss: 50 }, away: { goals: 2, assists: 1, shots: 5, tackles: 4, saves: 3, poss: 50 } },
+  });
+  var c2 = P.career();
+  check(c2.matches === 3 && c2.wins + c2.draws + c2.losses === c2.matches,
+    'matches === wins + draws + losses', JSON.stringify(c2));
+  check(c2.cleanSheets === 1 && c2.assists === 3,
+    'clean sheet + assists accumulate', JSON.stringify(c2));
+
+  // history cap at 25
+  for (var i = 0; i < 30; i++) {
+    P.finalizeMatch({
+      score: [1, 0], won: 1, playTime: 60, difficulty: 'medium', court: '', ts: 10 + i,
+      stats: { home: { goals: 1, assists: 0, shots: 2, tackles: 1, saves: 0, poss: 55 }, away: { goals: 0, assists: 0, shots: 1, tackles: 1, saves: 2, poss: 45 } },
+    });
+  }
+  check(P.history().length === 25, 'match history caps at 25', P.history().length);
+
+  // reload persistence (same store)
+  var beforeM = P.career().matches;
+  var beforeC = P.coins();
+  P.reload();
+  check(P.career().matches === beforeM && P.coins() === beforeC,
+    'profile survives reload()', P.career().matches + '/' + P.coins());
+
+  // corrupted JSON recovers to defaults without throwing
+  _lsStore['blockout.profile.v2'] = '{not-json!!!';
+  var badErr = null;
+  try { P.reload(); } catch (e) { badErr = e; }
+  check(!badErr && P.career().matches === 0 && P.history().length === 0,
+    'corrupt profile recovers to safe defaults', badErr && badErr.message);
+
+  // missing field partial payload also sanitizes
+  _lsStore['blockout.profile.v2'] = JSON.stringify({ v: 2, coins: 50 });
+  P.reload();
+  check(P.coins() === 50 && P.career().matches === 0 && P.career().assists === 0,
+    'partial payload fills missing career fields');
+
+  // no-storage path never throws
+  var realLS = global.localStorage;
+  global.localStorage = undefined;
+  var noStoreErr = null;
+  try { P.reload(); P.finalizeMatch({ score: [1, 0], won: 1, stats: { home: { goals: 1, assists: 0, shots: 1, tackles: 0, saves: 0, poss: 50 }, away: { goals: 0 } } }); P.reset(); }
+  catch (e) { noStoreErr = e; }
+  global.localStorage = realLS;
+  check(!noStoreErr, 'no-storage path survives finalize + reset', noStoreErr && noStoreErr.message);
+
+  // reset clears profile but leaves settings/difficulty/courts alone
+  P.finalizeMatch({
+    score: [2, 0], won: 1, playTime: 80, difficulty: 'medium', court: '', ts: 99,
+    stats: { home: { goals: 2, assists: 1, shots: 4, tackles: 2, saves: 1, poss: 60 }, away: { goals: 0, assists: 0, shots: 2, tackles: 3, saves: 2, poss: 40 } },
+  });
+  _lsStore['blockout.settings.v1'] = JSON.stringify({ timeOfDay: 'night', view: 'portrait' });
+  _lsStore['blockout.difficulty.v1'] = 'hard';
+  _lsStore['blockout.court.v1'] = 'turf';
+  P.reset();
+  check(P.coins() === 0 && P.career().matches === 0 && P.history().length === 0,
+    'reset restores profile defaults');
+  check(_lsStore['blockout.settings.v1'] && _lsStore['blockout.difficulty.v1'] === 'hard' && _lsStore['blockout.court.v1'] === 'turf',
+    'reset does not wipe settings / difficulty / courts',
+    JSON.stringify({ s: _lsStore['blockout.settings.v1'], d: _lsStore['blockout.difficulty.v1'], c: _lsStore['blockout.court.v1'] }));
+  _lsStore['blockout.difficulty.v1'] = 'medium';
+
+  // endMatch finalizes at most once on a live match
+  var mm = window.LGMain.getMatch();
+  check(!!mm, 'a match is live for the endMatch probe');
+  if (mm) {
+    P.reset();
+    var mBefore = P.career().matches;
+    mm.clock = 0;
+    mm.state = 'PLAY';
+    mm.endMatch();
+    var mMid = P.career().matches;
+    mm.endMatch();
+    check(mMid === mBefore + 1 && P.career().matches === mMid,
+      'endMatch writes the profile exactly once', mBefore + ' -> ' + mMid + ' -> ' + P.career().matches);
+    check(P.history().length === 1, 'one history entry from one match', P.history().length);
+  }
+
+  // profile overlay open/close
+  LG.eventBus.emit('quitRequested');
+  check(window.LGMain.getState() === 'menu' && vis('menu-overlay'), 'back on the main menu');
+  elements['btn-profile'].fire('click');
+  check(vis('profile-overlay') && !vis('menu-overlay') && window.LGMain.getState() === 'profile',
+    'PROFILE opens from the main menu', window.LGMain.getState());
+  elements['btn-profile-back'].fire('click');
+  check(vis('menu-overlay') && !vis('profile-overlay'), 'PROFILE back returns to the menu');
+
+  // two-step reset confirm
+  P.reset();
+  P.finalizeMatch({
+    score: [1, 0], won: 1, playTime: 50, difficulty: 'medium', court: '', ts: 200,
+    stats: { home: { goals: 1, assists: 0, shots: 2, tackles: 1, saves: 0, poss: 50 }, away: { goals: 0, assists: 0, shots: 1, tackles: 1, saves: 1, poss: 50 } },
+  });
+  check(P.career().matches === 1, 'profile has data before reset', P.career().matches);
+  elements['btn-profile'].fire('click');
+  elements['btn-profile-reset'].fire('click');
+  check(P.career().matches === 1, 'first RESET click only arms the confirm', P.career().matches);
+  check(elements['btn-profile-reset'].textContent === 'CONFIRM RESET?', 'reset button asks for confirmation');
+  elements['btn-profile-reset'].fire('click');
+  check(P.career().matches === 0 && P.coins() === 0, 'second RESET click clears the profile');
+  elements['btn-profile-back'].fire('click');
 })();
 
 console.log('\n' + (FAIL === 0 ? 'BOOT + MENU FLOW PASSED' : 'BOOT + MENU FLOW FAILED (' + FAIL + ')'));
