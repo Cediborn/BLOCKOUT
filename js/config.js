@@ -74,6 +74,11 @@ LG.Config = {
     // defenders slow to a jockey within this radius so they contain instead of
     // full-sprinting through the attacker every frame
     containRange: 3.2,
+    // outfield AI never crowds or traps the opponent goalkeeper: keep this much
+    // clear air around him, never stand goal-side of him, and when he HOLDS the
+    // ball the chaser still stands off rather than diving into the six-yard box
+    keeperZoneR: 2.6,
+    keeperStandoff: 1.7,
   },
 
   // ------------------------------------------------------------
@@ -148,13 +153,20 @@ LG.Config = {
     halfW: 4.4,         // lateral movement zone (goal mouth 2.6 + margin)
     stance: 0.55,       // how far off the line the keeper stands when idle
     distributeDelay: 0.9,
+    saveProtect: 0.55,  // short post-save possession window: goal detection will
+                        // not award a goal while the ball is still at the keeper's
+                        // body, and opponents cannot strip him mid-transition
     commitDist: 4.5,    // how close the ball must be for the reflex roll to arm —
                         // a FIXED distance, so a level only changes skill and never
-                        // the timing of the roll
+                        // the timing of the roll (the PHYSICAL body block runs
+                        // independently of this gate)
     rxnWindow: 0.5,     // reference time for a "comfortable" reaction
     collectSpeed: 10.0, // loose balls slower than this are collected, faster saved
     diveSpeed: 4.2,     // lateral dive pace — a keeper's stretch, not an outfield sprint
     readSpread: 3.0,    // how far a keeper's read of a corner-bound shot can be off (m)
+    passLaneClear: 1.55,// min gap (m) from any opponent to a distribution lane
+    surroundR: 2.6,     // opponents within this radius count as pressure on the keeper
+    surroundN: 2,       // this many close opponents = surrounded -> force a clearance
   },
 
   camera: {

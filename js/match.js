@@ -880,9 +880,17 @@ placeKickoff: function () {
       }
       chance = U.clamp(chance, 0.04, 0.96);
 
-      // goalkeepers in possession are protected
-      if (victim.isGoalkeeper && victim.distributeT > 0) chance = Math.min(chance, 0.18);
+      // GOALKEEPERS IN POSSESSION ARE PROTECTED — during the short save/save
+      // transition the ball cannot be stripped at all (the keeper is still
+      // completing the save); once he holds it past that window, challengers
+      // get a normal (capped) chance. Pressure is real, an instant steal is not.
+      if (victim.isGoalkeeper) {
+        if (victim._saveProtectT > 0) chance = 0;
+        else if (victim.distributeT > 0) chance = Math.min(chance, 0.18);
+      }
 
+      // always consume the roll (even at chance 0) so the deterministic
+      // stream stays aligned with the pre-protect baseline
       var won = victim.hasBall && Math.random() < chance;
       if (won) {
         victim.hasBall = false;
@@ -1055,8 +1063,19 @@ placeKickoff: function () {
         } else {
           // bounce off the player
           var nx = (ball.x - p.x) / (d || 1), nz = (ball.z - p.z) / (d || 1);
-          ball.vx = nx * ball.speed() * 0.7;
-          ball.vz = nz * ball.speed() * 0.7;
+          if (p.isGoalkeeper) {
+            // A keeper's body never reflects the ball DEEPER into his own net:
+            // if the ball is already goal-side of him the raw radial bounce
+            // would push it over the line. Always clear it back toward the field.
+            var gSign = p.team === 0 ? 1 : -1;
+            ball.vx = nx * ball.speed() * 0.65;
+            ball.vz = -gSign * Math.max(4, Math.abs(ball.vz) * 0.7);
+            // and give the keeper a beat of save protection around the contact
+            p._saveProtectT = Math.max(p._saveProtectT || 0, (LG.Config.keeper.saveProtect || 0.5) * 0.7);
+          } else {
+            ball.vx = nx * ball.speed() * 0.7;
+            ball.vz = nz * ball.speed() * 0.7;
+          }
           LG.Audio.sfx.tackle();
         }
       }
@@ -1154,7 +1173,7 @@ placeKickoff: function () {
     if (vzT < 1.0) return null;                          // not heading this way (yet)
     var dist0 = (line - ball.z) * sign;                  // front of the line = positive
     // How early a keeper picks up the flight of the ball is their reaction.
-    var seeMul = 0.62 + 0.38 * (LG.Difficulty.forTeam(gk.team).goalkeeperReaction || 1);
+    var seeMul = 0.62 + 0.38 * (LG.Difficulty.forKeeper(gk.team).goalkeeperReaction || 1);
     if (dist0 > K.seeDist * seeMul) return null;         // too early to react
     if (dist0 < -K.saveWindow) return null;              // fully over the line = goal
     if (ball.y > C.goalHeight + 0.05) return null;       // over the bar
@@ -1167,6 +1186,8 @@ placeKickoff: function () {
 
   // 0..1 save likelihood — harder/placed shots and closer shots beat the
   // keeper more often.  Rerolled once per kick, not per frame.
+  // BOTH keepers share Difficulty.forKeeper (one profile for both ends), so
+  // neither goal is artificially stronger or weaker than the other.
   keeperSaveChance: function (gk, th) {
     var U = LG.Util;
     var C = LG.Config.court;
@@ -1181,33 +1202,29 @@ placeKickoff: function () {
     // keeper, a shot straight at him does not, and pace always helps the shooter
     var chance = (0.42 + reaction * 0.26) * (0.5 + centered * 0.4) * (0.5 + agility * 0.35) - hard * 0.1;
     // difficulty multiplies the reflex roll — never the shot's flight
-    chance *= (LG.Difficulty.forTeam(gk.team).goalkeeperSaveAbility || 1);
+    chance *= (LG.Difficulty.forKeeper(gk.team).goalkeeperSaveAbility || 1);
     return U.clamp(chance, 0.03, 0.92);
   },
 
   // Per-frame keeper pass: run save prediction + one-shot save roll.
   // A keeper already holding the ball skips this (he is distributing).
+  // Structure matches the original one-roll-per-kick flow exactly (threat →
+  // commit distance → sig/roll → save or body block with the REAL threat) so
+  // the seed-pinned suite's Math.random stream stays aligned; the only addition
+  // is ticking the post-save protection window.
   updateKeepers: function (dt) {
     var ball = this.ball;
     var K = LG.Config.keeper;
     var i, gk;
     for (i = 0; i < this.all.length; i++) {
       gk = this.all[i];
-      if (!gk.isGoalkeeper || gk.hasBall) continue;
+      if (!gk.isGoalkeeper) continue;
+      if (gk._saveProtectT > 0) gk._saveProtectT = Math.max(0, gk._saveProtectT - dt);
+      if (gk.hasBall) continue;
       var th = this.keeperThreat(gk);
       if (!th) continue;
-      // The reflex roll arms at a FIXED distance from the line. It used to arm
-      // on first sight instead, which meant a keeper with a longer sight radius
-      // (a better keeper) rolled while still standing at his spot — punishing
-      // good reactions for being early. Skill now decides WHERE he gets to,
-      // never WHEN the roll happens.
       if (th.dist0 > K.commitDist) continue;
-      // one save roll per kick (shooter + kick sequence) so a keeper can't
-      // "win the lottery" by rolling multiple frames on the same shot
       var sig = (ball.lastKicker ? 'p' + ball.lastKicker.idx + '.' + ball.lastKicker.team : 'n') + '-' + (ball._kickSeq || 0);
-      // a keeper who just made a save needs a beat to get back set: within the
-      // SAME kick sequence a loose rebound can beat him before he recovers.
-      // A new kick (fresh attack) always resets the clock.
       if (gk._recoverT > 0) gk._recoverT = Math.max(0, gk._recoverT - dt);
       if (gk._saveSig !== sig) { gk._saveSig = sig; gk._saveRoll = Math.random(); gk._recoverT = 0; }
       if (gk._recoverT > 0) continue;
@@ -1215,20 +1232,13 @@ placeKickoff: function () {
         this.doKeeperSave(gk, th);
         continue;
       }
-      // PHYSICAL BODY BLOCK — the reflex roll is the keeper READING the shot
-      // (which a corner-bound shot can genuinely beat), but a ball that
-      // actually crosses AROUND the keeper and slams into his body is stopped:
-      // he is not a ghost. Judge the whole segment the ball travelled this
-      // frame, so a full-speed strike crossing in a single step is still halted.
+      // PHYSICAL BODY BLOCK — same as baseline: after the reflex roll fails,
+      // a ball whose frame segment crosses the keeper's body is stopped.
       var pAx = (this._ballPrevX !== undefined) ? this._ballPrevX : ball.x;
       var pAz = (this._ballPrevZ !== undefined) ? this._ballPrevZ : ball.z;
       var bgx = ball.x - pAx, bgz = ball.z - pAz;
       var bSeg2 = bgx * bgx + bgz * bgz;
       var reach = gk.radius + ball.r + 0.06;
-      // (speed-aware: a kickoff/goal teleport is not real motion, but a fast
-      // ball that moved a metre this frame — a coarse low-FPS frame — still is,
-      // and must still be stopped when it crosses the keeper's body: a keeper
-      // in front of a central shot is not a ghost)
       if (this.isGenuineFlight(bSeg2) && this.segToPoint(pAx, pAz, ball.x, ball.z, gk.x, gk.z) <= reach) {
         this.doKeeperSave(gk, th);
       }
@@ -1245,6 +1255,10 @@ placeKickoff: function () {
     var K = LG.Config.keeper;
     // NOTE: the save roll is NOT re-armed here. One roll per kick (see the sig
     // in updateKeepers) — re-rolling every frame turned every shot into a save.
+
+    // SAVE PROTECTION WINDOW — for the next short beat the ball is "with the
+    // keeper": opponents cannot strip him mid-transition (tryTackle).
+    gk._saveProtectT = K.saveProtect || 0.5;
 
     // fast shots + lucky parries knock it clear instead of a clean catch
     if (th.sp > 19 || Math.random() < 0.3) {

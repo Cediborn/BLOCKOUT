@@ -414,6 +414,11 @@ LG.AIBrain.prototype = {
         // only challenge when actually in range AND awake to the play — and
         // tryTackle refuses to hand over the ball for a challenge from behind
         var challengeAt = 2.1 * press;
+        // the keeper is not an outfield target: when he holds the ball the
+        // chaser keeps a stand-off and does not lunge into the six-yard box
+        if (carrier && carrier.isGoalkeeper) {
+          challengeAt = Math.min(challengeAt, (LG.Config.ai.keeperStandoff || 1.7) * 0.9);
+        }
         if (this.reactT > 0) challengeAt = 0;
         if (this.actionCd <= 0 && d < challengeAt) {
           this.attemptTackle(d);
@@ -491,7 +496,62 @@ LG.AIBrain.prototype = {
         }, myGoal, sink);
       }
     }
+    // whoever we are marking or covering, never crowd or trap the opponent
+    // goalkeeper — the zone applies to chasers, markers and zonal cover alike
+    this.respectKeeperZone(this.moveTarget);
     me.want.tackle = false;
+  },
+
+  // Keeper exclusion zone: outfield AI never crowds or traps the opponent
+  // goalkeeper. Applies when we are already in his neighbourhood (or he is the
+  // carrier we are chasing) — a global goal-side clamp would misfire whenever a
+  // keeper is parked off his line (rebounds, tests, distribution runs).
+  // Rules: at least keeperZoneR clear (keeperStandoff when he holds the ball),
+  // and never stand between him and his own goal.
+  respectKeeperZone: function (target) {
+    var me = this.p;
+    var M = LG.Match;
+    var U = LG.Util;
+    var K = LG.Config.ai;
+    var opps = M.opponents(me);
+    var gk = null, i;
+    for (i = 0; i < opps.length; i++) {
+      if (opps[i].isGoalkeeper) { gk = opps[i]; break; }
+    }
+    if (!gk || !target) return target;
+
+    var zone = K.keeperZoneR || 2.6;
+    var standoff = K.keeperStandoff || 1.7;
+    var gSign = gk.team === 0 ? 1 : -1;          // +z = home keeper's net
+    var carrier = M.ownerPlayer();
+    var dx0 = target.x - gk.x, dz0 = target.z - gk.z;
+    var near = Math.sqrt(dx0 * dx0 + dz0 * dz0) < zone + 3;
+    if (carrier !== gk && !near) return target;  // not in the keeper's office
+
+    // general exclusion is the full zone; the chaser may close to stand-off
+    // when the keeper is the one holding the ball
+    var minR = (carrier === gk && this.isClosestChaser()) ? standoff : zone;
+
+    // never stand goal-side of the keeper (between him and his own net)
+    if ((target.z - gk.z) * gSign > 0) target.z = gk.z;
+
+    var dx = target.x - gk.x, dz = target.z - gk.z;
+    var d = Math.sqrt(dx * dx + dz * dz);
+    if (d < minR) {
+      if (d > 0.001) {
+        target.x = gk.x + (dx / d) * minR;
+        target.z = gk.z + (dz / d) * minR;
+      } else {
+        target.x = gk.x;
+        target.z = gk.z - gSign * minR;
+      }
+      // radial push can slip goal-side again on a diagonal — re-clamp
+      if ((target.z - gk.z) * gSign > 0) target.z = gk.z;
+    }
+
+    target.x = U.clamp(target.x, -12.6, 12.6);
+    target.z = U.clamp(target.z, -21.6, 21.6);
+    return target;
   },
 
   // Blend a defensive position toward (sink > 0) or away from (sink < 0) our

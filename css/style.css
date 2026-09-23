@@ -300,14 +300,11 @@ html, body {
 #btn-switch { grid-column: 2; grid-row: 2; border-color: rgba(240, 79, 155, 0.75); }
 
 /* ---------- selected-view layout ----------
-   The VIEW choice (not just the physical media query) also drives the HUD and
-   panels, so choosing LANDSCAPE reads horizontal immediately even where the
-   window cannot rotate (desktop, unsupported orientation lock). body classes
-   view-portrait / view-landscape are toggled from LG.Settings. */
-body.view-landscape .overlay .panel { max-width: 1080px; }
-body.view-landscape #actions { right: clamp(10px, 2.6vmin, 22px); bottom: clamp(10px, 2.8vmin, 22px); }
-body.view-landscape #joystick-zone { left: clamp(12px, 3.2vmin, 28px); bottom: clamp(12px, 3.2vmin, 28px); }
-body.view-landscape #special-wrap { left: auto; right: clamp(10px, 2.6vmin, 22px); transform: none; bottom: calc(2 * var(--btn-size) + 30px); }
+   The VIEW choice drives the match camera (portrait behind-the-play vs
+   landscape side-on). The HUD itself is STABLE across both views so switching
+   GAME VIEW never rearranges controls mid-setup. body classes view-portrait /
+   view-landscape are still toggled from LG.Settings (camera + tests read them);
+   only the physical device stays landscape (see main.js enterLandscape). */
 
 /* ---------- special ability ---------- */
 #special-wrap {

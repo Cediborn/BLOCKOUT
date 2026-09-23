@@ -59,5 +59,14 @@ LG.Difficulty = (function () {
     forTeam: function (team) {
       return team === 1 ? preset(current) : preset(TEAMMATE_LEVEL);
     },
+
+    // GOALKEEPERS follow the same team mapping as the outfield (team 1 = the
+    // selected difficulty, team 0 = the fair baseline). Same code path for both
+    // ends — only the profile numbers differ with the team, so an EASY opponent
+    // side still has a weaker keeper while YOUR keeper stays the honest medium
+    // (the end-to-end difficulty test measures conceded goals on that basis).
+    forKeeper: function (team) {
+      return this.forTeam(team);
+    },
   };
 })();

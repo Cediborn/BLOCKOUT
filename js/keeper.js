@@ -63,14 +63,14 @@ LG.KeeperBrain.prototype = {
     var raw = (h - 0.5) * 2;                                  // -1..1
     var confidence = Math.min(1, Math.abs(px || 0) / 2.0);    // unsure about corners
     // a slower keeper simply misreads the shot by more (goalkeeperReaction)
-    var fuzz = 1 / (LG.Difficulty.forTeam(this.p.team).goalkeeperReaction || 1);
+    var fuzz = 1 / (LG.Difficulty.forKeeper(this.p.team).goalkeeperReaction || 1);
     return raw * (K.readSpread || 1.5) * confidence * fuzz;
   },
 
   // How fast this keeper can actually stretch: a keepers' dive, never an
   // outfield sprint, and slightly slower on an easier level.
   diveReach: function () {
-    var react = LG.Difficulty.forTeam(this.p.team).goalkeeperReaction || 1;
+    var react = LG.Difficulty.forKeeper(this.p.team).goalkeeperReaction || 1;
     return (LG.Config.keeper.diveSpeed || 4.2) * (0.75 + 0.25 * react);
   },
 
@@ -97,6 +97,9 @@ LG.KeeperBrain.prototype = {
       me.want.x = (this.moveTarget.x - me.x) * 2;
       me.want.z = (this.moveTarget.z - me.z) * 2;
       me.want.sprint = false;
+      // face upfield — never present a kick aimed at our own net
+      var faceZ = this.line() - this.sign() * 4;
+      if (Math.abs(faceZ - me.z) > 0.05) me.facing = Math.atan2(0, faceZ - me.z);
       if (this.actT <= 0 && me.distributeT <= 0) {
         this.distribute();
         this.actT = 1.0;
@@ -152,20 +155,93 @@ LG.KeeperBrain.prototype = {
   },
 
   // ---------------- DISTRIBUTION ----------------
+  // SAFETY FIRST, in this order:
+  //   1. protect the own goal (never kick toward it)
+  //   2. avoid giving the opponent an immediate shot (lane / destination check)
+  //   3. pass to a safe nearby teammate
+  //   4. otherwise clear into open space / toward the sideline, upfield only
   // The pass is TARGET-based: once a teammate is chosen, the ball is aimed at
   // that player's (lead) position and given the power needed to actually get
-  // there (Match.passTo → passSpeedFor). It never just travels "roughly at"
-  // them, and the receiver takes it cleanly on arrival (intendedReceiver).
+  // there (Match.passTo → passSpeedFor).
   distribute: function () {
     var me = this.p;
     var M = LG.Match;
     var target = this.pickTarget();
+    // pickTarget scores every candidate the baseline would (same RNG stream),
+    // but a pass that fails the safety veto is not released — try any remaining
+    // safe mate instead, otherwise clear into space.
+    if (target && !this.passIsSafe(target)) {
+      var mates = M.teamPlayers(me.team), i, c;
+      target = null;
+      for (i = 0; i < mates.length; i++) {
+        c = mates[i];
+        if (c === me || c.isGoalkeeper) continue;
+        if (c.distTo(me.x, me.z) < 1.5) continue;
+        if (this.passIsSafe(c)) { target = c; break; }
+      }
+    }
     if (target) {
       M.passTo(me, target, { lead: true });
     } else {
       this.clear();
+      target = null;
     }
-    M.bus.emit('keeperDistribute', { gk: me, target: target || null });
+    M.bus.emit('keeperDistribute', { gk: me, target: target });
+  },
+
+  // Opponents crowding the keeper: with this many inside surroundR the keeper
+  // has no safe pass and must hoof it clear.
+  surrounded: function () {
+    var M = LG.Match;
+    var me = this.p;
+    var K = LG.Config.keeper;
+    var opps = M.teamPlayers(1 - me.team);
+    var n = 0, i;
+    for (i = 0; i < opps.length; i++) {
+      if (opps[i].isGoalkeeper) continue;
+      if (opps[i].distTo(me.x, me.z) < (K.surroundR || 2.6)) n++;
+    }
+    return n >= (K.surroundN || 2);
+  },
+
+  // Would this kick travel toward MY own goal? The sign of the z displacement
+  // against the keeper's own-goal direction decides — used as a hard veto on
+  // every distribution before it leaves his foot.
+  towardOwnGoal: function (tx, tz) {
+    var me = this.p;
+    var dz = tz - me.z;
+    return dz * this.sign() > -0.35;   // level with or behind us = own-goal risk
+  },
+
+  // Spatial awareness before releasing: sample the lane and the destination.
+  // An opponent standing on the path (or waiting at the end of it) means the
+  // pass is a gift — pick something else.
+  passIsSafe: function (target) {
+    var me = this.p;
+    var M = LG.Match;
+    var K = LG.Config.keeper;
+    if (this.towardOwnGoal(target.x, target.z)) return false;
+    var clear = K.passLaneClear || 1.55;
+    var ax = me.x, az = me.z, bx = target.x, bz = target.z;
+    var len2 = (bx - ax) * (bx - ax) + (bz - az) * (bz - az);
+    if (len2 < 0.04) return false;
+    var opps = M.teamPlayers(1 - me.team);
+    var i, s;
+    for (i = 0; i < opps.length; i++) {
+      var o = opps[i];
+      if (o.isGoalkeeper) continue;
+      // destination: the receiver must actually have room when it arrives
+      if (o.distTo(bx, bz) < clear + 0.5) return false;
+      // lane: project onto the segment
+      var t = ((o.x - ax) * (bx - ax) + (o.z - az) * (bz - az)) / len2;
+      t = LG.Util.clamp(t, 0, 1);
+      var cx = ax + (bx - ax) * t, cz = az + (bz - az) * t;
+      if (o.distTo(cx, cz) < clear) return false;
+      // midpoint density — a cluster straddling the path still blocks it
+      var mx = (ax + bx) * 0.5, mz = (az + bz) * 0.5;
+      if (o.distTo(mx, mz) < clear * 0.9) return false;
+    }
+    return true;
   },
 
   // Nearest OUTFIELD opponent to a candidate — crowded mates are bad outlets.
@@ -223,18 +299,20 @@ LG.KeeperBrain.prototype = {
   // Safety valve: no reliable teammate -> hoof it upfield toward OPEN space.
   // The landing spot is chosen from sampled candidates by how far it stays from
   // every opponent, so a clearance clears instead of dropping at an opponent
-  // striker's feet for the tap-in back.
+  // striker's feet for the tap-in back. ALWAYS away from our own goal, with a
+  // sideline bias when we are under pressure.
   clear: function () {
     var me = this.p;
     var M = LG.Match;
     var U = LG.Util;
-    var dir = me.team === 0 ? -1 : 1;               // toward the opponent half
+    var sign = this.sign();                        // +1 = own goal toward +z
+    var dir = -sign;                               // toward the opponent half ONLY
     var opps = M.teamPlayers(1 - me.team).filter(function (o) { return !o.isGoalkeeper; });
     var best = null, bestScore = -1;
     for (var i = 0; i < 14; i++) {
       var ax = U.clamp((U.rand() - 0.5) * 18, -11, 11);
       var az = U.clamp(me.z + dir * (11 + U.rand() * 7), -20, 20);
-      var dist = (az - me.z) * dir;                 // metres upfield
+      var dist = (az - me.z) * dir;                // metres upfield
       var min = 1e9;
       for (var k = 0; k < opps.length; k++) {
         var o = opps[k];
@@ -246,8 +324,15 @@ LG.KeeperBrain.prototype = {
       var score = min * 1.4 + dist * 0.12 + U.rand() * 0.5;
       if (score > bestScore) { bestScore = score; best = { x: ax, z: az }; }
     }
+    if (!best) best = { x: U.clamp(me.x * 0.4, -8, 8), z: U.clamp(me.z + dir * 14, -20, 20) };
     var dx = best.x - me.x, dz = best.z - me.z;
     var dd = Math.sqrt(dx * dx + dz * dz) || 1;
+    // FINAL own-goal veto on the kick vector itself (no RNG — only rewires a
+    // sample that would otherwise travel goal-side of the keeper)
+    if (dz * sign > -0.5) {
+      dz = dir * Math.max(6, Math.abs(dz));
+      dd = Math.sqrt(dx * dx + dz * dz) || 1;
+    }
     var P = LG.Config.physics;
     M.release(me);
     M.ball.kick((dx / dd) * P.passPower * 1.5, 1.6, (dz / dd) * P.passPower * 1.5);

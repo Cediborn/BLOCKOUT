@@ -91,25 +91,26 @@
     var el = document.getElementById('rotate-overlay');
     if (!el) return;
     var portraitDevice = window.innerHeight > window.innerWidth;
-    // Portrait is a real playable view now, so a phone may stay upright. Only a
-    // Landscape match on a portrait-held phone wants the prompt, and the menus
-    // are never covered so the player can always change the setting.
-    var want = LG.Settings.isLandscape() && portraitDevice &&
+    // The phone is always held landscape during a match (both GAME VIEW options
+    // run the device in landscape — only the camera/HUD follow the setting).
+    // Prompt whenever a match is live on a portrait-held device, regardless of
+    // the selected view; menus are never covered so the player can still act.
+    var want = portraitDevice &&
       (UIState === 'match' || UIState === 'paused');
     if (want === lastRotate) return;      // only touch the DOM on a real change
     lastRotate = want;
     el.classList.toggle('hidden', !want);
   }
 
-  // Landscape + fullscreen, requested when a LANDSCAPE match actually starts.
-  // Doing this on the first stray pointerdown looked harmless on desktop but on
-  // a phone the viewport resize it triggers re-lays out the page mid-tap, so the
-  // press was swallowed and the button never fired: exactly one press of KICK
-  // OFF did nothing. Starting a match is a user gesture too, so it is allowed.
-  // Portrait matches never force fullscreen or lock.
+  // Landscape + fullscreen, requested when a match actually starts — for BOTH
+  // game views. Doing this on the first stray pointerdown looked harmless on
+  // desktop but on a phone the viewport resize it triggers re-lays out the page
+  // mid-tap, so the press was swallowed and the button never fired: exactly one
+  // press of KICK OFF did nothing. Starting a match is a user gesture too, so it
+  // is allowed. The physical screen never locks to portrait; only the camera
+  // pose and HUD follow Settings.view.
   function enterLandscape() {
     if (!isMobile) return;
-    if (!LG.Settings.isLandscape()) return;
     if (document.fullscreenElement || document.webkitFullscreenElement) {
       requestOrientation('landscape');
       return;
@@ -388,10 +389,10 @@
 
   function setView(m) {
     LG.Settings.setView(m);
-    // aim the physical screen at the chosen view; if the browser refuses the
-    // lock, fall back to letting the player hold the phone as they like (the
-    // rotate prompt covers the landscape-looking-for-a-flip case)
-    requestOrientation(LG.Settings.isPortrait() ? 'portrait' : 'landscape');
+    // The phone stays landscape for BOTH views — only the camera pose and HUD
+    // follow the choice. Never lock portrait (a portrait lock fought the rotate
+    // prompt and left the device stuck upright for a landscape-world camera).
+    requestOrientation('landscape');
     updateRotate();
     refreshSettingsUI();
     updateLayoutClass();

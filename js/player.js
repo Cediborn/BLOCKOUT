@@ -46,6 +46,7 @@ LG.Player = function (def, team, idx) {
   this.isGoalkeeper = false;  // dedicated keeper — never human-controlled
   this.ai = null;
   this.distributeT = 0;       // keeper hold time before distributing possession
+  this._saveProtectT = 0;     // short post-save window: no steal, no goal credit
 
   // per-frame intents (written by controller/AI)
   this.want = { x: 0, z: 0, sprint: false, pass: false, shoot: false, tackle: false, special: false };
