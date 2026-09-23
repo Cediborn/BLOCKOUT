@@ -448,8 +448,31 @@
     document.getElementById('res-home').textContent = r.score[0];
     document.getElementById('res-away').textContent = r.score[1];
     document.getElementById('res-coins-n').textContent = '+' + U.fmtMoney(r.coins);
+    // match statistics table (missing stats degrades to zeros / 50%)
+    var s = r.stats || {};
+    var h = s.home || {};
+    var a = s.away || {};
+    var map = [
+      ['st-h-g', 'st-a-g', 'goals', 0],
+      ['st-h-s', 'st-a-s', 'shots', 0],
+      ['st-h-p', 'st-a-p', 'passes', 0],
+      ['st-h-t', 'st-a-t', 'tackles', 0],
+      ['st-h-sv', 'st-a-sv', 'saves', 0],
+    ];
+    for (var i = 0; i < map.length; i++) {
+      var he = document.getElementById(map[i][0]);
+      var ae = document.getElementById(map[i][1]);
+      if (he) he.textContent = h[map[i][2]] != null ? h[map[i][2]] : map[i][3];
+      if (ae) ae.textContent = a[map[i][2]] != null ? a[map[i][2]] : map[i][3];
+    }
+    var hp = document.getElementById('st-h-po');
+    var ap = document.getElementById('st-a-po');
+    if (hp) hp.textContent = (h.poss != null ? h.poss : 50) + '%';
+    if (ap) ap.textContent = (a.poss != null ? a.poss : 50) + '%';
     LG.HUD.updateCoins();
-    if (r.won === 1) LG.Audio.sfx.whistle(0.5);
+    if (r.won === 1) LG.Audio.sfx.resultWin();
+    else if (r.won === 0) LG.Audio.sfx.resultDraw();
+    else LG.Audio.sfx.resultLose();
   }
 
   // ---------------- match lifecycle ----------------
@@ -531,7 +554,35 @@
   }
 
   function showOverlay(id, on) {
-    document.getElementById(id).classList.toggle('hidden', !on);
+    var el = document.getElementById(id);
+    if (!el) return;
+    if (on) {
+      el.classList.remove('hidden');
+      el.classList.remove('leaving');
+      // cancel any leave animation so the panel is fully opaque again
+      var panel = el.querySelector && el.querySelector('.panel');
+      if (panel && panel.getAnimations) {
+        try { panel.getAnimations().forEach(function (a) { a.cancel(); }); } catch (e) {}
+      }
+      // force reflow so re-showing the same panel replays paste-in
+      if (el.offsetWidth != null) void el.offsetWidth;
+    } else {
+      // class flips synchronously (tests + a11y). Exit motion is cosmetic via
+      // the Web Animations API when available — never delays the hide.
+      el.classList.add('leaving');
+      var p = el.querySelector && el.querySelector('.panel');
+      if (p && p.animate) {
+        try {
+          p.animate(
+            [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(6px) scale(0.99)' }],
+            { duration: 180, easing: 'ease', fill: 'forwards' }
+          );
+        } catch (e) {}
+      }
+      el.classList.add('hidden');
+      clearTimeout(el._hideT);
+      el._hideT = setTimeout(function () { el.classList.remove('leaving'); }, 200);
+    }
   }
 
   // ---------------- character select UI ----------------

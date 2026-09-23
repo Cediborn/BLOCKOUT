@@ -11,6 +11,9 @@ LG.Arena = (function () {
   var anims = [];
   var surfaceGroup = null;   // the pitch slab + lines + logo, rebuilt on court change
   var goalGroup = null;      // cosmetic 3D goal frame/net (built once; see goals())
+  var cheerT = 0;            // goal-reaction window (event-driven, not per-specator)
+  var cheerDur = 2.8;
+  var boundGoal = false;
 
   function skyBox() {
     var g = new THREE.SphereGeometry(70, 16, 12);
@@ -1103,43 +1106,44 @@ LG.Arena = (function () {
     // sparser on the ends (behind the goals where bleachers already are)
     var spots = [];
 
-    // south side (z = +halfL + a bit)
-    for (var i = 0; i < 8; i++) {
-      var x = -halfW + 3 + i * ((halfW * 2 - 6) / 7);
-      spots.push({ x: x, z: halfL + 1.2 + Math.random() * 1.5, rot: Math.PI });
+    // south side (z = +halfL + a bit) — denser pack, two depth rows
+    for (var i = 0; i < 12; i++) {
+      var x = -halfW + 2 + i * ((halfW * 2 - 4) / 11);
+      var row = i % 2;
+      spots.push({ x: x, z: halfL + 1.1 + row * 0.9 + Math.random() * 0.5, rot: Math.PI });
     }
     // north side (z = -halfL - a bit)
-    for (var i = 0; i < 8; i++) {
-      var x = -halfW + 3 + i * ((halfW * 2 - 6) / 7);
-      spots.push({ x: x, z: -(halfL + 1.2 + Math.random() * 1.5), rot: 0 });
+    for (var i = 0; i < 12; i++) {
+      var x = -halfW + 2 + i * ((halfW * 2 - 4) / 11);
+      var row = i % 2;
+      spots.push({ x: x, z: -(halfL + 1.1 + row * 0.9 + Math.random() * 0.5), rot: 0 });
     }
     // east side (x = +halfW + a bit)
-    for (var i = 0; i < 5; i++) {
-      var z = -halfL + 6 + i * ((halfL * 2 - 12) / 4);
-      spots.push({ x: halfW + 1.2 + Math.random() * 1.2, z: z, rot: -Math.PI / 2 });
+    for (var i = 0; i < 8; i++) {
+      var z = -halfL + 5 + i * ((halfL * 2 - 10) / 7);
+      spots.push({ x: halfW + 1.1 + Math.random() * 1.1, z: z, rot: -Math.PI / 2 });
     }
     // west side (x = -halfW - a bit)
-    for (var i = 0; i < 5; i++) {
-      var z = -halfL + 6 + i * ((halfL * 2 - 12) / 4);
-      spots.push({ x: -(halfW + 1.2 + Math.random() * 1.2), z: z, rot: Math.PI / 2 });
+    for (var i = 0; i < 8; i++) {
+      var z = -halfL + 5 + i * ((halfL * 2 - 10) / 7);
+      spots.push({ x: -(halfW + 1.1 + Math.random() * 1.1), z: z, rot: Math.PI / 2 });
     }
 
     for (var i = 0; i < spots.length; i++) {
       var s = spots[i];
-      var spec = LG.Models.spectator();
+      var spec = LG.Models.spectator(i);
       if (!spec) continue;
       spec.position.set(s.x, 0, s.z);
       spec.rotation.y = s.rot + (Math.random() - 0.5) * 0.3;
+      spec.scale.setScalar(0.92 + Math.random() * 0.18);
       g.add(spec);
 
-      // idle animation — gentle sway or arm raise
+      // idle animation — staggered phase so the block never bobs in lockstep
       var phase = Math.random() * 10;
       var animKind = Math.random();
-      if (animKind < 0.3) {
-        // arm raise cheer
+      if (animKind < 0.35) {
         anims.push({ g: spec, t: phase, amp: 0.04, cheer: true });
       } else {
-        // gentle idle bob
         anims.push({ g: spec, t: phase, amp: 0.02, bob: true });
       }
     }
@@ -1212,6 +1216,12 @@ LG.Arena = (function () {
 
     scene.add(root);
 
+    // one goal listener for the whole crowd — event-driven, no per-spectator bus
+    if (!boundGoal && LG.eventBus && LG.eventBus.on) {
+      LG.eventBus.on('goal', function () { cheerT = cheerDur; });
+      boundGoal = true;
+    }
+
     var posts = [];
     posts.push({ x: -gw, z: -halfL }, { x: gw, z: -halfL }, { x: -gw, z: halfL }, { x: gw, z: halfL });
 
@@ -1228,6 +1238,9 @@ LG.Arena = (function () {
         applyGoalVisibility();
       },
       update: function (dt) {
+        // low-frequency staggered crowd — one pass, no per-spectator listeners
+        cheerT = Math.max(0, cheerT - dt);
+        var boost = cheerT > 0 ? (cheerT / cheerDur) : 0;
         for (var i = 0; i < anims.length; i++) {
           var a = anims[i];
           a.t += dt;
@@ -1235,19 +1248,32 @@ LG.Arena = (function () {
             a.g.rotation.z = Math.sin(a.t * 0.7) * a.amp * 2;
             a.g.rotation.x = Math.cos(a.t * 0.5) * a.amp;
           } else if (a.cheer) {
-            // spectator arm-raise: periodic raise-and-lower
+            // spectator arm-raise: periodic raise-and-lower (staggered phase)
             var v = Math.sin(a.t * 1.8) * 0.5 + 0.5;
-            a.g.position.y = v * 0.08;
+            a.g.position.y = v * (0.08 + boost * 0.12);
+            raiseArms(a.g, v * (0.4 + boost * 1.4));
           } else if (a.bob) {
-            // spectator idle sway
+            // spectator idle sway + goal-reaction hop
             a.g.rotation.y += Math.sin(a.t * 1.2) * 0.0003;
-            a.g.position.y = Math.sin(a.t * 1.5) * 0.015;
+            a.g.position.y = Math.sin(a.t * 1.5) * 0.015 + boost * (Math.sin(a.t * 9) * 0.04 + 0.04);
+            if (boost > 0) raiseArms(a.g, boost * 1.6);
           } else {
             a.g.position.y += Math.sin(a.t * 6) * a.amp * 0.1;
           }
         }
       },
     };
+  }
+
+  // lift both arm pivots on a spectator model (cheap — two rotations)
+  function raiseArms(g, amount) {
+    var u = g && g.userData;
+    if (!u || !u.armL || !u.armR) return;
+    var target = -amount * 1.1;
+    u.armL.rotation.x += (target - u.armL.rotation.x) * 0.2;
+    u.armR.rotation.x += (target - u.armR.rotation.x) * 0.2;
+    u.armL.rotation.z = amount > 0.2 ? -0.3 : 0;
+    u.armR.rotation.z = amount > 0.2 ? 0.3 : 0;
   }
 
   return { build: build };

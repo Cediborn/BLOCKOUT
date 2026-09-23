@@ -30,6 +30,9 @@ LG.MatchManager = function (opts) {
   this._autoSwitchT = 0;       // cooldown so automatic switching never fights a manual switch
   this._ctrlMode = null;       // last control mode shown on the on-screen buttons
   this._switchedThisFrame = false;  // once-per-frame manual switch (loop re-resolves)
+  // authoritative per-match statistics (observational — never drives gameplay)
+  this.stats = this.freshStats();
+  if (LG.Celebration && LG.Celebration.bind) LG.Celebration.bind();
 
   this.buildRosters();
   this.sceneHooks = {};
@@ -44,6 +47,20 @@ LG.MatchManager = function (opts) {
 };
 
 LG.MatchManager.prototype = {
+  // One clean statistics bag per match — rematch constructs a new MatchManager,
+  // so nothing can leak forward from a previous round.
+  freshStats: function () {
+    function side() {
+      return { goals: 0, shots: 0, passes: 0, tackles: 0, saves: 0, possTime: 0 };
+    }
+    return { home: side(), away: side() };
+  },
+
+  // side accessor: team 0 = home (YOU), team 1 = away (ROGUE)
+  statSide: function (team) {
+    return team === 0 ? this.stats.home : this.stats.away;
+  },
+
   // ------------------------------------------------------------
   buildRosters: function () {
     var O = this.opts;
@@ -359,10 +376,13 @@ LG.MatchManager.prototype = {
         }
         break;
       case 'GOAL':
-        // freeze like KICKOFF/END: 0.4 per frame ran AI intent at ~24x during
-        // the celebration, scattering players before placeKickoff snapped them back
+        // freeze AI/physics like KICKOFF/END, then layer the celebration poses.
+        // Celebration is presentation-only and uses a private PRNG, so the
+        // gameplay Math.random stream (seed-pinned sim) is never touched.
         this.updatePlayers(0);
+        if (LG.Celebration) LG.Celebration.update(this, dt);
         if (this.stateT <= 0) {
+          if (LG.Celebration) { LG.Celebration.stop(); LG.Celebration.clearPoses(this); }
           this.state = 'KICKOFF';
           this.stateT = LG.Config.match.kickoffDelay;
           this.placeKickoff();
@@ -374,6 +394,10 @@ LG.MatchManager.prototype = {
         this.updatePlayers(dt);
         if (this.clock <= 0) { this.endMatch(); return; }
         this.resolvePossession();
+        // possession clock: only real controlled time accrues (no loose-ball pad)
+        if (this.possessionTeam === 0 || this.possessionTeam === 1) {
+          this.statSide(this.possessionTeam).possTime += dt;
+        }
         // remember where the ball was BEFORE the step — a fast ball can cross
         // the goal plane between frames and needs the whole segment judged
         this._ballPrevX = this.ball.x;
@@ -707,6 +731,7 @@ LG.MatchManager.prototype = {
     ball.lastKicker = src;
     ball.kickT = 0.3;
     this.award(src, 'pass', 0.1);
+    this.statSide(src.team).passes++;
     LG.Audio.sfx.pass();
     LG.Particles.dust(src.x, src.z, 1.6);
     this.bus.emit('pass', { src: src, target: target, perfect: perfect });
@@ -736,6 +761,7 @@ LG.MatchManager.prototype = {
     ball.kickT = 0.3;
     if (perfect) LG.Abilities.consumePowerShot(p);
     this.award(p, 'shot', 0.12);
+    this.statSide(p.team).shots++;
     LG.Audio.sfx.kick(sp / LG.Config.physics.maxBallSpeed);
     this.bus.emit('shoot', { player: p, power: power, perfect: perfect });
     if (perfect) {
@@ -755,6 +781,7 @@ LG.MatchManager.prototype = {
     this.ball.lastKicker = p;
     this.ball.kickT = 0.4;
     this.award(p, 'shot', 0.12);
+    this.statSide(p.team).shots++;
     LG.Particles.speedLines(p.x, 0.5, p.z, dx / d, dz / d, 0xffb62e, 22);
     this.shakeEffect(0.5, 0.5);
     if (this.camera) this.camera.pulse(1.0);
@@ -802,9 +829,10 @@ LG.MatchManager.prototype = {
       this.ball.kick((sx / dd) * sp, (0.18 + power * 0.26), (szl / dd) * sp);
       h.kickAnim = 1;
       this.ball.lastKicker = h;
-      this.ball.kickT = 0.35;
+      this.      ball.kickT = 0.35;
       if (perfect) LG.Abilities.consumePowerShot(h);
       this.award(h, 'shot', 0.12);
+      this.statSide(h.team).shots++;
       // shot feedback: a real strike reads louder and heavier than a pass,
       // without throwing the camera around
       if (power > 0.72) {
@@ -834,6 +862,7 @@ LG.MatchManager.prototype = {
       p.kickAnim = 1;
       ball.lastKicker = p;
       ball.kickT = 0.2;
+      this.statSide(p.team).shots++;
       this.bus.emit('shoot', { player: p, power: 0.4 });
     }
   },
@@ -905,8 +934,9 @@ LG.MatchManager.prototype = {
       // completing the save); once he holds it past that window, challengers
       // get a normal (capped) chance. Pressure is real, an instant steal is not.
       if (victim.isGoalkeeper) {
-        if (victim._saveProtectT > 0) chance = 0;
-        else if (victim.distributeT > 0) chance = Math.min(chance, 0.18);
+        // keeper possession protection: no legal tackle during the hold window.
+        // The Math.random() roll below always runs so the seed stream stays aligned.
+        if (victim._saveProtectT > 0 || victim.distributeT > 0) chance = 0;
       }
 
       // always consume the roll (even at chance 0) so the deterministic
@@ -929,6 +959,7 @@ LG.MatchManager.prototype = {
         victim.stun = Math.max(victim.stun, 0.35);
         this.award(p, 'tackle', 0.16);
         this.gainMetersQuickly(p, 0.02);
+        this.statSide(p.team).tackles++;
         this.bus.emit('tackleWin', { src: p, victim: victim });
       } else {
         // a failed challenge is contact, not a freeze: the carrier stumbles for
@@ -995,6 +1026,7 @@ LG.MatchManager.prototype = {
       this.ball.owner = null;
       this.ball.kick(Math.sin(p.facing) * 10, 3, Math.cos(p.facing) * 10);
       this.award(p, 'tackle', 0.16);
+      this.statSide(p.team).tackles++;
       this.bus.emit('tackleWin', { src: p, victim: null });
     }
   },
@@ -1318,9 +1350,10 @@ LG.MatchManager.prototype = {
     }
 
     // visible/audible feedback for the save
+    this.statSide(gk.team).saves++;
     LG.Particles.ring(ball.x, ball.z, 0xffffff, 4, 0.5);
     LG.Particles.dust(ball.x, ball.z, 3.2);
-    LG.Audio.sfx.tackle();
+    LG.Audio.sfx.save();
     this.shakeEffect(0.2, 0.22);
     this.bus.emit('keeperSave', { gk: gk, parry: !gk.hasBall });
   },
@@ -1371,6 +1404,7 @@ LG.MatchManager.prototype = {
 
     if (teamGot === 0) this.score[0]++;
     else this.score[1]++;
+    this.statSide(teamGot).goals++;
     // a dribbler over the line keeps hasBall through the celebration and would
     // yank the ball off the kickoff spot — drop possession the moment it counts
     var carrier = this.ownerPlayer();
@@ -1392,12 +1426,12 @@ LG.MatchManager.prototype = {
     scorers.forEach(function (pp) { pp.fillMeter(0.3); });
     if (scorer) this.award(scorer, 'goal', 0.3);
 
+    // start the celebration choreography (presentation only, private PRNG)
+    if (LG.Celebration) LG.Celebration.start(scorer, teamGot, isOwnGoal);
+
     this.bus.emit('goal', { team: teamGot, scorer: scorer, isOwnGoal: !!isOwnGoal, score: [this.score[0], this.score[1]] });
 
-    if (this.score[teamGot] >= 1) {
-      // celebration burst
-      LG.Particles.confetti(scorer ? scorer.x : 0, 1.5, scorer ? scorer.z : 0, teamGot === 0 ? 0x35e0ff : 0xff4d5e, 44);
-    }
+    LG.Particles.confetti(scorer ? scorer.x : 0, 1.5, scorer ? scorer.z : 0, teamGot === 0 ? 0x35e0ff : 0xff4d5e, 44);
   },
 
   // ------------------------------------------------------------
@@ -1422,7 +1456,20 @@ LG.MatchManager.prototype = {
       won: won,
       coins: coins,
       activeName: this.active.name,
+      stats: this.snapshotStats(),
     });
+  },
+
+  // Frozen copy for the results screen — possession as integer percentages
+  // that always sum to 100 when any time was recorded.
+  snapshotStats: function () {
+    var h = this.stats.home, a = this.stats.away;
+    var total = h.possTime + a.possTime;
+    var hp = total > 0.05 ? Math.round((h.possTime / total) * 100) : 50;
+    return {
+      home: { goals: h.goals, shots: h.shots, passes: h.passes, tackles: h.tackles, saves: h.saves, poss: hp },
+      away: { goals: a.goals, shots: a.shots, passes: a.passes, tackles: a.tackles, saves: a.saves, poss: 100 - hp },
+    };
   },
 
   // ------------------------------------------------------------

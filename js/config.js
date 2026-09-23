@@ -79,6 +79,9 @@ LG.Config = {
     // ball the chaser still stands off rather than diving into the six-yard box
     keeperZoneR: 2.6,
     keeperStandoff: 1.7,
+    // while the keeper HOLDS the ball (post-save / distribution) every opponent
+    // keeps this much clear air — the window where he is most vulnerable
+    keeperProtectR: 3.4,
   },
 
   // ------------------------------------------------------------

@@ -496,7 +496,44 @@ html, body {
   from { opacity: 0; transform: translateY(10px) scale(0.985); }
   to { opacity: 1; transform: none; }
 }
+@keyframes paste-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(6px) scale(0.99); }
+}
 .overlay:not(.hidden) .panel { animation: paste-in 0.32s ease both; }
+.overlay.leaving { pointer-events: none; }
+.overlay.leaving .panel { animation: paste-out 0.18s ease both; }
+
+/* --- match statistics on the results board --- */
+.match-stats {
+  width: min(100%, 520px);
+  margin: clamp(10px, 2.4vmin, 18px) auto;
+  border-collapse: collapse;
+  font-family: var(--font-display);
+  font-size: clamp(13px, 2.2vmin, 16px);
+  letter-spacing: 0.06em;
+  color: var(--offw);
+}
+.match-stats th,
+.match-stats td {
+  padding: clamp(5px, 1.2vmin, 9px) clamp(8px, 2vmin, 16px);
+  text-align: center;
+  border-bottom: 1px solid rgba(230, 217, 180, 0.14);
+}
+.match-stats th {
+  color: var(--pink);
+  text-transform: uppercase;
+  font-size: 0.92em;
+  border-bottom: 1px solid rgba(240, 79, 155, 0.45);
+}
+.match-stats td:first-child {
+  text-align: left;
+  color: rgba(233, 231, 223, 0.72);
+  font-size: 0.9em;
+}
+.match-stats tbody tr:last-child td { border-bottom: none; }
+.match-stats td:nth-child(2) { color: var(--offw); font-weight: 700; }
+.match-stats td:nth-child(3) { color: rgba(233, 231, 223, 0.78); }
 
 .overlay .title-xl {
   font-family: var(--font-display);

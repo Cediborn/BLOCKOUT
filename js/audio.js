@@ -136,6 +136,21 @@ LG.Audio = (function () {
       if (longDur > 0.3) blip(2000, longDur, 'square', 0.12, 0.02);
     },
     click: function () { blip(700, 0.04, 'square', 0.12); },
+    save: function () {
+      // glove catch: quick scrape + soft thump — clearly not a tackle.
+      // No crowdCheer here: crowdCheer samples Math.random() and this path runs
+      // mid-match, which would shift the seed-pinned sim stream.
+      noiseHit(0.1, 0.28, 1400, 0, 'bandpass');
+      thump(180, 0.14, 0.34);
+      blip(900, 0.07, 'triangle', 0.1, 0.02, 400);
+    },
+    resultWin: function () {
+      blip(523, 0.1, 'square', 0.14); blip(659, 0.1, 'square', 0.14, 0.09);
+      blip(784, 0.12, 'square', 0.16, 0.18); blip(1046, 0.35, 'square', 0.16, 0.28);
+      crowdCheer(0.85); S.whistle(0.35);
+    },
+    resultDraw: function () { blip(440, 0.14, 'triangle', 0.14); blip(440, 0.2, 'triangle', 0.12, 0.16); S.whistle(0.4); },
+    resultLose: function () { blip(330, 0.16, 'triangle', 0.14, 0, 280); blip(247, 0.3, 'triangle', 0.12, 0.14, 200); crowd(0.22); },
     special: function () {
       blip(300, 0.5, 'sawtooth', 0.2, 0, 1800);
       noiseHit(0.5, 0.3, 900, 0, 'bandpass');

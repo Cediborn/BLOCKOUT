@@ -400,13 +400,44 @@ LG.Models = (function () {
   function spectator(colorVariant) {
     var g = new THREE.Group();
     var skin = mat(0xc99a76, 'spec');
-    var shirt = mat([0x3d4a63, 0x6b3d66, 0x3d6b50, 0x6b603d][colorVariant % 4], 'spec');
-    var torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.22, 3, 6), shirt);
-    torso.position.y = 0.36;
+    // wider street-crowd palette so rows do not read as one flat color
+    var shirtCols = [
+      0x3d4a63, 0x6b3d66, 0x3d6b50, 0x6b603d, 0x8b4a3a, 0x3a6b8b,
+      0x7a5a2b, 0x5a3d7a, 0x2f6b6b, 0x8b5a2f, 0x4a5a2f, 0x7a3d4a,
+    ];
+    var pantCols = [0x2a2e38, 0x3a3038, 0x2e3a2e, 0x3a3a3a, 0x4a3a2a];
+    var shirt = mat(shirtCols[colorVariant % shirtCols.length], 'spec');
+    var pants = mat(pantCols[colorVariant % pantCols.length], 'spec');
+    // torso — slightly boxier than a pure capsule so it reads as a person
+    var torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.2, 3, 6), shirt);
+    torso.position.y = 0.38;
+    // hips / legs
+    var hip = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.1, 0.1), pants);
+    hip.position.y = 0.2;
+    var legL = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.2, 0.08), pants);
+    legL.position.set(-0.05, 0.1, 0);
+    var legR = legL.clone();
+    legR.position.x = 0.05;
+    // arms — pivot groups so arena anims can raise them on a goal
+    function arm(side) {
+      var pivot = new THREE.Group();
+      pivot.position.set(side * 0.14, 0.5, 0);
+      var upper = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.2, 0.055), shirt);
+      upper.position.y = -0.1;
+      var hand = new THREE.Mesh(new THREE.SphereGeometry(0.04, 6, 5), skin);
+      hand.position.y = -0.21;
+      pivot.add(upper, hand);
+      return pivot;
+    }
+    var armL = arm(-1), armR = arm(1);
     var head = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), skin);
     head.position.y = 0.74;
     head.castShadow = true;
-    g.add(torso); g.add(head);
+    g.add(torso, hip, legL, legR, armL, armR, head);
+    // expose arm pivots for staggered cheer animation (group userData, free)
+    g.userData.armL = armL;
+    g.userData.armR = armR;
+    g.userData.baseArm = 0;
     return g;
   }
 

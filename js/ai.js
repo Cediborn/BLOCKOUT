@@ -529,8 +529,17 @@ LG.AIBrain.prototype = {
     if (carrier !== gk && !near) return target;  // not in the keeper's office
 
     // general exclusion is the full zone; the chaser may close to stand-off
-    // when the keeper is the one holding the ball
-    var minR = (carrier === gk && this.isClosestChaser()) ? standoff : zone;
+    // when the keeper is the one holding the ball. During the protection
+    // window (hold after a save / before distribution) EVERY opponent backs
+    // off to the protect radius so he is never mobbed or tackled on the spot.
+    var minR;
+    if (carrier === gk) {
+      var protecting = gk.distributeT > 0 || gk._saveProtectT > 0;
+      if (protecting) minR = K.keeperProtectR || 3.4;
+      else minR = this.isClosestChaser() ? standoff : zone;
+    } else {
+      minR = zone;
+    }
 
     // never stand goal-side of the keeper (between him and his own net)
     if ((target.z - gk.z) * gSign > 0) target.z = gk.z;

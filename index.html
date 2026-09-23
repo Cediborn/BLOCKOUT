@@ -229,6 +229,19 @@
     <div class="panel">
       <div class="result-title" id="result-title">MATCH WON</div>
       <div class="result-score"><span class="rs" id="res-home">3</span> : <span class="ra" id="res-away">1</span></div>
+      <table class="match-stats" id="match-stats" aria-label="Match statistics">
+        <thead>
+          <tr><th></th><th>YOU</th><th>ROGUE</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>GOALS</td><td id="st-h-g">0</td><td id="st-a-g">0</td></tr>
+          <tr><td>SHOTS</td><td id="st-h-s">0</td><td id="st-a-s">0</td></tr>
+          <tr><td>PASSES</td><td id="st-h-p">0</td><td id="st-a-p">0</td></tr>
+          <tr><td>TACKLES</td><td id="st-h-t">0</td><td id="st-a-t">0</td></tr>
+          <tr><td>SAVES</td><td id="st-h-sv">0</td><td id="st-a-sv">0</td></tr>
+          <tr><td>POSSESSION</td><td id="st-h-po">50%</td><td id="st-a-po">50%</td></tr>
+        </tbody>
+      </table>
       <div class="result-coins" id="res-coins"><span class="coin"></span><span id="res-coins-n">+0</span></div>
       <div class="row-btns">
         <button id="btn-rematch" class="big-btn gold">REMATCH</button>
@@ -258,6 +271,7 @@
   <script src="js/camera.js"></script>
   <script src="js/lighting.js"></script>
   <script src="js/match.js"></script>
+  <script src="js/celebration.js"></script>
   <script src="js/hud.js"></script>
   <script src="js/main.js"></script>
   <script src="js/living.js"></script>
