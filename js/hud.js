@@ -48,6 +48,8 @@ LG.HUD = (function () {
     document.getElementById('btn-profile').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('profileRequested'); });
     document.getElementById('btn-profile-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('profileBackRequested'); });
     document.getElementById('btn-profile-reset').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('profileResetRequested'); });
+    document.getElementById('btn-challenges').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('challengesRequested'); });
+    document.getElementById('btn-challenges-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('challengesBackRequested'); });
     var startBtn = document.getElementById('btn-start-match');
     if (startBtn) startBtn.addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('startMatchRequested'); });
     // linear pre-match flow: STAR -> STYLE -> COURT -> MATCH SETUP

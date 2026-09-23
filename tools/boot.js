@@ -96,7 +96,7 @@ var missed = [];
 
 function el(id) {
   var e = {
-    id: id, style: {}, dataset: {}, innerHTML: '', textContent: '', children: [], _classes: {}, _h: {},
+    id: id, style: {}, dataset: {}, textContent: '', children: [], _classes: {}, _h: {}, _html: '',
     classList: {
       add: function (c) { e._classes[c] = 1; },
       remove: function (c) { delete e._classes[c]; },
@@ -117,6 +117,16 @@ function el(id) {
     },
     requestFullscreen: function () { return { then: function (cb) { return { catch: function () {} }; }, catch: function () {} }; },
   };
+  // real DOM: assigning innerHTML replaces children — mirror that so
+  // list.innerHTML = '' + appendChild rebuilds instead of accumulating
+  Object.defineProperty(e, 'innerHTML', {
+    get: function () { return e._html; },
+    set: function (v) {
+      e._html = String(v);
+      if (e._html === '') e.children = [];
+      else e.children = [];
+    },
+  });
   if (id && ids[id] === undefined) ids[id] = 1;
   return e;
 }
@@ -189,7 +199,7 @@ global.performance = global.performance || { now: function () { return Date.now(
 global.console.error = global.console.error;
 
 // ---------------- load the real code ----------------
-var SRC = ['js/config.js', 'js/difficulty.js', 'js/util.js', 'js/audio.js', 'js/progression.js', 'js/settings.js',
+var SRC = ['js/config.js', 'js/difficulty.js', 'js/util.js', 'js/audio.js', 'js/challenges.js', 'js/progression.js', 'js/settings.js',
   'js/input.js', 'js/particles.js', 'js/courts.js', 'js/models.js', 'js/ball.js', 'js/player.js', 'js/arena.js', 'js/abilities.js',
   'js/ai.js', 'js/keeper.js', 'js/camera.js', 'js/lighting.js', 'js/match.js', 'js/celebration.js', 'js/hud.js', 'js/main.js', 'js/living.js'];
 
@@ -630,6 +640,314 @@ section('7. progression foundation (career, history, rewards, once-only finalize
   elements['btn-profile-reset'].fire('click');
   check(P.career().matches === 0 && P.coins() === 0, 'second RESET click clears the profile');
   elements['btn-profile-back'].fire('click');
+})();
+
+section('8. challenge system (pool, eval, finalize-once, UI, persistence)');
+(function () {
+  var P = LG.Progression;
+  var C = LG.Challenges;
+  check(!!(C && Array.isArray(C.POOL) && C.POOL.length >= 10 && C.POOL.length <= 15),
+    'challenge pool has 10–15 definitions', C && C.POOL && C.POOL.length);
+  check(!!(P && typeof P.activeChallenges === 'function' && typeof P.challengeCompletions === 'function'),
+    'LG.Progression exposes the Phase 3B challenge API');
+
+  P.reset();
+  var act = P.activeChallenges();
+  check(act.length === 3, 'exactly 3 active challenges after reset', act.length);
+  var slotCats = [
+    act[0] && C.byId(act[0]) && C.byId(act[0]).category,
+    act[1] && C.byId(act[1]) && C.byId(act[1]).category,
+    act[2] && C.byId(act[2]) && C.byId(act[2]).category,
+  ];
+  check(slotCats[0] === 'attack' &&
+    (slotCats[1] === 'defense' || slotCats[1] === 'goalkeeping') &&
+    (slotCats[2] === 'passing' || slotCats[2] === 'results'),
+    'active set fills the three slot buckets', JSON.stringify(slotCats));
+  check(act.every(function (id) { return !!C.byId(id); }) && new Set(act).size === 3,
+    'active ids are valid and unique', JSON.stringify(act));
+
+  // force a known active set for deterministic threshold checks.
+  // ids must sit in their slot buckets (attack / defense|gk / passing|results)
+  // or ensureActive() will repair the payload on reload.
+  function forceActive(ids) {
+    _lsStore['blockout.profile.v2'] = JSON.stringify({
+      v: 3, coins: 0, unlocked: ['blaze'],
+      best: { goals: 0, wins: 0, streak: 0 },
+      career: { matches: 0, wins: 0, draws: 0, losses: 0, goalsFor: 0, goalsAgainst: 0, assists: 0, shots: 0, tackles: 0, saves: 0, cleanSheets: 0, playTime: 0 },
+      history: [],
+      challenges: { active: ids.slice(), cursor: 0, completions: {} },
+    });
+    P.reload();
+    var got = P.activeChallenges();
+    if (JSON.stringify(got) !== JSON.stringify(ids)) {
+      check(false, 'forceActive kept the requested ids', JSON.stringify({ want: ids, got: got }));
+    }
+    return got;
+  }
+
+  function res(partial) {
+    var base = {
+      score: [0, 0], won: 0, playTime: 60, difficulty: 'medium', court: '', ts: Date.now(),
+      stats: {
+        home: { goals: 0, assists: 0, shots: 0, passes: 0, tackles: 0, saves: 0, poss: 50 },
+        away: { goals: 0, assists: 0, shots: 0, passes: 0, tackles: 0, saves: 0, poss: 50 },
+      },
+    };
+    if (partial) {
+      if (partial.score) base.score = partial.score;
+      if (partial.won !== undefined) base.won = partial.won;
+      if (partial.home) for (var k in partial.home) base.stats.home[k] = partial.home[k];
+      if (partial.away) for (var k2 in partial.away) base.stats.away[k2] = partial.away[k2];
+    }
+    return base;
+  }
+
+  // --- pure evaluate: each objective type at exact threshold ---
+  var evalCases = [
+    { id: 'score_2', under: { home: { goals: 1 } }, over: { home: { goals: 2 } }, won: 1, score: [2, 0] },
+    { id: 'score_3', under: { home: { goals: 2 } }, over: { home: { goals: 3 } }, won: 1, score: [3, 0] },
+    { id: 'shots_8', under: { home: { shots: 7 } }, over: { home: { shots: 8 } }, won: 0, score: [1, 1] },
+    { id: 'passes_10', under: { home: { passes: 9 } }, over: { home: { passes: 10 } }, won: 0, score: [0, 0] },
+    { id: 'assists_2', under: { home: { assists: 1 } }, over: { home: { assists: 2 } }, won: 1, score: [2, 1] },
+    { id: 'tackles_4', under: { home: { tackles: 3 } }, over: { home: { tackles: 4 } }, won: -1, score: [0, 1] },
+    { id: 'saves_3', under: { home: { saves: 2 } }, over: { home: { saves: 3 } }, won: 0, score: [0, 0] },
+    { id: 'saves_5', under: { home: { saves: 4 } }, over: { home: { saves: 5 } }, won: 0, score: [1, 1] },
+    { id: 'win_1', under: { }, over: { }, won: 1, score: [1, 0] },
+    { id: 'win_by_2', under: { }, over: { }, won: 1, score: [3, 1] },
+    { id: 'clean_sheet', under: { }, over: { }, won: 1, score: [2, 0] },
+  ];
+  for (var ei = 0; ei < evalCases.length; ei++) {
+    var ec = evalCases[ei];
+    var def = C.byId(ec.id);
+    if (!def) { check(false, 'eval case has a pool def: ' + ec.id); continue; }
+    var rU = res({ score: ec.score, won: ec.won, home: ec.under.home, away: ec.under.away });
+    var rO = res({ score: ec.score, won: ec.won, home: ec.over.home, away: ec.over.away });
+    // clean sheet under = conceded
+    if (ec.id === 'clean_sheet') {
+      rU = res({ score: [2, 1], won: 1, away: { goals: 1 } });
+      rO = res({ score: [2, 0], won: 1, away: { goals: 0 } });
+    }
+    if (ec.id === 'win_by_2') {
+      rU = res({ score: [2, 1], won: 1 });
+      rO = res({ score: [3, 1], won: 1 });
+    }
+    if (ec.id === 'win_1') {
+      rU = res({ score: [1, 1], won: 0 });
+      rO = res({ score: [1, 0], won: 1 });
+    }
+    var eu = C.evaluate(def, rU, false);
+    var eo = C.evaluate(def, rO, false);
+    check(!eu.done && eo.done, 'threshold exact for ' + ec.id,
+      'under=' + JSON.stringify(eu) + ' over=' + JSON.stringify(eo));
+  }
+
+  // win_by_2 at 2-1 does not complete; 3-1 does (covered above)
+  // live mode never claims result-only objectives mid-match
+  var liveWin = C.evaluate(C.byId('win_1'), res({ score: [1, 0], won: 1 }), true);
+  check(!liveWin.done, 'live evaluate skips win until finalization', JSON.stringify(liveWin));
+
+  // --- finalize: multiple challenges complete once, reward once ---
+  forceActive(['score_2', 'tackles_4', 'win_1']);
+  var coins0 = P.coins();
+  var r = res({ score: [3, 1], won: 1, home: { goals: 3, assists: 2, shots: 7, passes: 12, tackles: 5, saves: 1 }, away: { goals: 1 } });
+  P.finalizeMatch(r);
+  check(r.completedChallenges && r.completedChallenges.length === 3,
+    'all three active challenges complete from one strong match',
+    JSON.stringify(r.completedChallenges && r.completedChallenges.map(function (c) { return c.id; })));
+  check(r.challengeCoins === 150, 'challenge rewards sum to 150 (3 easy)', r.challengeCoins);
+  check(P.coins() === coins0 + r.coins + 150,
+    'profile coins include match reward + challenge rewards once',
+    P.coins() + ' vs ' + (coins0 + r.coins + 150));
+  var comps = P.challengeCompletions();
+  check(comps.score_2 === 1 && comps.tackles_4 === 1 && comps.win_1 === 1,
+    'lifetime completions increment', JSON.stringify(comps));
+  var act2 = P.activeChallenges();
+  check(act2.length === 3 && act2.indexOf('score_2') < 0 && act2.indexOf('tackles_4') < 0 && act2.indexOf('win_1') < 0,
+    'completed slots are replaced with fresh objectives', JSON.stringify(act2));
+
+  // rematch / re-finalize of same object: no double award
+  var coinsAfter = P.coins();
+  var matchesAfter = P.career().matches;
+  P.finalizeMatch(r);
+  check(P.coins() === coinsAfter && P.career().matches === matchesAfter,
+    'challenge rewards are idempotent on double finalize',
+    P.coins() + '/' + P.career().matches);
+
+  // a second match with the new active set does not re-complete old ids as "same event"
+  forceActive(['score_2', 'saves_3', 'win_by_2']);
+  var r2 = res({ score: [3, 1], won: 1, home: { goals: 3, shots: 9, saves: 3 }, away: { goals: 1 } });
+  P.finalizeMatch(r2);
+  check(r2.completedChallenges.length === 3 && r2.challengeCoins === 50 + 50 + 100,
+    'second match completes its own active set', JSON.stringify(r2.completedChallenges.map(function (c) { return c.id; })));
+
+  // incomplete challenges do not pay
+  forceActive(['score_4', 'saves_5', 'passes_10']);
+  var r3 = res({ score: [2, 0], won: 1, home: { goals: 2, shots: 4, passes: 3, saves: 1 }, away: { goals: 0 } });
+  var c3 = P.coins();
+  P.finalizeMatch(r3);
+  check(r3.completedChallenges.length === 0 && r3.challengeCoins === 0 && P.coins() === c3 + r3.coins,
+    'missed objectives pay nothing', JSON.stringify({ ch: r3.challengeCoins, coins: P.coins() }));
+
+  // persistence
+  var actPersist = P.activeChallenges();
+  var compsPersist = P.challengeCompletions();
+  P.reload();
+  check(JSON.stringify(P.activeChallenges()) === JSON.stringify(actPersist) &&
+    JSON.stringify(P.challengeCompletions()) === JSON.stringify(compsPersist),
+    'active set + completions survive reload()',
+    JSON.stringify(P.activeChallenges()));
+
+  // corrupt / hostile challenge payloads recover
+  _lsStore['blockout.profile.v2'] = JSON.stringify({
+    v: 3, coins: 10,
+    challenges: { active: ['nope', 'score_2', 42, 'score_2'], cursor: 'x', completions: { bogus: 9, score_2: 2 } },
+  });
+  P.reload();
+  var actFix = P.activeChallenges();
+  check(actFix.length === 3 && actFix.every(function (id) { return !!C.byId(id); }) && new Set(actFix).size === 3,
+    'corrupt active ids recover to a valid 3-slot set', JSON.stringify(actFix));
+  check(P.challengeCompletions().bogus === undefined && P.challengeCompletions().score_2 === 2,
+    'unknown completion keys drop; valid counts keep',
+    JSON.stringify(P.challengeCompletions()));
+
+  // wrong-category slot repaired
+  _lsStore['blockout.profile.v2'] = JSON.stringify({
+    v: 3, coins: 0,
+    challenges: { active: ['tackles_4', 'score_2', 'win_1'], cursor: 0, completions: {} },
+  });
+  P.reload();
+  var fixed = P.activeChallenges();
+  check(C.byId(fixed[0]).category === 'attack',
+    'slot 0 is repaired back to attack', fixed[0]);
+
+  // missing challenges field (Phase 3A payload) still works
+  _lsStore['blockout.profile.v2'] = JSON.stringify({ v: 2, coins: 25, career: { matches: 1 } });
+  P.reload();
+  check(P.coins() === 25 && P.activeChallenges().length === 3,
+    'legacy profile without challenges{} gains a fresh active set',
+    P.activeChallenges().length);
+
+  // reset clears challenge state but not settings/difficulty/courts
+  _lsStore['blockout.settings.v1'] = JSON.stringify({ timeOfDay: 'night', view: 'portrait' });
+  _lsStore['blockout.difficulty.v1'] = 'hard';
+  _lsStore['blockout.court.v1'] = 'turf';
+  forceActive(['score_2', 'tackles_4', 'win_1']);
+  P.finalizeMatch(res({ score: [2, 0], won: 1, home: { goals: 2, tackles: 4 }, away: { goals: 0 } }));
+  check(Object.keys(P.challengeCompletions()).length > 0, 'completions exist before reset');
+  P.reset();
+  check(P.coins() === 0 && P.career().matches === 0 &&
+    Object.keys(P.challengeCompletions()).length === 0 && P.activeChallenges().length === 3,
+    'reset clears profile + challenge counters and refills 3 slots',
+    JSON.stringify({ coins: P.coins(), comps: P.challengeCompletions(), act: P.activeChallenges() }));
+  check(_lsStore['blockout.settings.v1'] && _lsStore['blockout.difficulty.v1'] === 'hard' && _lsStore['blockout.court.v1'] === 'turf',
+    'reset still leaves settings / difficulty / courts alone');
+  _lsStore['blockout.difficulty.v1'] = 'medium';
+
+  // challenges overlay open/close from the main menu
+  LG.eventBus.emit('quitRequested');
+  check(window.LGMain.getState() === 'menu' && vis('menu-overlay'), 'on the main menu for the challenges probe');
+  elements['btn-challenges'].fire('click');
+  check(vis('challenges-overlay') && !vis('menu-overlay') && window.LGMain.getState() === 'challenges',
+    'CHALLENGES opens from the main menu', window.LGMain.getState());
+  var cards = (elements['challenge-list'] && elements['challenge-list'].children) || [];
+  check(cards.length === 3, 'challenge screen lists 3 active cards', cards.length);
+  elements['btn-challenges-back'].fire('click');
+  check(vis('menu-overlay') && !vis('challenges-overlay'), 'CHALLENGES back returns to the menu');
+
+  // results screen challenge display (non-punitive empty state)
+  var rEmpty = res({ score: [0, 1], won: -1, away: { goals: 1 } });
+  forceActive(['score_4', 'saves_5', 'win_by_2']);
+  P.finalizeMatch(rEmpty);
+  // drive setupResult via the real matchEnd path if a match is around; else call through a synthetic result overlay fill
+  // (setupResult is private — exercise it by opening results through a tiny match if present)
+  var mm = window.LGMain.getMatch();
+  if (mm && !mm._finalized) {
+    mm.score = [0, 1];
+    mm.state = 'PLAY';
+    mm.clock = 0;
+    mm.endMatch();
+  }
+  // empty message present in markup with hidden class until setupResult runs
+  check(!!document.getElementById('res-ch-list') && !!document.getElementById('res-ch-empty'),
+    'results markup has the challenges block');
+
+  // in-match progress notifications: event-driven toast on integer change only
+  // (need a live match — section 7 already quit to menu)
+  LG.eventBus.emit('quitRequested');
+  elements['btn-play'].fire('click');
+  elements['btn-diff-go'].fire('click');
+  elements['btn-select-go'].fire('click');
+  elements['btn-style-go'].fire('click');
+  elements['btn-court-go'].fire('click');
+  elements['btn-start-match'].fire('click');
+  var mm2 = window.LGMain.getMatch();
+  if (mm2) {
+    forceActive(['score_2', 'tackles_4', 'passes_10']);
+    if (C.resetLive) C.resetLive();
+    var toasts = [];
+    var banners = [];
+    var oldToast = LG.HUD.toast;
+    var oldBanner = LG.HUD.banner;
+    LG.HUD.toast = function (m) { toasts.push(String(m)); };
+    LG.HUD.banner = function (m) {
+      // main.js also banners GOAL!/etc — only count challenge banners here
+      if (String(m) === 'CHALLENGE COMPLETE') banners.push(String(m));
+    };
+    mm2.stats.home.passes = 0;
+    mm2.stats.home.tackles = 0;
+    mm2.stats.home.goals = 0;
+    mm2._finalized = false;
+    mm2.state = 'PLAY';
+    LG.eventBus.emit('matchStart', { match: mm2 });
+    LG.eventBus.emit('pass', { src: null, target: null });
+    check(toasts.length === 0, 'first pass seed does not toast', JSON.stringify(toasts));
+    mm2.stats.home.passes = 2;
+    LG.eventBus.emit('pass', {});
+    check(toasts.length === 1 && /BUILD UP\s+2\/10/.test(toasts[0]),
+      'pass progress toasts only on integer change', JSON.stringify(toasts));
+    LG.eventBus.emit('pass', {});
+    check(toasts.length === 1, 'no duplicate toast when progress unchanged', toasts.length);
+    mm2.stats.home.passes = 10;
+    LG.eventBus.emit('pass', {});
+    check(banners.length === 1 && banners[0] === 'CHALLENGE COMPLETE',
+      'hitting the target fires one complete banner', JSON.stringify(banners));
+    mm2.stats.home.goals = 2;
+    LG.eventBus.emit('goal', { team: 0, score: [2, 0] });
+    check(banners.length === 2, 'goal completing score_2 fires a second banner', banners.length);
+    LG.HUD.toast = oldToast;
+    LG.HUD.banner = oldBanner;
+    mm2._finalized = false;
+  } else {
+    check(false, 'a match is live for the in-match notification probe');
+  }
+
+  // endMatch path still finalizes challenges once
+  var mm3 = window.LGMain.getMatch();
+  if (mm3) {
+    forceActive(['score_2', 'tackles_4', 'win_1']);
+    mm3.score = [2, 0];
+    mm3.stats.home.goals = 2;
+    mm3.stats.home.tackles = 5;
+    mm3.stats.home.passes = 12;
+    mm3.stats.away.goals = 0;
+    mm3.state = 'PLAY';
+    mm3.clock = 0;
+    var finalsBefore = P.career().matches;
+    var coinsB = P.coins();
+    mm3.endMatch();
+    mm3.endMatch();
+    check(P.career().matches === finalsBefore + 1, 'challenge path: endMatch still books once',
+      finalsBefore + ' -> ' + P.career().matches);
+    var coinsAfterLive = P.coins();
+    var matchCoinsLive = (P.history()[0] && P.history()[0].coins) || 0;
+    check(coinsAfterLive >= coinsB + matchCoinsLive + 150,
+      'challenge coins paid on the live endMatch path',
+      'coins ' + coinsB + ' -> ' + coinsAfterLive + ' history=' + matchCoinsLive);
+    var comps3 = P.challengeCompletions();
+    check(comps3.score_2 === 1 && comps3.tackles_4 === 1 && comps3.win_1 === 1,
+      'live endMatch completes the forced active set', JSON.stringify(comps3));
+    LG.eventBus.emit('quitRequested');
+  }
 })();
 
 console.log('\n' + (FAIL === 0 ? 'BOOT + MENU FLOW PASSED' : 'BOOT + MENU FLOW FAILED (' + FAIL + ')'));

@@ -8,7 +8,7 @@
   var renderer, scene, camera, camCtrl;
   var match = null;
   var arenaObj = null;
-  var UIState = 'menu';          // menu | diff | select | style | court | setup | how | match | paused | result
+  var UIState = 'menu';          // menu | diff | select | style | court | setup | how | profile | challenges | match | paused | result
   var howFromPause = false;      // track if how-to-play was opened from pause
   var profileResetArmed = false; // two-step confirm on RESET PROFILE
   var quitting = false;          // mid-quit endMatch must not open the result board
@@ -82,6 +82,7 @@
     bindEvents();
     bindSettingsUI();
     refreshSettingsUI();
+    if (LG.Challenges && LG.Challenges.bind) LG.Challenges.bind();
     updateLayoutClass();
     showMenu(true);
     requestAnimationFrame(loop);
@@ -220,6 +221,7 @@
         if (LG.Progression && LG.Progression.reset) LG.Progression.reset();
         LG.HUD.updateCoins();
         refreshProfileUI();
+        refreshChallengesUI();
         var rb = document.getElementById('btn-profile-reset');
         if (rb) rb.textContent = 'RESET PROFILE';
       } else {
@@ -227,6 +229,17 @@
         var rb2 = document.getElementById('btn-profile-reset');
         if (rb2) rb2.textContent = 'CONFIRM RESET?';
       }
+    });
+    bus.on('challengesRequested', function () {
+      UIState = 'challenges';
+      refreshChallengesUI();
+      showOverlay('menu-overlay', false);
+      showOverlay('challenges-overlay', true);
+    });
+    bus.on('challengesBackRequested', function () {
+      UIState = 'menu';
+      showOverlay('challenges-overlay', false);
+      showOverlay('menu-overlay', true);
     });
     bus.on('pauseHowRequested', function () {
       howFromPause = true;
@@ -337,6 +350,7 @@
       showOverlay('pause-overlay', false);
       showOverlay('result-overlay', false);
       showOverlay('profile-overlay', false);
+      showOverlay('challenges-overlay', false);
       showMatchUI(false);
       showOverlay('menu-overlay', true);
       LG.Particles.clear();
@@ -507,6 +521,32 @@
     var ap = document.getElementById('st-a-po');
     if (hp) hp.textContent = (h.poss != null ? h.poss : 50) + '%';
     if (ap) ap.textContent = (a.poss != null ? a.poss : 50) + '%';
+
+    // challenges completed this match (empty list is fine — never punitive)
+    var chList = document.getElementById('res-ch-list');
+    var chEmpty = document.getElementById('res-ch-empty');
+    var chCoins = document.getElementById('res-ch-coins');
+    var completed = r.completedChallenges || [];
+    if (chList) {
+      chList.innerHTML = '';
+      for (var ci = 0; ci < completed.length; ci++) {
+        var c = completed[ci];
+        var li = document.createElement('li');
+        li.className = 'pf-row ch-done';
+        li.innerHTML = '<span class="ch-check">✓</span>' +
+          '<span class="ch-title">' + c.title + '</span>' +
+          '<span class="ch-desc">' + (c.description || '') + '</span>' +
+          '<span class="pf-c">+' + c.reward + '</span>';
+        chList.appendChild(li);
+      }
+    }
+    if (chEmpty) chEmpty.classList.toggle('hidden', completed.length > 0);
+    if (chCoins) {
+      var chAmt = r.challengeCoins || 0;
+      chCoins.classList.toggle('hidden', !chAmt);
+      chCoins.innerHTML = chAmt ? '<span class="coin"></span><span>+ ' + chAmt + ' CHALLENGES</span>' : '';
+    }
+
     LG.HUD.updateCoins();
     if (r.won === 1) LG.Audio.sfx.resultWin();
     else if (r.won === 0) LG.Audio.sfx.resultDraw();
@@ -564,6 +604,47 @@
     var rb = document.getElementById('btn-profile-reset');
     if (rb) rb.textContent = 'RESET PROFILE';
     profileResetArmed = false;
+  }
+
+  // Active challenges screen — 3 slots, pure defs from LG.Challenges.
+  function refreshChallengesUI() {
+    var list = document.getElementById('challenge-list');
+    if (!list) return;
+    list.innerHTML = '';
+    var act = (LG.Progression && LG.Progression.activeChallenges) ? LG.Progression.activeChallenges() : [];
+    if (!act.length) {
+      var empty = document.createElement('div');
+      empty.className = 'pf-empty';
+      empty.textContent = 'NO ACTIVE CHALLENGES';
+      list.appendChild(empty);
+      return;
+    }
+    for (var i = 0; i < act.length; i++) {
+      var def = LG.Challenges && LG.Challenges.byId ? LG.Challenges.byId(act[i]) : null;
+      if (!def) continue;
+      var card = document.createElement('div');
+      card.className = 'challenge-card ch-' + def.difficulty;
+      card.innerHTML =
+        '<div class="challenge-head">' +
+          '<span class="challenge-title">' + def.title + '</span>' +
+          '<span class="challenge-diff">' + def.difficulty.toUpperCase() + '</span>' +
+        '</div>' +
+        '<div class="challenge-desc">' + def.description + '</div>' +
+        '<div class="challenge-meta">' +
+          '<span class="challenge-target">' + challengeTargetLabel(def) + '</span>' +
+          '<span class="challenge-reward"><span class="coin"></span>+' + def.reward + '</span>' +
+        '</div>';
+      list.appendChild(card);
+    }
+  }
+
+  function challengeTargetLabel(def) {
+    switch (def.objectiveType) {
+      case 'cleanSheet': return 'CLEAN SHEET';
+      case 'win': return '1 WIN';
+      case 'winBy': return 'WIN BY ' + def.target + '+';
+      default: return 'TARGET ' + def.target;
+    }
   }
 
   // ---------------- match lifecycle ----------------
@@ -632,7 +713,7 @@
     document.getElementById('scoreboard').classList.toggle('hidden', !on);
     document.getElementById('pause-btn').classList.toggle('hidden', !on);
     document.getElementById('coin-chip').classList.toggle('hidden', false);
-    var overlays = ['menu-overlay', 'diff-overlay', 'select-overlay', 'style-overlay', 'court-overlay', 'setup-overlay', 'how-overlay', 'profile-overlay', 'pause-overlay', 'result-overlay'];
+    var overlays = ['menu-overlay', 'diff-overlay', 'select-overlay', 'style-overlay', 'court-overlay', 'setup-overlay', 'how-overlay', 'profile-overlay', 'challenges-overlay', 'pause-overlay', 'result-overlay'];
     for (var i = 0; i < overlays.length; i++) document.getElementById(overlays[i]).classList.add('hidden');
   }
 

@@ -1,18 +1,20 @@
 // ============================================================
 // PROGRESSION — single source of truth for persistent player
-// profile: coins, unlocks, career stats, match history.
-// Everything that must survive a reload lives here. Temporary
-// match state never does. Save only on controlled lifecycle
-// points (finalize, unlock, spend, reset) — never per frame.
+// profile: coins, unlocks, career stats, match history, and the
+// active challenge set (Phase 3B). Everything that must survive
+// a reload lives here. Temporary match state never does. Save
+// only on controlled lifecycle points (finalize, unlock, spend,
+// reset) — never per frame.
 // ============================================================
 var LG = window.LG = window.LG || {};
 
 LG.Progression = (function () {
   var KEY = 'blockout.profile.v2';
   var LEGACY_KEY = 'blockout.prog.v1';
-  var SCHEMA = 2;
+  var SCHEMA = 3;   // v3 adds challenges{}; older v2 payloads sanitize cleanly
   var HISTORY_MAX = 25;
   var ASSIST_WINDOW = 8;   // seconds — mirrored by match.js; kept here as docs
+  var ACTIVE_SLOTS = 3;
 
   // unlock prices scale up through the roster
   var ORDER = ['blaze', 'cannon', 'frenzy', 'stone', 'echo', 'pulse', 'volt', 'brute'];
@@ -22,6 +24,10 @@ LG.Progression = (function () {
     'goalsFor', 'goalsAgainst', 'assists', 'shots', 'tackles', 'saves',
     'cleanSheets', 'playTime',
   ];
+
+  function defaultChallenges() {
+    return { active: [], cursor: 0, completions: {} };
+  }
 
   function defaults() {
     var career = {};
@@ -33,6 +39,7 @@ LG.Progression = (function () {
       best: { goals: 0, wins: 0, streak: 0 },
       career: career,
       history: [],
+      challenges: defaultChallenges(),
     };
   }
 
@@ -88,6 +95,30 @@ LG.Progression = (function () {
       }
       d.history = h;
     }
+
+    // Phase 3B challenges — always recover to a valid active set
+    var ch = defaultChallenges();
+    if (p.challenges && typeof p.challenges === 'object') {
+      ch.cursor = num(p.challenges.cursor);
+      if (p.challenges.completions && typeof p.challenges.completions === 'object') {
+        for (var cid in p.challenges.completions) {
+          if (!Object.prototype.hasOwnProperty.call(p.challenges.completions, cid)) continue;
+          if (LG.Challenges && LG.Challenges.byId && LG.Challenges.byId(cid)) {
+            ch.completions[cid] = num(p.challenges.completions[cid]);
+          }
+        }
+      }
+      if (Object.prototype.toString.call(p.challenges.active) === '[object Array]') {
+        for (var ai = 0; ai < p.challenges.active.length && ch.active.length < ACTIVE_SLOTS; ai++) {
+          var aid = p.challenges.active[ai];
+          if (typeof aid === 'string' && LG.Challenges && LG.Challenges.byId && LG.Challenges.byId(aid) &&
+              ch.active.indexOf(aid) < 0) {
+            ch.active.push(aid);
+          }
+        }
+      }
+    }
+    d.challenges = ch;
     return d;
   }
 
@@ -203,21 +234,94 @@ LG.Progression = (function () {
     });
     if (data.history.length > HISTORY_MAX) data.history.length = HISTORY_MAX;
 
+    // Phase 3B: evaluate active challenges exactly once against this frozen
+    // result (same once-only gate as the career write above).
+    var challengeCoins = 0;
+    var completed = [];
+    if (LG.Challenges && typeof LG.Challenges.evaluate === 'function') {
+      ensureActive();
+      var act = data.challenges.active.slice();
+      for (var ci = 0; ci < act.length; ci++) {
+        var def = LG.Challenges.byId(act[ci]);
+        if (!def) continue;
+        var ev = LG.Challenges.evaluate(def, result, false);
+        if (!ev.done) continue;
+        challengeCoins += Number(def.reward) || 0;
+        data.challenges.completions[def.id] = (data.challenges.completions[def.id] || 0) + 1;
+        completed.push({
+          id: def.id,
+          title: def.title,
+          description: def.description,
+          category: def.category,
+          difficulty: def.difficulty,
+          reward: Number(def.reward) || 0,
+          progress: ev.progress,
+          target: def.target,
+        });
+        // replace the finished slot so the next match has a fresh objective
+        var slot = -1;
+        for (var si = 0; si < act.length; si++) {
+          if (act[si] === def.id) { slot = si; break; }
+        }
+        if (slot >= 0 && LG.Challenges.pickForSlot) {
+          var nextId = LG.Challenges.pickForSlot(slot, data.challenges.active, data.challenges);
+          if (nextId) data.challenges.active[slot] = nextId;
+          else data.challenges.active.splice(slot, 1);
+        }
+      }
+      data.coins += challengeCoins;
+    }
+
     save();
     result.coins = coins;
+    result.challengeCoins = challengeCoins;
+    result.completedChallenges = completed;
     result.finalized = true;
     result.career = careerCopy();
     return result;
   }
 
+  // Fill / repair the 3 active slots from the pool (deterministic cursor).
+  // Wrong-category ids from a corrupt payload are replaced, never kept.
+  function ensureActive() {
+    if (!LG.Challenges || !LG.Challenges.pickForSlot) return;
+    var ch = data.challenges;
+    if (!ch.active || Object.prototype.toString.call(ch.active) !== '[object Array]') ch.active = [];
+    var slotDefs = LG.Challenges.slots ? LG.Challenges.slots() : [];
+    var catsOk = ch.active.length >= slotDefs.length;
+    if (catsOk) {
+      for (var i = 0; i < slotDefs.length; i++) {
+        var d = (typeof ch.active[i] === 'string') ? LG.Challenges.byId(ch.active[i]) : null;
+        if (!d || (slotDefs[i] || []).indexOf(d.category) < 0) { catsOk = false; break; }
+      }
+    }
+    if (catsOk) return;   // already a valid 3-slot set — leave ids alone
+
+    var cleaned = [];
+    for (var s = 0; s < slotDefs.length && s < ACTIVE_SLOTS; s++) {
+      var cats = slotDefs[s] || [];
+      var cur = ch.active[s];
+      var def = (typeof cur === 'string') ? LG.Challenges.byId(cur) : null;
+      if (def && cats.indexOf(def.category) >= 0 && cleaned.indexOf(def.id) < 0) {
+        cleaned.push(def.id);
+        continue;
+      }
+      var pick = LG.Challenges.pickForSlot(s, cleaned, ch);
+      if (pick) cleaned.push(pick);
+    }
+    ch.active = cleaned;
+  }
+
   function reset() {
     data = defaults();
+    ensureActive();
     save();
     return data;
   }
 
   function reload() {
     load();
+    ensureActive();
     return data;
   }
 
@@ -227,6 +331,22 @@ LG.Progression = (function () {
     for (var i = 0; i < data.history.length; i++) out.push(data.history[i]);
     return out;
   }
+
+  function activeChallenges() {
+    ensureActive();
+    return data.challenges.active.slice();
+  }
+
+  function challengeCompletions() {
+    var out = {};
+    var c = data.challenges.completions || {};
+    for (var k in c) {
+      if (Object.prototype.hasOwnProperty.call(c, k)) out[k] = c[k];
+    }
+    return out;
+  }
+
+  ensureActive();   // first load always offers 3 objectives
 
   return {
     // coins / unlocks (existing API — preserved)
@@ -259,5 +379,10 @@ LG.Progression = (function () {
     reset: reset,
     reload: reload,
     schema: function () { return SCHEMA; },
+
+    // challenges (Phase 3B) — state only lives here; defs live in LG.Challenges
+    activeChallenges: activeChallenges,
+    challengeCompletions: challengeCompletions,
+    ensureActiveChallenges: ensureActive,
   };
 })();

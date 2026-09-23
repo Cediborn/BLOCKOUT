@@ -143,7 +143,7 @@ function load(rel) {
   vm.runInThisContext(fs.readFileSync(path.join(ROOT, rel), 'utf8'), { filename: rel });
 }
 
-['js/config.js', 'js/difficulty.js', 'js/settings.js', 'js/util.js', 'js/audio.js', 'js/models.js', 'js/ball.js',
+['js/config.js', 'js/difficulty.js', 'js/settings.js', 'js/util.js', 'js/audio.js', 'js/challenges.js', 'js/models.js', 'js/ball.js',
   'js/player.js', 'js/abilities.js', 'js/ai.js', 'js/keeper.js', 'js/match.js',
   'js/input.js'].forEach(load);
 
@@ -156,7 +156,7 @@ var pfx = { dust: function () {}, trail: function () {}, burst: function () {}, 
   confetti: function () {}, speedLines: function () {}, update: function () {}, clear: function () {}, init: function () {} };
 LG.Particles = pfx;
 LG.Progression = {
-  addCoins: function () {}, recordResult: function () {}, coins: function () { return 0; },
+  addCoins: function () {}, coins: function () { return 0; },
   isUnlocked: function () { return true; }, costOf: function () { return 0; }, unlock: function () { return true; },
   finalizeMatch: function (r) {
     if (!r || r.finalized) return r;
@@ -166,6 +166,8 @@ LG.Progression = {
     var ha = (r.stats && r.stats.away && r.stats.away.goals) || (r.score && r.score[1]) || 0;
     var adds = hf * 12 + ha * 5 + Math.max(0, hf - ha) * 8;
     r.coins = Math.round((base + adds) / 10) * 10;
+    r.challengeCoins = 0;
+    r.completedChallenges = [];
     r.finalized = true;
     return r;
   },
@@ -179,8 +181,11 @@ LG.Progression = {
   reset: function () {},
   reload: function () {},
   best: function () { return { goals: 0, wins: 0, streak: 0 }; },
+  activeChallenges: function () { return []; },
+  challengeCompletions: function () { return {}; },
+  ensureActiveChallenges: function () {},
 };
-LG.HUD = { toast: function () {}, reset: function () {} };
+LG.HUD = { toast: function () {}, banner: function () {}, reset: function () {} };
 
 // models stay REAL (animateChar is part of what we changed)
 var lastAnim = null;
@@ -1881,6 +1886,94 @@ section('15. assists + finalize-once bookkeeping (no RNG in the credit path)');
   m.endMatch();
   LG.Progression.finalizeMatch = orig;
   assert(finals === 1 && m._finalized === true, 'endMatch finalizes exactly once', 'finals=' + finals);
+})();
+
+section('16. challenge evaluation (pure, deterministic, no RNG)');
+(function () {
+  var C = LG.Challenges;
+  assert(!!(C && Array.isArray(C.POOL) && C.POOL.length >= 10 && C.POOL.length <= 15),
+    'pool size is 10–15', C && C.POOL && C.POOL.length);
+  assert(!C.POOL.some(function (d) { return typeof d.id !== 'string' || !d.title || !d.description ||
+    !d.category || !d.difficulty || !d.objectiveType || !(d.target >= 1) || !(d.reward > 0); }),
+    'every definition has id/title/description/category/difficulty/objectiveType/target/reward');
+  var ids = C.POOL.map(function (d) { return d.id; });
+  assert(new Set(ids).size === ids.length, 'challenge ids are unique');
+
+  function R(hf, ha, home, away, won) {
+    home = home || {};
+    away = away || {};
+    return {
+      score: [hf, ha],
+      won: won,
+      stats: {
+        home: { goals: hf, assists: home.assists || 0, shots: home.shots || 0, passes: home.passes || 0, tackles: home.tackles || 0, saves: home.saves || 0, poss: 50 },
+        away: { goals: ha, assists: 0, shots: 0, passes: 0, tackles: 0, saves: 0, poss: 50 },
+      },
+    };
+  }
+
+  function thr(id, underFn, overFn) {
+    var def = C.byId(id);
+    assert(!!def, 'def exists: ' + id);
+    if (!def) return;
+    var u = C.evaluate(def, underFn(), false);
+    var o = C.evaluate(def, overFn(), false);
+    assert(!u.done && o.done, 'threshold exact: ' + id,
+      'under=' + JSON.stringify(u) + ' over=' + JSON.stringify(o));
+  }
+
+  thr('score_2', function () { return R(1, 0); }, function () { return R(2, 0); });
+  thr('score_3', function () { return R(2, 0); }, function () { return R(3, 0); });
+  thr('shots_8', function () { return R(1, 1, { shots: 7 }); }, function () { return R(1, 1, { shots: 8 }); });
+  thr('passes_10', function () { return R(0, 0, { passes: 9 }); }, function () { return R(1, 0, { passes: 10 }); });
+  thr('assists_2', function () { return R(2, 1, { assists: 1 }); }, function () { return R(2, 1, { assists: 2 }); });
+  thr('tackles_4', function () { return R(0, 1, { tackles: 3 }, {}, -1); }, function () { return R(1, 0, { tackles: 4 }); });
+  thr('saves_3', function () { return R(0, 0, { saves: 2 }); }, function () { return R(0, 0, { saves: 3 }); });
+  thr('saves_5', function () { return R(0, 0, { saves: 4 }); }, function () { return R(1, 1, { saves: 5 }); });
+  thr('win_1', function () { return R(0, 1, {}, {}, -1); }, function () { return R(1, 0, {}, {}, 1); });
+  thr('win_by_2', function () { return R(2, 1, {}, {}, 1); }, function () { return R(3, 1, {}, {}, 1); });
+  thr('clean_sheet', function () { return R(2, 1, {}, {}, 1); }, function () { return R(2, 0, {}, {}, 1); });
+
+  // live mode never claims result-only objectives
+  var lw = C.evaluate(C.byId('win_1'), R(1, 0, {}, {}, 1), true);
+  assert(!lw.done, 'live evaluate does not complete win mid-match', JSON.stringify(lw));
+  var lc = C.evaluate(C.byId('clean_sheet'), R(1, 0, {}, {}, 1), true);
+  assert(!lc.done, 'live evaluate does not complete clean sheet mid-match', JSON.stringify(lc));
+
+  // deterministic slot fill — no Math.random in the selection path
+  var rngCalls = 0;
+  var realRng = Math.random;
+  Math.random = function () { rngCalls++; return realRng(); };
+  var st1 = { cursor: 0 };
+  var picked1 = [0, 1, 2].map(function (s) { return C.pickForSlot(s, [], st1); });
+  var st2 = { cursor: 0 };
+  var picked2 = [0, 1, 2].map(function (s) { return C.pickForSlot(s, [], st2); });
+  Math.random = realRng;
+  assert(rngCalls === 0, 'pickForSlot does not consume Math.random', 'calls=' + rngCalls);
+  assert(JSON.stringify(picked1) === JSON.stringify(picked2) && picked1.every(Boolean),
+    'slot picks are deterministic and filled', JSON.stringify(picked1));
+  var c0 = C.byId(picked1[0]).category;
+  var c1 = C.byId(picked1[1]).category;
+  var c2 = C.byId(picked1[2]).category;
+  assert(c0 === 'attack' && (c1 === 'defense' || c1 === 'goalkeeping') &&
+    (c2 === 'passing' || c2 === 'results'),
+    'slot buckets match the fixed categories', [c0, c1, c2].join('/'));
+
+  // replacement excludes already-active ids
+  var st3 = { cursor: 0 };
+  var exclude = ['score_2'];
+  var nextAtk = null;
+  for (var s = 0; s < 40 && !nextAtk; s++) {
+    // walk attack-only by calling pick with only score_2 excluded via cursor drills
+    nextAtk = C.pickForSlot(0, exclude, st3);
+  }
+  assert(nextAtk && nextAtk !== 'score_2' && C.byId(nextAtk).category === 'attack',
+    'replacement for an attack slot skips the active id', nextAtk);
+
+  // reward tiers match difficulty
+  assert(C.POOL.every(function (d) {
+    return d.reward === C.REWARD[d.difficulty];
+  }), 'reward coins match the difficulty tier');
 })();
 
 // ============================================================

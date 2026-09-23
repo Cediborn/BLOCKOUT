@@ -75,6 +75,7 @@
       <div class="row-btns">
         <button id="btn-play" class="big-btn gold">KICK OFF</button>
         <button id="btn-profile" class="big-btn secondary">PROFILE</button>
+        <button id="btn-challenges" class="big-btn secondary">CHALLENGES</button>
         <button id="btn-how" class="big-btn secondary">HOW TO PLAY</button>
       </div>
     </div>
@@ -113,6 +114,18 @@
       <div class="row-btns profile-actions">
         <button id="btn-profile-reset" class="big-btn secondary">RESET PROFILE</button>
         <button id="btn-profile-back" class="big-btn">BACK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Active challenges -->
+  <div id="challenges-overlay" class="overlay hidden">
+    <div class="panel">
+      <div class="title-xl" style="font-size:clamp(26px,6.4vmin,50px)"><span class="t1">YOUR</span> <span class="t2">CHALLENGES</span></div>
+      <div class="challenge-sub">3 ACTIVE OBJECTIVES · CLEAR ONE TO EARN COINS</div>
+      <div id="challenge-list" class="challenge-list" aria-label="Active challenges"></div>
+      <div class="row-btns">
+        <button id="btn-challenges-back" class="big-btn">BACK</button>
       </div>
     </div>
   </div>
@@ -282,6 +295,12 @@
         </tbody>
       </table>
       <div class="result-coins" id="res-coins"><span class="coin"></span><span id="res-coins-n">+0</span></div>
+      <div class="result-challenges" id="res-challenges">
+        <div class="help-section-title">CHALLENGES</div>
+        <ul id="res-ch-list" class="profile-history" aria-label="Completed challenges"></ul>
+        <div id="res-ch-empty" class="pf-empty hidden">No challenges completed.</div>
+        <div id="res-ch-coins" class="result-ch-coins hidden"></div>
+      </div>
       <div class="row-btns">
         <button id="btn-rematch" class="big-btn gold">REMATCH</button>
         <button id="btn-result-menu" class="big-btn secondary">MAIN MENU</button>
@@ -295,6 +314,7 @@
   <script src="js/difficulty.js"></script>
   <script src="js/util.js"></script>
   <script src="js/audio.js"></script>
+  <script src="js/challenges.js"></script>
   <script src="js/progression.js"></script>
   <script src="js/settings.js"></script>
   <script src="js/input.js"></script>
