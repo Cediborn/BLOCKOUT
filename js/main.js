@@ -8,7 +8,7 @@
   var renderer, scene, camera, camCtrl;
   var match = null;
   var arenaObj = null;
-  var UIState = 'menu';          // menu | sides | diff | select | style | court | how | match | paused | result
+  var UIState = 'menu';          // menu | diff | select | style | court | setup | how | match | paused | result
   var howFromPause = false;      // track if how-to-play was opened from pause
   var selectedId = 'blaze';
   var outfitColor = null;        // null = regular clothes, or LG.OutfitColors entry
@@ -165,23 +165,17 @@
   function bindEvents() {
     var bus = LG.eventBus;
 
+    // ------------------------------------------------------------
+    // PRE-MATCH FLOW — one screen, one purpose:
+    //   menu -> DIFFICULTY -> STAR -> STYLE -> COURT -> MATCH SETUP -> game
+    // Every step only re-uses the state the screens already own (difficulty
+    // store, selectedId, outfit/away kits, LG.Courts, LG.Settings).
+    // ------------------------------------------------------------
     bus.on('playRequested', function () {
-      UIState = 'sides';
-      showOverlay('menu-overlay', false);
-      showOverlay('sides-overlay', true);
-    });
-
-    bus.on('sidesConfirmed', function () {
       UIState = 'diff';
       refreshDifficultyUI();
-      showOverlay('sides-overlay', false);
+      showOverlay('menu-overlay', false);
       showOverlay('diff-overlay', true);
-    });
-
-    bus.on('sidesBackRequested', function () {
-      UIState = 'menu';
-      showOverlay('sides-overlay', false);
-      showOverlay('menu-overlay', true);
     });
 
     bus.on('difficultyRequested', function (e) {
@@ -191,16 +185,14 @@
 
     bus.on('difficultyConfirmed', function () {
       UIState = 'select';
-      refreshDifficultyUI();
-      refreshSettingsUI();
       showOverlay('diff-overlay', false);
       showOverlay('select-overlay', true);
     });
 
     bus.on('difficultyBackRequested', function () {
-      UIState = 'sides';
+      UIState = 'menu';
       showOverlay('diff-overlay', false);
-      showOverlay('sides-overlay', true);
+      showOverlay('menu-overlay', true);
     });
 
     bus.on('howRequested', function () {
@@ -230,7 +222,8 @@
       showOverlay('diff-overlay', true);
     });
 
-    bus.on('styleRequested', function () {
+    // STAR -> PLAYER STYLE (kit colors for both sides)
+    bus.on('selectConfirmed', function () {
       UIState = 'style';
       buildColorGrid();
       buildAwayColorGrid();
@@ -244,29 +237,32 @@
       showOverlay('select-overlay', true);
     });
 
+    // PLAYER STYLE -> COURT SELECTION
     bus.on('styleConfirmed', function () {
-      UIState = 'select';
-      showOverlay('style-overlay', false);
-      showOverlay('select-overlay', true);
-    });
-
-    bus.on('courtRequested', function () {
       UIState = 'court';
       buildCourtGrid();
-      showOverlay('select-overlay', false);
+      showOverlay('style-overlay', false);
       showOverlay('court-overlay', true);
     });
 
     bus.on('courtBackRequested', function () {
-      UIState = 'select';
+      UIState = 'style';
       showOverlay('court-overlay', false);
-      showOverlay('select-overlay', true);
+      showOverlay('style-overlay', true);
     });
 
+    // COURT SELECTION -> MATCH SETUP (day/night + portrait/landscape)
     bus.on('courtConfirmed', function () {
-      UIState = 'select';
+      UIState = 'setup';
+      refreshSettingsUI();
       showOverlay('court-overlay', false);
-      showOverlay('select-overlay', true);
+      showOverlay('setup-overlay', true);
+    });
+
+    bus.on('setupBackRequested', function () {
+      UIState = 'court';
+      showOverlay('setup-overlay', false);
+      showOverlay('court-overlay', true);
     });
 
     bus.on('startMatchRequested', function () {
@@ -428,7 +424,7 @@
     }
   }
 
-  // Reflect the selected level on the difficulty screen and the select screen.
+  // Reflect the selected level on the difficulty screen.
   function refreshDifficultyUI() {
     var cur = LG.Difficulty.get();
     var levels = LG.Difficulty.LEVELS;
@@ -436,10 +432,6 @@
       var btn = document.getElementById('diff-' + levels[i]);
       if (btn) btn.classList.toggle('selected', levels[i] === cur);
     }
-    var note = document.getElementById('diff-note');
-    if (note) note.textContent = LG.Difficulty.blurb();
-    var chip = document.getElementById('diff-chip');
-    if (chip) chip.textContent = 'DIFFICULTY: ' + LG.Difficulty.label();
   }
 
   function setupResult(r) {
@@ -490,8 +482,6 @@
       }
     }
 
-    showOverlay('select-overlay', false);
-    showOverlay('result-overlay', false);
     showMatchUI(true);
 
     LG.HUD.reset(match);
@@ -521,7 +511,7 @@
     document.getElementById('scoreboard').classList.toggle('hidden', !on);
     document.getElementById('pause-btn').classList.toggle('hidden', !on);
     document.getElementById('coin-chip').classList.toggle('hidden', false);
-    var overlays = ['menu-overlay', 'sides-overlay', 'diff-overlay', 'select-overlay', 'style-overlay', 'court-overlay', 'how-overlay', 'pause-overlay', 'result-overlay'];
+    var overlays = ['menu-overlay', 'diff-overlay', 'select-overlay', 'style-overlay', 'court-overlay', 'setup-overlay', 'how-overlay', 'pause-overlay', 'result-overlay'];
     for (var i = 0; i < overlays.length; i++) document.getElementById(overlays[i]).classList.add('hidden');
   }
 
@@ -553,8 +543,7 @@
           '<div class="crole">' + def.role + '</div>' +
           '<div class="cstats">' +
           statRows(def.stats) +
-          '</div>' +
-          '<div class="cabil">★ ' + LG.Abilities[def.ability].name + '</div>';
+          '</div>';
         card.dataset.id = def.id;
         card.addEventListener('click', function () {
           onCardClick(def, card);
@@ -595,29 +584,38 @@
     LG.Audio.sfx.click();
   }
 
+  // Locked stars stay selectable: tapping buys them if the coins are there
+  // (the toast says the price otherwise). Presentation only — the underlying
+  // progression/unlock system is untouched, but the full-card lock overlay
+  // and coin emoji are gone in favour of one quiet price line.
   function refreshCardLock(card, def) {
-    var lock = card.querySelector('.lock');
     var price = card.querySelector('.price');
     if (!LG.Progression.isUnlocked(def.id)) {
-      if (!lock) {
-        lock = document.createElement('div');
-        lock.className = 'lock';
-        lock.textContent = '🔒';
-        card.appendChild(lock);
-      }
+      card.classList.add('locked');
       if (!price) {
         price = document.createElement('span');
         price.className = 'price';
         card.appendChild(price);
       }
-      price.textContent = '🪙 ' + LG.Progression.costOf(def.id);
+      price.textContent = 'UNLOCK · ' + LG.Progression.costOf(def.id);
     } else {
-      if (lock) lock.remove();
+      card.classList.remove('locked');
       if (price) price.remove();
     }
   }
 
   // ---------------- player style / customization UI ----------------
+  // The two squads must never end up in the same kit. YOUR kit always wins
+  // the pick: if the Rogue Squad was wearing it, it slides to the first color
+  // that is not yours. A Rogue pick that would mirror YOUR kit is refused
+  // (the note under the grid says why), so the clash can never happen.
+  function resolveKitClash() {
+    if (!outfitColor || !awayColor || awayColor.id !== outfitColor.id) return;
+    for (var i = 0; i < LG.OutfitColors.length; i++) {
+      if (LG.OutfitColors[i].id !== outfitColor.id) { awayColor = LG.OutfitColors[i]; return; }
+    }
+  }
+
   function buildColorGrid() {
     var grid = document.getElementById('color-grid');
     if (!grid) return;
@@ -629,6 +627,7 @@
     regBtn.addEventListener('click', function() {
       outfitColor = null;
       refreshColorGrid();
+      refreshAwayColorGrid();
       LG.Audio.sfx.click();
     });
     grid.appendChild(regBtn);
@@ -640,7 +639,9 @@
         btn.innerHTML = '<div class="color-swatch" style="background:' + c.hex + '"></div><div class="color-label">' + c.label + '</div>';
         btn.addEventListener('click', function() {
           outfitColor = c;
+          resolveKitClash();
           refreshColorGrid();
+          refreshAwayColorGrid();
           LG.Audio.sfx.click();
         });
         grid.appendChild(btn);
@@ -667,7 +668,6 @@
     var grid = document.getElementById('court-grid');
     if (!grid) return;
     grid.innerHTML = '';
-    var preview = document.getElementById('court-preview');
     var list = (LG.Courts && LG.Courts.list()) || [];
     var selected = LG.Courts ? LG.Courts.selected() : '';
 
@@ -708,9 +708,6 @@
       })(list[i]);
     }
 
-    if (list.length === 0 && preview) {
-      preview.innerHTML = '<span>📷 NO EXTRA COURTS FOUND — PLAYING THE CLASSIC STREET</span>';
-    }
     refreshCourtGrid();
   }
 
@@ -724,20 +721,6 @@
       var id = i === 0 ? '' : (list[i - 1] ? list[i - 1].id : '');
       btns[i].classList.toggle('selected', id === selected);
     }
-    refreshCourtPreview();
-  }
-
-  function refreshCourtPreview() {
-    var preview = document.getElementById('court-preview');
-    if (!preview) return;
-    var selected = LG.Courts ? LG.Courts.selected() : '';
-    if (selected === '') {
-      preview.innerHTML = '<span>🏟 CLASSIC STREET — THE ORIGINAL BLOCK OUT PITCH</span>';
-      return;
-    }
-    var d = LG.Courts && LG.Courts.get(selected);
-    var name = d ? d.name : '';
-    preview.innerHTML = '<span>🎯 ' + name + ' — PLAYING ON THIS COURT</span>';
   }
 
   // ---------------- opponent kit UI ----------------
@@ -760,6 +743,17 @@
         btn.className = 'color-btn' + (awayColor && awayColor.id === c.id ? ' selected' : '');
         btn.innerHTML = '<div class="color-swatch" style="background:' + c.hex + '"></div><div class="color-label">' + c.label + '</div>';
         btn.addEventListener('click', function () {
+          // refuse a Rogue kit that would mirror yours — the squads stay apart
+          if (outfitColor && outfitColor.id === c.id) {
+            refreshAwayColorGrid();
+            var note = document.getElementById('away-kit-note');
+            if (note) {
+              note.className = 'kit-note conflict';
+              note.textContent = c.label + ' IS YOUR KIT — PICK A DIFFERENT COLOR';
+            }
+            LG.Audio.sfx.click();
+            return;
+          }
           awayColor = c;
           refreshAwayColorGrid();
           LG.Audio.sfx.click();
@@ -789,12 +783,12 @@
     if (!awayColor || !outfitColor || awayColor.id !== outfitColor.id) {
       note.className = 'kit-note';
       note.textContent = awayColor
-        ? 'ROGUE wear the ' + awayColor.label + ' kit'
-        : 'ROGUE keep their default kit';
+        ? 'ROGUE SQUAD wear the ' + awayColor.label + ' kit'
+        : 'ROGUE SQUAD keep their default kits';
       return;
     }
     note.className = 'kit-note conflict';
-    note.textContent = '⚠ ' + awayColor.label + ' is your own kit — pick a different color';
+    note.textContent = awayColor.label + ' IS YOUR KIT — PICK A DIFFERENT COLOR';
   }
 
   function refreshStylePreview() {
@@ -803,9 +797,9 @@
     var playerDef = LG.byId(selectedId);
     var name = playerDef ? playerDef.name : '';
     if (outfitColor === null) {
-      preview.innerHTML = '<div class="preview-label">👟 ' + name + ' — REGULAR CLOTHES</div>';
+      preview.innerHTML = '<div class="preview-label">' + name + ' — REGULAR KIT</div>';
     } else {
-      preview.innerHTML = '<div class="preview-label">⚽ ' + name + ' — ' + outfitColor.label + ' KIT</div>';
+      preview.innerHTML = '<div class="preview-label">' + name + ' — ' + outfitColor.label + ' KIT</div>';
     }
   }
 
@@ -890,5 +884,18 @@
     startMatch: startMatch,
     getState: function () { return UIState; },
     getMatch: function () { return match; },
+    // read-only view of the pre-match choices — used by the boot harness to
+    // prove the menu selections really reach the match
+    getSelections: function () {
+      return {
+        player: selectedId,
+        homeKit: outfitColor ? outfitColor.id : null,
+        awayKit: awayColor ? awayColor.id : null,
+        difficulty: LG.Difficulty.get(),
+        court: LG.Courts ? LG.Courts.selected() : '',
+        timeOfDay: LG.Settings.timeOfDay(),
+        view: LG.Settings.view(),
+      };
+    },
   };
 })();

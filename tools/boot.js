@@ -232,38 +232,94 @@ section('1b. court registration + metadata are the single source of truth');
     'unknown courts safely default to the painted-goal rule');
 })();
 
-section('2. the menu flow actually advances');
+section('2. the menu flow actually advances (one screen, one purpose)');
 var flow = null;
 try {
   elements['btn-play'].fire('click');
-  flow = 'sides';
-  check(vis('sides-overlay') && !vis('menu-overlay'), 'KICK OFF opens SELECT SIDES', 'sides=' + vis('sides-overlay') + ' menu=' + vis('menu-overlay'));
-  elements['btn-sides-go'].fire('click');
-  check(vis('diff-overlay'), 'CONTINUE opens SELECT DIFFICULTY');
-  elements['btn-diff-go'].fire('click');
-  check(vis('select-overlay'), 'CONTINUE opens PICK YOUR STAR');
+  flow = 'diff';
+  check(vis('diff-overlay') && !vis('menu-overlay'), 'KICK OFF opens SELECT DIFFICULTY', 'diff=' + vis('diff-overlay') + ' menu=' + vis('menu-overlay'));
 
-  // player style: both kit grids (your kit + the opponent kit) build
-  elements['btn-style'].fire('click');
-  check(vis('style-overlay') && !vis('select-overlay'), 'PLAYER STYLE opens the style overlay');
+  // difficulty picks still reach the real difficulty store (AI tuning untouched)
+  elements['diff-hard'].fire('click');
+  check(LG.Difficulty.get() === 'hard', 'HARD selects the hard AI', LG.Difficulty.get());
+  elements['diff-easy'].fire('click');
+  check(LG.Difficulty.get() === 'easy', 'EASY selects the easy AI', LG.Difficulty.get());
+  elements['diff-medium'].fire('click');
+  check(LG.Difficulty.get() === 'medium', 'MEDIUM selects the medium AI', LG.Difficulty.get());
+  check(elements['diff-easy'].classList.contains('selected') === false && elements['diff-medium'].classList.contains('selected') === true,
+    'the selected difficulty keeps its visual selected state');
+
+  elements['btn-diff-back'].fire('click');
+  check(vis('menu-overlay') && !vis('diff-overlay'), 'DIFFICULTY BACK returns to the main menu');
+  elements['btn-play'].fire('click');
+  elements['btn-diff-go'].fire('click');
+  check(vis('select-overlay') && !vis('diff-overlay'), 'CONTINUE opens PICK YOUR STAR');
+
+  elements['btn-back'].fire('click');
+  check(vis('diff-overlay') && !vis('select-overlay'), 'STAR BACK returns to SELECT DIFFICULTY');
+  elements['btn-diff-go'].fire('click');
+
+  // STAR -> PLAYER STYLE (no court/style/kick-off buttons live on the star screen anymore)
+  elements['btn-select-go'].fire('click');
+  check(vis('style-overlay') && !vis('select-overlay'), 'CONTINUE opens PLAYER STYLE');
   check(elements['color-grid'] && elements['color-grid'].children.length > 0, 'your kit colors build');
   check(elements['away-color-grid'] && elements['away-color-grid'].children.length > 0, 'the opponent kit colors build');
+
+  // kits: grid = [REGULAR/DEFAULT, RED, BLUE, YELLOW, ...]
+  elements['color-grid'].children[1].fire('click');        // YOUR KIT = RED
+  elements['away-color-grid'].children[2].fire('click');   // ROGUE = BLUE
+  var sel = window.LGMain.getSelections();
+  check(sel.homeKit === 'red' && sel.awayKit === 'blue', 'both kit picks are remembered', JSON.stringify(sel));
+
+  elements['away-color-grid'].children[1].fire('click');   // ROGUE = RED -> mirrors yours, refused
+  sel = window.LGMain.getSelections();
+  check(sel.homeKit === 'red' && sel.awayKit === 'blue', 'a Rogue kit identical to yours is refused', JSON.stringify(sel));
+
+  elements['color-grid'].children[2].fire('click');        // YOUR KIT = BLUE -> rogue must move
+  sel = window.LGMain.getSelections();
+  check(sel.homeKit === 'blue' && sel.awayKit && sel.awayKit !== 'blue', 'the two kits can never match', JSON.stringify(sel));
+
   elements['btn-style-back'].fire('click');
   check(vis('select-overlay') && !vis('style-overlay'), 'PLAYER STYLE BACK returns to PICK YOUR STAR');
+  elements['btn-select-go'].fire('click');
 
-  // court picker: the classic tile builds even with no assets discovered
-  elements['btn-court'].fire('click');
-  check(vis('court-overlay') && !vis('select-overlay'), 'COURT opens the court overlay');
+  // STYLE -> COURT SELECTION
+  elements['btn-style-go'].fire('click');
+  check(vis('court-overlay') && !vis('style-overlay'), 'PLAYER STYLE CONTINUE opens COURT SELECTION');
   check(elements['court-grid'] && elements['court-grid'].children.length > 0, 'the court grid builds');
   if (elements['court-grid'] && elements['court-grid'].children.length) {
     elements['court-grid'].children[0].fire('click');       // CLASSIC STREET tile
   }
   check(LG.Courts.selected() === '', 'selecting CLASSIC persists an empty court id', LG.Courts.selected());
-  elements['btn-court-go'].fire('click');
-  check(vis('select-overlay') && !vis('court-overlay'), 'COURT CONFIRM returns to PICK YOUR STAR');
 
+  elements['btn-court-back'].fire('click');
+  check(vis('style-overlay') && !vis('court-overlay'), 'COURT BACK returns to PLAYER STYLE');
+  elements['btn-style-go'].fire('click');
+
+  // COURT -> MATCH SETUP (day/night + portrait/landscape live here now)
+  elements['btn-court-go'].fire('click');
+  check(vis('setup-overlay') && !vis('court-overlay'), 'COURT CONTINUE opens MATCH SETUP');
+  elements['btn-setup-back'].fire('click');
+  check(vis('court-overlay') && !vis('setup-overlay'), 'MATCH SETUP BACK returns to COURT SELECTION');
+  elements['btn-court-go'].fire('click');
+
+  // MATCH SETUP -> GAME
   elements['btn-start-match'].fire('click');
   check(window.LGMain.getState() === 'match', 'KICK OFF starts the match', window.LGMain.getState());
+
+  // the menu choices must be the ones the match actually plays with
+  var mk = window.LGMain.getMatch();
+  check(!!mk, 'a match object exists after KICK OFF');
+  check(mk && mk.opts.outfitColor && mk.opts.outfitColor.id === 'blue' && mk.opts.awayColor && mk.opts.awayColor.id !== 'blue',
+    'the chosen kits reach the match options', mk && JSON.stringify({ h: mk.opts.outfitColor && mk.opts.outfitColor.id, a: mk.opts.awayColor && mk.opts.awayColor.id }));
+  var homeShirt = mk && mk.home[0] && mk.home[0].def.palette.shirt;
+  var awayShirt = mk && mk.away[0] && mk.away[0].def.palette.shirt;
+  check(homeShirt === 0x4488ff, 'the home squad wears YOUR kit in the actual match', homeShirt && homeShirt.toString(16));
+  check(awayShirt && awayShirt !== homeShirt, 'the Rogue Squad wears a different kit in the actual match',
+    awayShirt && awayShirt.toString(16));
+  check(mk && mk.opts.difficulty === 'medium', 'the difficulty carries into the match', mk && mk.opts.difficulty);
+  check(window.LGMain.getSelections().player === (mk && mk.opts.playerId), 'the picked star is the one playing',
+    JSON.stringify(window.LGMain.getSelections()));
 } catch (e) {
   console.log('  FAIL flow threw  ->  ' + e.message + '\n' + (e.stack || '').split('\n').slice(1, 4).join('\n'));
   FAIL++;
@@ -391,6 +447,40 @@ section('5. match settings are wired into the real game state');
   var lu = mm.screenToWorldMove({ x: 0, y: 1 });
   check(lr.x === 0 && lr.z === -1 && lu.x === -1 && lu.z === 0,
     'LANDSCAPE input: right = -z (attack screen-right), up = -x (far touchline)');
+})();
+
+section('6. rematch + return to menu keep the session choices (no re-config)');
+(function () {
+  var first = window.LGMain.getMatch();
+  var before = window.LGMain.getSelections();
+  var err = null;
+  try { LG.eventBus.emit('rematchRequested'); } catch (e) { err = e; }
+  check(!err, 'REMATCH runs clean', err && err.message);
+  var second = window.LGMain.getMatch();
+  check(!!second && second !== first && window.LGMain.getState() === 'match',
+    'REMATCH starts a fresh match with no setup screens in between', window.LGMain.getState());
+  check(!!(second && second.opts.outfitColor && second.opts.outfitColor.id === before.homeKit) &&
+    !!(second && second.opts.awayColor && second.opts.awayColor.id === before.awayKit),
+    'REMATCH reuses the chosen kits', JSON.stringify({ before: before, after: second && second.opts.outfitColor && { h: second.opts.outfitColor.id, a: second.opts.awayColor && second.opts.awayColor.id } }));
+  check(!!(second && second.opts.difficulty === before.difficulty), 'REMATCH reuses the difficulty', second && second.opts.difficulty);
+  check(!!(second && second.opts.playerId === before.player), 'REMATCH reuses the picked star', second && second.opts.playerId);
+
+  LG.eventBus.emit('quitRequested');
+  check(window.LGMain.getState() === 'menu' && vis('menu-overlay'), 'MAIN MENU returns to the title screen', window.LGMain.getState());
+
+  // run the whole flow a second time: the previous choices are still intact
+  elements['btn-play'].fire('click');
+  check(vis('diff-overlay'), 'KICK OFF opens SELECT DIFFICULTY again');
+  var again = window.LGMain.getSelections();
+  check(again.homeKit === before.homeKit && again.awayKit === before.awayKit &&
+    again.player === before.player && again.difficulty === before.difficulty,
+    'the session choices survive the round trip (nothing to re-enter)', JSON.stringify(again));
+  elements['btn-diff-go'].fire('click');
+  elements['btn-select-go'].fire('click');
+  elements['btn-style-go'].fire('click');
+  elements['btn-court-go'].fire('click');
+  elements['btn-start-match'].fire('click');
+  check(window.LGMain.getState() === 'match', 'the full flow starts a second match', window.LGMain.getState());
 })();
 
 console.log('\n' + (FAIL === 0 ? 'BOOT + MENU FLOW PASSED' : 'BOOT + MENU FLOW FAILED (' + FAIL + ')'));

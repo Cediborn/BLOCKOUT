@@ -78,36 +78,10 @@
     </div>
   </div>
 
-  <!-- Select sides -->
-  <div id="sides-overlay" class="overlay hidden">
-    <div class="panel">
-      <div class="title-xl" style="font-size:clamp(26px,6.4vmin,50px)"><span class="t1">SELECT</span> <span class="t2">SIDES</span></div>
-      <div class="diff-row" style="margin-top:28px">
-        <div class="side-card">
-          <div class="side-emoji">⚽</div>
-          <div class="side-label">HOME</div>
-          <div class="side-sub">YOU</div>
-        </div>
-        <div class="side-vs">VS</div>
-        <div class="side-card">
-          <div class="side-emoji">🔥</div>
-          <div class="side-label">AWAY</div>
-          <div class="side-sub">ROGUE</div>
-        </div>
-      </div>
-      <div class="row-btns">
-        <button id="btn-sides-back" class="big-btn secondary">BACK</button>
-        <button id="btn-sides-go" class="big-btn gold" style="min-width:240px">CONTINUE</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Difficulty select -->
+  <!-- 1. Difficulty select -->
   <div id="diff-overlay" class="overlay hidden">
     <div class="panel">
       <div class="title-xl" style="font-size:clamp(26px,6.4vmin,50px)"><span class="t1">SELECT</span> <span class="t2">DIFFICULTY</span></div>
-      <div class="subtitle" style="margin-top:10px;font-size:12px">CHANGES HOW THE OPPONENTS THINK.</div>
-      <div id="diff-note" class="subtitle" style="margin-top:6px;font-size:11px;opacity:0.75"></div>
       <div class="diff-row">
         <button class="diff-btn" id="diff-easy">
           <span class="dl">EASY</span>
@@ -119,20 +93,66 @@
           <span class="dl">HARD</span>
         </button>
       </div>
-      <div class="row-btns">
+      <div class="row-btns nav-btns">
         <button id="btn-diff-back" class="big-btn secondary">BACK</button>
-        <button id="btn-diff-go" class="big-btn gold" style="min-width:240px">CONTINUE</button>
+        <button id="btn-diff-go" class="big-btn gold">CONTINUE</button>
       </div>
     </div>
   </div>
 
-  <!-- Character select -->
+  <!-- 2. Pick your star -->
   <div id="select-overlay" class="overlay hidden">
     <div class="panel">
       <div class="title-xl" style="font-size:clamp(30px,7vmin,54px)"><span class="t1">PICK</span> <span class="t2">YOUR STAR</span></div>
-      <div id="diff-chip" class="diff-chip">DIFFICULTY: MEDIUM</div>
 
-      <div class="option-groups">
+      <div id="char-grid" class="char-grid"></div>
+      <div class="row-btns nav-btns">
+        <button id="btn-back" class="big-btn secondary">BACK</button>
+        <button id="btn-select-go" class="big-btn gold">CONTINUE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Player style (kits) -->
+  <div id="style-overlay" class="overlay hidden">
+    <div class="panel">
+      <div class="title-xl" style="font-size:clamp(24px,6vmin,44px)"><span class="t1">PLAYER</span> <span class="t2">STYLE</span></div>
+      <div class="kit-columns">
+        <div class="kit-block">
+          <div class="kit-title">YOUR KIT</div>
+          <div id="color-grid" class="color-grid"></div>
+          <div id="style-preview" class="style-preview"></div>
+        </div>
+        <div class="kit-block">
+          <div class="kit-title">ROGUE SQUAD KIT</div>
+          <div id="away-color-grid" class="color-grid"></div>
+          <div id="away-kit-note" class="kit-note"></div>
+        </div>
+      </div>
+      <div class="row-btns nav-btns">
+        <button id="btn-style-back" class="big-btn secondary">BACK</button>
+        <button id="btn-style-go" class="big-btn gold">CONTINUE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. Court selection -->
+  <div id="court-overlay" class="overlay hidden">
+    <div class="panel">
+      <div class="title-xl" style="font-size:clamp(24px,6vmin,44px)"><span class="t1">COURT</span> <span class="t2">SELECTION</span></div>
+      <div id="court-grid" class="court-grid"></div>
+      <div class="row-btns nav-btns">
+        <button id="btn-court-back" class="big-btn secondary">BACK</button>
+        <button id="btn-court-go" class="big-btn gold">CONTINUE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. Match setup (presentation only) -->
+  <div id="setup-overlay" class="overlay hidden">
+    <div class="panel">
+      <div class="title-xl" style="font-size:clamp(26px,6.4vmin,50px)"><span class="t1">MATCH</span> <span class="t2">SETUP</span></div>
+      <div class="option-groups setup-groups">
         <div class="option-group">
           <div class="option-label">TIME OF DAY</div>
           <div class="option-row">
@@ -148,47 +168,9 @@
           </div>
         </div>
       </div>
-
-      <div id="char-grid" class="char-grid"></div>
-      <div class="row-btns">
-        <button id="btn-back" class="big-btn secondary">BACK</button>
-        <button id="btn-style" class="big-btn secondary" style="min-width:200px">PLAYER STYLE</button>
-        <button id="btn-court" class="big-btn secondary" style="min-width:200px">COURT</button>
-        <button id="btn-start-match" class="big-btn gold" style="min-width:240px">KICK OFF</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Court selection -->
-  <div id="court-overlay" class="overlay hidden">
-    <div class="panel">
-      <div class="title-xl" style="font-size:clamp(24px,6vmin,44px)"><span class="t1">SELECT</span> <span class="t2">COURT</span></div>
-      <div class="subtitle" style="margin-top:10px;font-size:12px">PICK THE STREET YOU PLAY ON</div>
-      <div id="court-grid" class="court-grid"></div>
-      <div id="court-preview" class="court-preview"></div>
-      <div class="row-btns">
-        <button id="btn-court-back" class="big-btn secondary">BACK</button>
-        <button id="btn-court-go" class="big-btn gold" style="min-width:240px">CONFIRM</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Customization / Player Style -->
-  <div id="style-overlay" class="overlay hidden">
-    <div class="panel">
-      <div class="title-xl" style="font-size:clamp(24px,6vmin,44px)"><span class="t1">PLAYER</span> <span class="t2">STYLE</span></div>
-      <div class="subtitle" style="margin-top:10px;font-size:12px">CHOOSE YOUR OUTFIT COLOR</div>
-      <div id="color-grid" class="color-grid"></div>
-
-      <div id="style-preview" class="style-preview"></div>
-
-      <div class="subtitle" style="margin-top:24px;font-size:12px">OPPONENT KIT — ROGUE SQUAD</div>
-      <div id="away-color-grid" class="color-grid"></div>
-      <div id="away-kit-note" class="kit-note"></div>
-
-      <div class="row-btns" style="margin-top:20px">
-        <button id="btn-style-back" class="big-btn secondary">BACK</button>
-        <button id="btn-style-go" class="big-btn gold" style="min-width:240px">CONFIRM</button>
+      <div class="row-btns nav-btns">
+        <button id="btn-setup-back" class="big-btn secondary">BACK</button>
+        <button id="btn-start-match" class="big-btn gold">KICK OFF</button>
       </div>
     </div>
   </div>
@@ -238,8 +220,6 @@
         <button id="btn-pause-how" class="big-btn secondary">HOW TO PLAY</button>
         <button id="btn-quit-menu" class="big-btn secondary">QUIT TO MENU</button>
       </div>
-    </div>
-  </div>
     </div>
   </div>
 

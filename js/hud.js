@@ -47,15 +47,13 @@ LG.HUD = (function () {
     document.getElementById('btn-how-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('howBackRequested'); });
     var startBtn = document.getElementById('btn-start-match');
     if (startBtn) startBtn.addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('startMatchRequested'); });
-    document.getElementById('btn-sides-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('sidesBackRequested'); });
-    document.getElementById('btn-sides-go').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('sidesConfirmed'); });
-    document.getElementById('btn-style').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('styleRequested'); });
+    // linear pre-match flow: STAR -> STYLE -> COURT -> MATCH SETUP
+    document.getElementById('btn-select-go').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('selectConfirmed'); });
     document.getElementById('btn-style-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('styleBackRequested'); });
     document.getElementById('btn-style-go').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('styleConfirmed'); });
-    var courtBtn = document.getElementById('btn-court');
-    if (courtBtn) courtBtn.addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('courtRequested'); });
     document.getElementById('btn-court-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('courtBackRequested'); });
     document.getElementById('btn-court-go').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('courtConfirmed'); });
+    document.getElementById('btn-setup-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('setupBackRequested'); });
 
     // difficulty picker: the buttons only carry the choice, the match flow in
     // main.js owns what happens next

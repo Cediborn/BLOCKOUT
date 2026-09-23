@@ -404,13 +404,35 @@ body.view-landscape #special-wrap { left: auto; right: clamp(10px, 2.6vmin, 22px
 }
 
 .row-btns { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; }
+/* pre-match navigation: BACK parked left, the gold action parked right —
+   both stretch to half the row so thumbs always have a big target */
+.row-btns.nav-btns {
+  justify-content: space-between;
+  flex-wrap: nowrap;
+  gap: clamp(10px, 2vmin, 16px);
+  margin-top: clamp(16px, 3vmin, 30px);
+}
+.row-btns.nav-btns .big-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  margin-top: 0;
+  font-size: clamp(14px, 3.2vmin, 22px);
+  padding-left: 12px;
+  padding-right: 12px;
+  white-space: nowrap;
+}
 
-/* character select */
+/* character select — MOBILE-FIRST: always 2 columns in portrait / small
+   screens, always 4 in landscape / desktop. Never 3, never 5 — 8 cards land
+   as a balanced 2x4 or 4x2 grid at every supported shape. */
 .char-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: 14px;
-  margin-top: 24px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(8px, 1.6vmin, 14px);
+  margin-top: clamp(14px, 2.6vmin, 26px);
+}
+@media (orientation: landscape), (min-width: 900px) {
+  .char-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 .char-card {
   position: relative;
@@ -440,33 +462,32 @@ body.view-landscape #special-wrap { left: auto; right: clamp(10px, 2.6vmin, 22px
 .char-card .crole { font-size: 10px; letter-spacing: 0.18em; opacity: 0.65; margin-bottom: 8px; }
 .char-card .cstats { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 10px; font-size: 10px; opacity: 0.85; text-align: left; }
 .char-card .cstats b { float: right; }
-.char-card .cabil { margin-top: 8px; font-size: 11px; color: var(--hud-amber); letter-spacing: 0.08em; }
-.char-card .lock {
-  position: absolute;
-  inset: 0;
-  border-radius: 14px;
-  background: rgba(8,10,16,0.82);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 26px;
+/* a star the coins have not reached yet: quiet dim + one price line — no
+   full-card lock overlay, no coin emoji */
+.char-card.locked { opacity: 0.7; }
+.char-card.locked .avatar { filter: grayscale(0.55); }
+.char-card .price {
+  display: block;
+  margin-top: 7px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
   color: var(--hud-amber);
 }
-.char-card .price { position: absolute; top: 8px; right: 10px; font-size: 11px; color: var(--hud-amber); }
 
-/* difficulty select */
+/* difficulty select — always exactly 3 across (EASY MEDIUM HARD), shrinking
+   to fit a phone instead of wrapping into an uneven stack */
 .diff-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(178px, 1fr));
-  gap: 14px;
-  margin-top: 24px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(8px, 1.6vmin, 14px);
+  margin-top: clamp(18px, 3.4vmin, 30px);
 }
 .diff-btn {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 9px;
-  padding: 18px 14px;
+  padding: clamp(14px, 3.2vmin, 22px) clamp(4px, 1.4vmin, 14px);
   border-radius: 16px;
   cursor: pointer;
   font-family: inherit;
@@ -474,15 +495,13 @@ body.view-landscape #special-wrap { left: auto; right: clamp(10px, 2.6vmin, 22px
   text-align: center;
   background: rgba(255,255,255,0.05);
   border: 2px solid rgba(255,255,255,0.14);
+  min-width: 0;
   transition: transform 0.1s ease, border-color 0.1s ease, background 0.1s ease;
 }
 .diff-btn:hover { transform: translateY(-4px); border-color: rgba(255,255,255,0.4); }
 .diff-btn.selected { border-color: var(--hud-cyan); background: rgba(53,224,255,0.13); box-shadow: 0 0 22px rgba(53,224,255,0.3); }
-.diff-btn .dl { font-size: clamp(18px,4vmin,26px); letter-spacing: 0.18em; color: var(--hud-cyan); text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
+.diff-btn .dl { font-size: clamp(13px, 4vmin, 26px); letter-spacing: 0.14em; color: var(--hud-cyan); text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
 .diff-btn.selected .dl { color: #fff; }
-.diff-btn .dd { font-size: 11px; line-height: 1.6; letter-spacing: 0.06em; opacity: 0.75; }
-.diff-note { margin-top: 16px; font-size: 11px; letter-spacing: 0.2em; color: var(--hud-amber); min-height: 16px; }
-.diff-chip { margin-top: 10px; font-size: 11px; letter-spacing: 0.26em; color: var(--hud-cyan); opacity: 0.85; }
 
 /* match option groups (time of day / game view) */
 .option-groups {
@@ -511,29 +530,47 @@ body.view-landscape #special-wrap { left: auto; right: clamp(10px, 2.6vmin, 22px
 .option-btn:hover { transform: translateY(-3px); border-color: rgba(255,255,255,0.4); }
 .option-btn.selected { border-color: var(--hud-cyan); background: rgba(53,224,255,0.13); color: #fff; box-shadow: 0 0 18px rgba(53,224,255,0.3); }
 
-/* select sides */
-.side-card {
-  display: flex;
+/* MATCH SETUP — the one screen that owns day/night + portrait/landscape.
+   The groups stack vertically with generous tiles so it reads instantly. */
+.setup-groups {
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 24px 20px;
-  border-radius: 16px;
-  background: rgba(255,255,255,0.05);
-  border: 2px solid rgba(255,255,255,0.14);
-  min-width: 180px;
+  flex-wrap: nowrap;
+  gap: clamp(16px, 3.4vmin, 30px);
+  margin-top: clamp(18px, 3.6vmin, 36px);
 }
-.side-emoji { font-size: 36px; }
-.side-label { font-size: clamp(20px, 4.5vmin, 30px); letter-spacing: 0.18em; color: var(--hud-cyan); text-shadow: 0 2px 4px rgba(0,0,0,0.5); }
-.side-vs { font-size: clamp(18px, 4vmin, 28px); letter-spacing: 0.2em; color: rgba(255,255,255,0.35); align-self: center; }
-.side-sub { font-size: 11px; letter-spacing: 0.2em; opacity: 0.6; }
+.setup-groups .option-label { font-size: clamp(11px, 2.3vmin, 13px); }
+.setup-groups .option-row { gap: clamp(10px, 2vmin, 16px); }
+.setup-groups .option-btn {
+  min-width: clamp(126px, 26vmin, 190px);
+  padding: clamp(12px, 2.6vmin, 18px) 22px;
+  font-size: clamp(14px, 3.1vmin, 18px);
+  letter-spacing: 0.16em;
+}
 
-/* player style / customization */
+/* player style — YOUR KIT and ROGUE SQUAD KIT sit side by side on wide
+   screens, stacked on a phone; each side owns one grid + one note line */
+.kit-columns {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-start;
+  gap: clamp(14px, 3vmin, 36px);
+  margin-top: clamp(12px, 2.4vmin, 22px);
+}
+.kit-block { flex: 1 1 280px; max-width: 430px; min-width: 0; }
+.kit-title {
+  font-size: clamp(11px, 2.3vmin, 13px);
+  letter-spacing: 0.26em;
+  color: var(--hud-cyan);
+  opacity: 0.85;
+  text-align: center;
+}
 .color-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
-  margin-top: 16px;
+  margin-top: 14px;
   max-width: 400px;
   margin-left: auto;
   margin-right: auto;
@@ -564,11 +601,11 @@ body.view-landscape #special-wrap { left: auto; right: clamp(10px, 2.6vmin, 22px
 .color-label { font-size: 10px; letter-spacing: 0.12em; opacity: 0.8; }
 .color-btn.selected .color-label { color: #fff; opacity: 1; }
 .style-preview {
-  margin-top: 16px;
+  margin-top: 12px;
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 80px;
+  min-height: 34px;
   font-size: 13px;
   letter-spacing: 0.12em;
   color: rgba(255,255,255,0.5);
@@ -592,15 +629,20 @@ body.view-landscape #special-wrap { left: auto; right: clamp(10px, 2.6vmin, 22px
   opacity: 1;
 }
 
-/* court picker */
+/* court picker — 3 tidy columns on a phone, 4 on landscape/desktop.
+   auto-fill is avoided on purpose: wide screens must never stretch into an
+   awkward 5-across row just because there is room. */
 .court-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 12px;
-  margin-top: 18px;
-  max-width: 560px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(8px, 1.5vmin, 12px);
+  margin-top: clamp(14px, 2.6vmin, 22px);
+  max-width: 640px;
   margin-left: auto;
   margin-right: auto;
+}
+@media (orientation: landscape), (min-width: 900px) {
+  .court-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); max-width: 900px; }
 }
 .court-btn {
   position: relative;
@@ -613,12 +655,13 @@ body.view-landscape #special-wrap { left: auto; right: clamp(10px, 2.6vmin, 22px
   border: 2px solid rgba(255,255,255,0.14);
   transition: transform 0.1s ease, border-color 0.1s ease, background 0.1s ease;
   overflow: hidden;
+  min-width: 0;
 }
 .court-btn:hover { transform: translateY(-3px); border-color: rgba(255,255,255,0.4); }
 .court-btn.selected { border-color: var(--hud-cyan); background: rgba(53,224,255,0.13); box-shadow: 0 0 16px rgba(53,224,255,0.3); }
 .court-thumb {
   width: 100%;
-  aspect-ratio: 26 / 44;
+  aspect-ratio: 3 / 4;
   border-radius: 8px;
   object-fit: cover;
   background: linear-gradient(180deg, #2b2f37, #15181e);
@@ -641,16 +684,6 @@ body.view-landscape #special-wrap { left: auto; right: clamp(10px, 2.6vmin, 22px
   text-align: center;
 }
 .court-btn.selected .court-name { color: #fff; opacity: 1; }
-.court-preview {
-  margin-top: 14px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 24px;
-  font-size: 12px;
-  letter-spacing: 0.12em;
-  color: rgba(255,255,255,0.55);
-}
 
 /* results */
 .result-score {
@@ -823,8 +856,7 @@ body.view-landscape #special-wrap { left: auto; right: clamp(10px, 2.6vmin, 22px
 @media (max-width: 700px) {
   #actions { gap: clamp(8px, 2vmin, 12px); }
   .help-list { font-size: 12px; }
-  .char-grid { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
-  .diff-row { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .diff-row { gap: 8px; }
   .option-groups { gap: 12px 22px; }
   .option-btn { min-width: 88px; padding: 8px 14px; }
 }
