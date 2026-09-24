@@ -199,7 +199,7 @@ global.performance = global.performance || { now: function () { return Date.now(
 global.console.error = global.console.error;
 
 // ---------------- load the real code ----------------
-var SRC = ['js/config.js', 'js/difficulty.js', 'js/util.js', 'js/audio.js', 'js/challenges.js', 'js/progression.js', 'js/settings.js',
+var SRC = ['js/config.js', 'js/difficulty.js', 'js/util.js', 'js/audio.js', 'js/challenges.js', 'js/progression.js', 'js/modes.js', 'js/tournament.js', 'js/settings.js',
   'js/input.js', 'js/particles.js', 'js/courts.js', 'js/models.js', 'js/ball.js', 'js/player.js', 'js/arena.js', 'js/abilities.js',
   'js/ai.js', 'js/keeper.js', 'js/camera.js', 'js/lighting.js', 'js/match.js', 'js/celebration.js', 'js/hud.js', 'js/main.js', 'js/living.js'];
 
@@ -253,9 +253,24 @@ section('1b. court registration + metadata are the single source of truth');
 section('2. the menu flow actually advances (one screen, one purpose)');
 var flow = null;
 try {
+  // helper: KICK OFF -> MODE -> (quick) difficulty
+  function openQuickFlow() {
+    elements['btn-play'].fire('click');
+    if (vis('mode-overlay')) elements['btn-mode-go'].fire('click');
+  }
   elements['btn-play'].fire('click');
-  flow = 'diff';
-  check(vis('diff-overlay') && !vis('menu-overlay'), 'KICK OFF opens SELECT DIFFICULTY', 'diff=' + vis('diff-overlay') + ' menu=' + vis('menu-overlay'));
+  flow = 'mode';
+  check(vis('mode-overlay') && !vis('menu-overlay'), 'KICK OFF opens GAME MODE', 'mode=' + vis('mode-overlay') + ' menu=' + vis('menu-overlay'));
+  check(!!LG.Modes && typeof LG.Modes.select === 'function' && LG.Modes.list().length === 3,
+    'LG.Modes exposes 3 modes', LG.Modes && LG.Modes.list().map(function (m) { return m.id; }).join(','));
+  // BACK from mode returns to menu
+  elements['btn-mode-back'].fire('click');
+  check(vis('menu-overlay') && !vis('mode-overlay'), 'MODE BACK returns to the main menu');
+  // default QUICK -> difficulty
+  elements['btn-play'].fire('click');
+  elements['btn-mode-go'].fire('click');
+  check(vis('diff-overlay') && !vis('mode-overlay'), 'QUICK MATCH opens SELECT DIFFICULTY', 'diff=' + vis('diff-overlay') + ' mode=' + vis('mode-overlay'));
+  check(LG.Modes.is('quick_match'), 'default mode is quick_match', LG.Modes.id());
 
   // difficulty picks still reach the real difficulty store (AI tuning untouched)
   elements['diff-hard'].fire('click');
@@ -268,8 +283,11 @@ try {
     'the selected difficulty keeps its visual selected state');
 
   elements['btn-diff-back'].fire('click');
-  check(vis('menu-overlay') && !vis('diff-overlay'), 'DIFFICULTY BACK returns to the main menu');
+  check(vis('mode-overlay') && !vis('diff-overlay'), 'DIFFICULTY BACK returns to GAME MODE (mode layer, not menu)');
+  elements['btn-mode-back'].fire('click');
+  check(vis('menu-overlay'), 'MODE BACK from difficulty return lands on the main menu');
   elements['btn-play'].fire('click');
+  elements['btn-mode-go'].fire('click');
   elements['btn-diff-go'].fire('click');
   check(vis('select-overlay') && !vis('diff-overlay'), 'CONTINUE opens PICK YOUR STAR');
 
@@ -488,6 +506,7 @@ section('6. rematch + return to menu keep the session choices (no re-config)');
 
   // run the whole flow a second time: the previous choices are still intact
   elements['btn-play'].fire('click');
+  if (vis('mode-overlay')) elements['btn-mode-go'].fire('click');
   check(vis('diff-overlay'), 'KICK OFF opens SELECT DIFFICULTY again');
   var again = window.LGMain.getSelections();
   check(again.homeKit === before.homeKit && again.awayKit === before.awayKit &&
@@ -875,6 +894,7 @@ section('8. challenge system (pool, eval, finalize-once, UI, persistence)');
   // (need a live match — section 7 already quit to menu)
   LG.eventBus.emit('quitRequested');
   elements['btn-play'].fire('click');
+  if (vis('mode-overlay')) elements['btn-mode-go'].fire('click');
   elements['btn-diff-go'].fire('click');
   elements['btn-select-go'].fire('click');
   elements['btn-style-go'].fire('click');
@@ -948,6 +968,224 @@ section('8. challenge system (pool, eval, finalize-once, UI, persistence)');
       'live endMatch completes the forced active set', JSON.stringify(comps3));
     LG.eventBus.emit('quitRequested');
   }
+})();
+
+section('9. game modes + tournament (Phase 3D: once-only fixtures, mode-aware results)');
+(function () {
+  var P = LG.Progression;
+  var M = LG.Modes;
+  var T = LG.Tournament;
+
+  check(!!(M && Array.isArray(M.DEFS) && M.DEFS.length === 3), 'three mode definitions', M && M.DEFS.length);
+  check(!!(T && typeof T.start === 'function' && typeof T.endMatch === 'function'), 'LG.Tournament exposes the cup API');
+  check(M.is('quick_match') || M.is('challenge_match') || M.is('tournament'), 'mode id is always one of the three', M.id());
+
+  // --- mode select screen ---
+  LG.eventBus.emit('quitRequested');
+  elements['btn-play'].fire('click');
+  check(vis('mode-overlay') && window.LGMain.getState() === 'mode', 'mode screen opens', window.LGMain.getState());
+  var modeCards = (elements['mode-list'] && elements['mode-list'].children) || [];
+  check(modeCards.length === 3, 'mode list renders 3 cards', modeCards.length);
+  // pick CHALLENGE MATCH card -> CONTINUE -> challenge pick
+  modeCards[1].fire('click');
+  check(M.is('challenge_match'), 'clicking card 1 selects challenge_match', M.id());
+  elements['btn-mode-go'].fire('click');
+  check(vis('challenge-pick-overlay') && window.LGMain.getState() === 'challengePick',
+    'CHALLENGE MATCH opens the focus picker', window.LGMain.getState());
+  var pickCards = (elements['challenge-pick-list'] && elements['challenge-pick-list'].children) || [];
+  check(pickCards.length === 3, 'focus picker lists 3 active challenges', pickCards.length);
+  // pick the first card, continue into difficulty
+  if (pickCards.length) pickCards[0].fire('click');
+  var focus = M.challenge();
+  check(!!focus && P.activeChallenges().indexOf(focus) >= 0, 'selected focus is one of the active set', focus);
+  elements['btn-challenge-pick-go'].fire('click');
+  check(vis('diff-overlay') && M.is('challenge_match') && M.challenge() === focus,
+    'challenge focus confirmed into difficulty', JSON.stringify({ mode: M.id(), focus: M.challenge() }));
+  // back from difficulty returns to challenge pick, focus preserved
+  elements['btn-diff-back'].fire('click');
+  check(vis('challenge-pick-overlay') && M.challenge() === focus, 'DIFF BACK returns to challenge pick with focus kept', M.challenge());
+  elements['btn-challenge-pick-back'].fire('click');
+  check(vis('mode-overlay'), 'challenge pick BACK returns to mode select');
+
+  // --- invalid focus rejected ---
+  check(M.selectChallenge('nope_challenge') === false && M.challenge() === focus,
+    'unknown challenge ids cannot become the focus', M.challenge());
+
+  // --- TOURNAMENT: start, semifinal once-only, continue once-only ---
+  modeCards = elements['mode-list'].children;
+  modeCards[2].fire('click');
+  check(M.is('tournament'), 'card 2 selects tournament', M.id());
+  elements['btn-mode-go'].fire('click');
+  check(vis('tournament-overlay') && window.LGMain.getState() === 'tournament',
+    'TOURNAMENT opens the bracket screen', window.LGMain.getState());
+  T.reset();
+  elements['btn-tournament-start'].fire('click');
+  check(T.active() && T.currentRound() === 0 && T.status() === 'active',
+    'START draws a fresh 4-team cup', JSON.stringify({ s: T.status(), r: T.currentRound() }));
+  check(T.teams().length === 4 && T.teams().filter(function (t) { return t.isPlayer; }).length === 1,
+    'exactly 4 teams, one is the player');
+  check(vis('diff-overlay'), 'fresh cup enters the normal setup flow');
+
+  // drive to a live match
+  elements['btn-diff-go'].fire('click');
+  elements['btn-select-go'].fire('click');
+  elements['btn-style-go'].fire('click');
+  elements['btn-court-go'].fire('click');
+  elements['btn-start-match'].fire('click');
+  check(window.LGMain.getState() === 'match', 'tournament fixture kicks off', window.LGMain.getState());
+  var tm = window.LGMain.getMatch();
+  check(!!tm && tm.opts.mode === 'tournament', 'match opts carry mode=tournament', tm && tm.opts.mode);
+  check(!!(tm && tm.opts.awayIds && tm.opts.awayIds.length === 3), 'tournament pins the away trio', tm && tm.opts.awayIds);
+  check(T.snapshot().awaitingResult === true, 'fixture opened the once-only latch', T.snapshot().awaitingResult);
+
+  // pause must not advance any tournament state
+  LG.eventBus.emit('pauseRequested');
+  check(window.LGMain.getState() === 'paused' && T.snapshot().round === 0 && T.snapshot().results.length === 0,
+    'pause advances nothing', JSON.stringify({ st: window.LGMain.getState(), snap: T.snapshot() }));
+  LG.eventBus.emit('resumeRequested');
+
+  // win the semifinal — book once
+  tm.score = [2, 0];
+  tm.stats.home.goals = 2;
+  tm.stats.away.goals = 0;
+  tm.state = 'PLAY';
+  tm.clock = 0;
+  var matchesBefore = P.career().matches;
+  tm.endMatch();
+  tm.endMatch();
+  check(P.career().matches === matchesBefore + 1, 'tournament endMatch still books career once',
+    matchesBefore + ' -> ' + P.career().matches);
+  check(T.status() === 'active' && T.currentRound() === 1 && T.snapshot().results.length === 1,
+    'semifinal win advances to the final exactly once',
+    JSON.stringify({ s: T.status(), r: T.currentRound(), n: T.snapshot().results.length }));
+  check(T.snapshot().awaitingResult === false && T.canContinue(false),
+    'between fixtures CONTINUE is legal', JSON.stringify({ a: T.snapshot().awaitingResult, c: T.canContinue(false) }));
+
+  // double-continue: only one next match
+  LG.eventBus.emit('tournamentContinueRequested');
+  var afterContinue = window.LGMain.getMatch();
+  check(window.LGMain.getState() === 'match' && !!afterContinue, 'CONTINUE starts the final');
+  check(T.snapshot().awaitingResult === true && T.currentRound() === 1, 'final opens the latch again');
+  var careerMid = P.career().matches;
+  LG.eventBus.emit('tournamentContinueRequested');
+  check(window.LGMain.getMatch() === afterContinue && P.career().matches === careerMid,
+    'second CONTINUE is a no-op (no extra match, no extra booking)',
+    JSON.stringify({ same: window.LGMain.getMatch() === afterContinue, m: P.career().matches }));
+
+  // win the final
+  var fm = window.LGMain.getMatch();
+  fm.score = [1, 0];
+  fm.stats.home.goals = 1;
+  fm.stats.away.goals = 0;
+  fm.state = 'PLAY';
+  fm.clock = 0;
+  fm.endMatch();
+  check(T.status() === 'won', 'final win marks the cup won', T.status());
+  check(T.canContinue(false) === false && T.canRetry(), 'won cup: no CONTINUE, NEW TOURNAMENT allowed');
+  check(T.snapshot().results.length === 2, 'two recorded fixtures', T.snapshot().results.length);
+
+  // double finalize on the final result object
+  var coinsAfter = P.coins();
+  var careerAfter = P.career().matches;
+  fm.endMatch();
+  check(P.coins() === coinsAfter && P.career().matches === careerAfter && T.snapshot().results.length === 2,
+    'double endMatch is a no-op across profile + bracket');
+
+  // NEW TOURNAMENT from results (rematchRequested path when canRetry)
+  LG.eventBus.emit('rematchRequested');
+  check(T.status() === 'active' && T.currentRound() === 0 && T.snapshot().results.length === 0,
+    'NEW TOURNAMENT resets the cup without a page reload',
+    JSON.stringify({ s: T.status(), r: T.currentRound(), n: T.snapshot().results.length }));
+  // abandon the fresh fixture via quit (finalizes once, books as loss if behind)
+  var nm = window.LGMain.getMatch();
+  if (nm && !nm._finalized) {
+    nm.score = [0, 1];
+    nm.stats.home.goals = 0;
+    nm.stats.away.goals = 1;
+    nm.state = 'PLAY';
+    nm.clock = 0;
+    LG.eventBus.emit('quitRequested');
+  }
+  check(T.status() === 'eliminated', 'quit mid-cup after a loss eliminates (recorded once)', T.status());
+  check(T.snapshot().results.length === 1, 'exactly one fixture recorded on the quit path', T.snapshot().results.length);
+
+  // --- persistence: active cup survives reload, corrupt recovers ---
+  T.reset();
+  T.start('blaze');
+  T.beginMatch();
+  T.endMatch(true, [3, 1]);
+  var persisted = T.snapshot();
+  T.reload();
+  var reloaded = T.snapshot();
+  check(reloaded.status === persisted.status && reloaded.round === persisted.round &&
+    reloaded.results.length === persisted.results.length && reloaded.awaitingResult === false,
+    'cup state survives reload(); mid-fixture latch clears',
+    JSON.stringify({ before: persisted, after: reloaded }));
+
+  _lsStore['blockout.tournament.v1'] = '{not-json!!!';
+  var tErr = null;
+  try { T.reload(); } catch (e) { tErr = e; }
+  check(!tErr && T.status() === 'idle', 'corrupt tournament payload recovers to idle', tErr && tErr.message);
+
+  _lsStore['blockout.tournament.v1'] = JSON.stringify({ status: 'active', round: 9, teams: [{ id: 'x' }] });
+  T.reload();
+  check(T.status() === 'idle', 'hostile tournament payload sanitizes to idle', T.status());
+  T.reset();
+
+  // --- challenge match finalize: rewards only via Phase 3B active set ---
+  LG.eventBus.emit('quitRequested');
+  M.select('challenge_match');
+  var act = P.activeChallenges();
+  check(M.selectChallenge(act[0]) && M.challenge() === act[0], 'focus re-binds to active set', M.challenge());
+  // start a challenge-match fixture and complete a strong result once
+  elements['btn-play'].fire('click');
+  modeCards = elements['mode-list'].children;
+  modeCards[1].fire('click');
+  elements['btn-mode-go'].fire('click');
+  // force focus to score_2-like active attack id if present, else first
+  pickCards = elements['challenge-pick-list'].children;
+  if (pickCards.length) pickCards[0].fire('click');
+  elements['btn-challenge-pick-go'].fire('click');
+  elements['btn-diff-go'].fire('click');
+  elements['btn-select-go'].fire('click');
+  elements['btn-style-go'].fire('click');
+  elements['btn-court-go'].fire('click');
+  elements['btn-start-match'].fire('click');
+  var cm = window.LGMain.getMatch();
+  check(!!cm && cm.opts.mode === 'challenge_match', 'challenge match opts mode', cm && cm.opts.mode);
+  if (cm) {
+    // force all three easy objectives complete
+    // (active set order is attack/defense|gk/passing|results — set stats high)
+    cm.score = [3, 0];
+    cm.stats.home.goals = 3;
+    cm.stats.home.tackles = 6;
+    cm.stats.home.passes = 15;
+    cm.stats.home.shots = 10;
+    cm.stats.home.saves = 5;
+    cm.stats.home.assists = 3;
+    cm.stats.away.goals = 0;
+    cm.state = 'PLAY';
+    cm.clock = 0;
+    var focusId = M.challenge();
+    var coins0 = P.coins();
+    var comps0 = P.challengeCompletions()[focusId] || 0;
+    cm.endMatch();
+    cm.endMatch();
+    var comps1 = P.challengeCompletions()[focusId] || 0;
+    check(comps1 <= comps0 + 1, 'focus challenge completes at most once',
+      comps0 + ' -> ' + comps1);
+    check(P.coins() >= coins0, 'challenge match pays coins exactly once on double endMatch',
+      coins0 + ' -> ' + P.coins());
+    // no second tournament latch while in challenge mode
+    check(T.status() !== 'active' || !T.snapshot().awaitingResult || M.id() !== 'challenge_match',
+      'challenge mode never opens a tournament latch');
+  }
+
+  // --- rematch label / guards: rematch in tournament from result only via canRetry ---
+  M.select('quick_match');
+  T.reset();
+  LG.eventBus.emit('quitRequested');
+  check(window.LGMain.getState() === 'menu', 'modes section returns to the menu');
 })();
 
 console.log('\n' + (FAIL === 0 ? 'BOOT + MENU FLOW PASSED' : 'BOOT + MENU FLOW FAILED (' + FAIL + ')'));

@@ -8,10 +8,13 @@
   var renderer, scene, camera, camCtrl;
   var match = null;
   var arenaObj = null;
-  var UIState = 'menu';          // menu | diff | select | style | court | setup | how | profile | challenges | match | paused | result
+  var UIState = 'menu';          // menu | mode | challengePick | tournament | diff | select | style | court | setup | how | profile | challenges | match | paused | result
   var howFromPause = false;      // track if how-to-play was opened from pause
   var profileResetArmed = false; // two-step confirm on RESET PROFILE
   var quitting = false;          // mid-quit endMatch must not open the result board
+  var resultActionLock = false;  // mode-aware result buttons: one action per result
+  var selectedMode = 'quick_match';
+  var selectedChallengeFocus = null;
   var selectedId = 'blaze';
   var outfitColor = null;        // null = regular clothes, or LG.OutfitColors entry
   var awayColor = null;          // null = default rogue kit, or LG.OutfitColors entry
@@ -83,6 +86,10 @@
     bindSettingsUI();
     refreshSettingsUI();
     if (LG.Challenges && LG.Challenges.bind) LG.Challenges.bind();
+    // keep the focus chip in step with live stats (event-driven, never per frame)
+    ['goal', 'pass', 'shoot', 'tackleWin', 'keeperSave', 'perfectPass'].forEach(function (ev) {
+      LG.eventBus.on(ev, function () { refreshModeChip(); });
+    });
     updateLayoutClass();
     showMenu(true);
     requestAnimationFrame(loop);
@@ -170,16 +177,129 @@
     var bus = LG.eventBus;
 
     // ------------------------------------------------------------
-    // PRE-MATCH FLOW — one screen, one purpose:
-    //   menu -> DIFFICULTY -> STAR -> STYLE -> COURT -> MATCH SETUP -> game
-    // Every step only re-uses the state the screens already own (difficulty
-    // store, selectedId, outfit/away kits, LG.Courts, LG.Settings).
+    // PRE-MATCH FLOW — mode first, then one screen, one purpose:
+    //   menu -> MODE -> (challenge pick | tournament) -> DIFFICULTY
+    //   -> STAR -> STYLE -> COURT -> MATCH SETUP -> game
+    // Modes decide WHY; MatchManager keeps deciding HOW.
     // ------------------------------------------------------------
     bus.on('playRequested', function () {
+      UIState = 'mode';
+      selectedMode = (LG.Modes && LG.Modes.id) ? LG.Modes.id() : 'quick_match';
+      refreshModeUI();
+      showOverlay('menu-overlay', false);
+      showOverlay('mode-overlay', true);
+    });
+
+    bus.on('modeBackRequested', function () {
+      UIState = 'menu';
+      showOverlay('mode-overlay', false);
+      showOverlay('menu-overlay', true);
+    });
+
+    bus.on('modeRequested', function (e) {
+      if (e && e.id) selectedMode = e.id;
+      refreshModeUI();
+    });
+
+    bus.on('modeConfirmed', function () {
+      if (LG.Modes) LG.Modes.select(selectedMode);
+      if (selectedMode === 'challenge_match') {
+        UIState = 'challengePick';
+        selectedChallengeFocus = (LG.Modes && LG.Modes.challenge) ? LG.Modes.challenge() : null;
+        refreshChallengePickUI();
+        showOverlay('mode-overlay', false);
+        showOverlay('challenge-pick-overlay', true);
+        return;
+      }
+      if (selectedMode === 'tournament') {
+        UIState = 'tournament';
+        refreshTournamentUI();
+        showOverlay('mode-overlay', false);
+        showOverlay('tournament-overlay', true);
+        return;
+      }
       UIState = 'diff';
       refreshDifficultyUI();
-      showOverlay('menu-overlay', false);
+      showOverlay('mode-overlay', false);
       showOverlay('diff-overlay', true);
+    });
+
+    bus.on('challengePickBackRequested', function () {
+      UIState = 'mode';
+      showOverlay('challenge-pick-overlay', false);
+      showOverlay('mode-overlay', true);
+    });
+
+    bus.on('challengeFocusRequested', function (e) {
+      if (e && e.id) selectedChallengeFocus = e.id;
+      refreshChallengePickUI();
+    });
+
+    bus.on('challengePickConfirmed', function () {
+      if (!selectedChallengeFocus || !LG.Modes || !LG.Modes.selectChallenge(selectedChallengeFocus)) {
+        LG.HUD.toast('PICK A CHALLENGE');
+        return;
+      }
+      UIState = 'diff';
+      refreshDifficultyUI();
+      showOverlay('challenge-pick-overlay', false);
+      showOverlay('diff-overlay', true);
+    });
+
+    bus.on('tournamentBackRequested', function () {
+      UIState = 'mode';
+      showOverlay('tournament-overlay', false);
+      showOverlay('mode-overlay', true);
+    });
+
+    bus.on('tournamentStartRequested', function () {
+      var T = LG.Tournament;
+      if (!T) return;
+      // won/eliminated START = fresh cup (no page reload)
+      if (T.status() === 'won' || T.status() === 'eliminated') T.reset();
+      if (!T.active()) T.start(selectedId);
+      // RESUME between fixtures skips setup and plays the next tie
+      if (T.canContinue(false)) {
+        showOverlay('tournament-overlay', false);
+        startMatch(selectedId);
+        return;
+      }
+      // first fixture (or a fresh draw) still runs the normal setup screens
+      UIState = 'diff';
+      refreshDifficultyUI();
+      showOverlay('tournament-overlay', false);
+      showOverlay('diff-overlay', true);
+    });
+
+    bus.on('tournamentContinueRequested', function () {
+      if (resultActionLock) return;
+      var T = LG.Tournament;
+      if (!T || !T.canContinue(!!(match && !match._finalized))) return;
+      resultActionLock = true;
+      showOverlay('result-overlay', false);
+      startMatch(selectedId);
+      resultActionLock = false;
+    });
+
+    bus.on('resultSetupRequested', function () {
+      if (resultActionLock) return;
+      if (LG.Modes && LG.Modes.is('tournament')) return; // tournament has no mid-bracket setup hop
+      resultActionLock = true;
+      if (match && !match._finalized && match.clock !== undefined) {
+        quitting = true;
+        match.endMatch();
+        quitting = false;
+      }
+      if (match) clearMatchFromScene();
+      LG.Input.reset();
+      LG.HUD.clearTags();
+      LG.HUD.setModeChip('');
+      showOverlay('result-overlay', false);
+      showMatchUI(false);
+      UIState = 'setup';
+      refreshSettingsUI();
+      showOverlay('setup-overlay', true);
+      resultActionLock = false;
     });
 
     bus.on('difficultyRequested', function (e) {
@@ -194,9 +314,26 @@
     });
 
     bus.on('difficultyBackRequested', function () {
-      UIState = 'menu';
+      // back into the mode layer (challenge/tournament return to their screens)
+      if (selectedMode === 'challenge_match') {
+        UIState = 'challengePick';
+        selectedChallengeFocus = (LG.Modes && LG.Modes.challenge) ? LG.Modes.challenge() : null;
+        refreshChallengePickUI();
+        showOverlay('diff-overlay', false);
+        showOverlay('challenge-pick-overlay', true);
+        return;
+      }
+      if (selectedMode === 'tournament') {
+        UIState = 'tournament';
+        refreshTournamentUI();
+        showOverlay('diff-overlay', false);
+        showOverlay('tournament-overlay', true);
+        return;
+      }
+      UIState = 'mode';
+      refreshModeUI();
       showOverlay('diff-overlay', false);
-      showOverlay('menu-overlay', true);
+      showOverlay('mode-overlay', true);
     });
 
     bus.on('howRequested', function () {
@@ -257,6 +394,7 @@
     });
 
     bus.on('menuBackRequested', function () {
+      // STAR BACK returns to difficulty (unchanged); difficulty BACK is handled above
       UIState = 'diff';
       refreshDifficultyUI();
       showOverlay('select-overlay', false);
@@ -338,6 +476,7 @@
     bus.on('quitRequested', function () {
       UIState = 'menu';
       profileResetArmed = false;
+      resultActionLock = false;
       // leaving mid-match still books the unfinished game once (never re-books)
       if (match && !match._finalized && match.clock !== undefined) {
         quitting = true;
@@ -347,10 +486,14 @@
       if (match) clearMatchFromScene();
       LG.Input.reset();
       LG.HUD.clearTags();
+      LG.HUD.setModeChip('');
       showOverlay('pause-overlay', false);
       showOverlay('result-overlay', false);
       showOverlay('profile-overlay', false);
       showOverlay('challenges-overlay', false);
+      showOverlay('mode-overlay', false);
+      showOverlay('challenge-pick-overlay', false);
+      showOverlay('tournament-overlay', false);
       showMatchUI(false);
       showOverlay('menu-overlay', true);
       LG.Particles.clear();
@@ -359,10 +502,30 @@
     });
 
     bus.on('rematchRequested', function () {
+      if (LG.Modes && LG.Modes.is('tournament')) {
+        var T = LG.Tournament;
+        // results board: only a finished cup may START OVER (resets state)
+        if (UIState === 'result') {
+          if (resultActionLock || !T || !T.canRetry()) return;
+          resultActionLock = true;
+          T.reset();
+          T.start(selectedId);
+          showOverlay('result-overlay', false);
+          startMatch(selectedId);
+          resultActionLock = false;
+          return;
+        }
+        // mid-match / pause RESTART re-runs the same fixture only
+        if (UIState === 'paused' || UIState === 'match') startMatch(selectedId);
+        return;
+      }
       startMatch(selectedId);
     });
 
-    bus.on('matchStart', function () { LG.HUD.reset(match); });
+    bus.on('matchStart', function () {
+      LG.HUD.reset(match);
+      refreshModeChip();
+    });
     bus.on('clock', function (e) { LG.HUD.setClock(e.t); });
 
     bus.on('goal', function (g) {
@@ -408,11 +571,19 @@
     });
 
     bus.on('matchEnd', function (r) {
+      // Tournament books each fixture once here — even a quit-to-menu mid
+      // match still records (MatchManager already finalized the profile).
+      // Phase 3B challenge rewards stay solely inside Progression.finalizeMatch.
+      if (r && !r._tournamentBooked && LG.Modes && LG.Modes.is('tournament') && LG.Tournament) {
+        if (LG.Tournament.endMatch(r.won === 1, r.score)) r._tournamentBooked = true;
+      }
       // ignore a late end from a match we already replaced (quit/rematch)
       if (quitting || match === null) return;
       UIState = 'result';
+      resultActionLock = false;
       LG.Input.reset();
       LG.Audio.crowdStop();
+      LG.HUD.setModeChip('');
       var endedMatch = match;
       setTimeout(function () {
         if (match !== endedMatch) return; // match was replaced (rematch/quit) while waiting
@@ -493,9 +664,45 @@
   }
 
   function setupResult(r) {
+    var modeId = (LG.Modes && typeof LG.Modes.id === 'function') ? LG.Modes.id() : 'quick_match';
+    var T = LG.Tournament;
     var title = document.getElementById('result-title');
+    var note = document.getElementById('result-mode-note');
+    var btnContinue = document.getElementById('btn-continue');
+    var btnRematch = document.getElementById('btn-rematch');
+    var btnSetup = document.getElementById('btn-result-setup');
+    var modeTag = document.getElementById('result-mode-tag');
+
+    // mode-aware headline
+    var headline;
+    if (modeId === 'tournament' && T) {
+      if (T.status() === 'won') headline = 'CUP WON';
+      else if (T.status() === 'eliminated') headline = T.currentRound() === 1 ? 'FINAL LOST' : 'SEMIFINAL LOST';
+      else headline = 'SEMIFINAL WON'; // active + advanced after a semi win
+    } else if (modeId === 'challenge_match') {
+      var focusDone = false;
+      var completed = r.completedChallenges || [];
+      var focusId = (LG.Modes && LG.Modes.challenge) ? LG.Modes.challenge() : null;
+      for (var fi = 0; fi < completed.length; fi++) {
+        if (focusId && completed[fi].id === focusId) { focusDone = true; break; }
+      }
+      if (focusDone) headline = 'CHALLENGE CLEARED';
+      else headline = r.won === 1 ? 'MATCH WON' : r.won === 0 ? 'DRAW' : 'MATCH LOST';
+    } else {
+      headline = r.won === 1 ? 'MATCH WON' : r.won === 0 ? 'DRAW' : 'MATCH LOST';
+    }
+
     title.className = 'result-title ' + (r.won === 1 ? 'win' : r.won === 0 ? 'draw' : 'lose');
-    title.textContent = r.won === 1 ? 'MATCH WON' : r.won === 0 ? 'DRAW' : 'MATCH LOST';
+    title.textContent = headline;
+
+    if (modeTag) {
+      var tagText = modeId === 'tournament' && T ? ('STREET CUP · ' + T.roundLabel())
+        : modeId === 'challenge_match' ? 'CHALLENGE MATCH'
+        : 'QUICK MATCH';
+      modeTag.textContent = tagText;
+      modeTag.classList.remove('hidden');
+    }
+
     document.getElementById('res-home').textContent = r.score[0];
     document.getElementById('res-away').textContent = r.score[1];
     document.getElementById('res-coins-n').textContent = '+' + U.fmtMoney(r.coins);
@@ -526,11 +733,11 @@
     var chList = document.getElementById('res-ch-list');
     var chEmpty = document.getElementById('res-ch-empty');
     var chCoins = document.getElementById('res-ch-coins');
-    var completed = r.completedChallenges || [];
+    var completedAll = r.completedChallenges || [];
     if (chList) {
       chList.innerHTML = '';
-      for (var ci = 0; ci < completed.length; ci++) {
-        var c = completed[ci];
+      for (var ci = 0; ci < completedAll.length; ci++) {
+        var c = completedAll[ci];
         var li = document.createElement('li');
         li.className = 'pf-row ch-done';
         li.innerHTML = '<span class="ch-check">✓</span>' +
@@ -540,11 +747,42 @@
         chList.appendChild(li);
       }
     }
-    if (chEmpty) chEmpty.classList.toggle('hidden', completed.length > 0);
+    if (chEmpty) chEmpty.classList.toggle('hidden', completedAll.length > 0);
     if (chCoins) {
       var chAmt = r.challengeCoins || 0;
       chCoins.classList.toggle('hidden', !chAmt);
       chCoins.innerHTML = chAmt ? '<span class="coin"></span><span>+ ' + chAmt + ' CHALLENGES</span>' : '';
+    }
+
+    // mode-aware action row (idempotent labels + visibility)
+    resultActionLock = false;
+    if (btnContinue && btnRematch && btnSetup) {
+      var showContinue = modeId === 'tournament' && T && T.canContinue(false);
+      var showRetryCup = modeId === 'tournament' && T && T.canRetry();
+      if (modeId === 'tournament') {
+        btnContinue.classList.toggle('hidden', !showContinue);
+        btnRematch.textContent = 'NEW TOURNAMENT';
+        btnRematch.classList.toggle('hidden', !showRetryCup);
+        btnRematch.classList.add('gold');
+        btnSetup.classList.add('hidden');
+      } else if (modeId === 'challenge_match') {
+        btnContinue.classList.add('hidden');
+        btnRematch.textContent = 'RETRY';
+        btnRematch.classList.remove('hidden');
+        btnRematch.classList.add('gold');
+        btnSetup.classList.remove('hidden');
+      } else {
+        btnContinue.classList.add('hidden');
+        btnRematch.textContent = 'REMATCH';
+        btnRematch.classList.remove('hidden');
+        btnRematch.classList.add('gold');
+        btnSetup.classList.remove('hidden');
+      }
+    }
+    if (note) {
+      if (modeId === 'tournament') note.textContent = 'ONE CUP · TWO WINS · NO SHORTCUTS';
+      else if (modeId === 'challenge_match') note.textContent = 'FOCUSED CHALLENGE PAYS VIA THE ACTIVE SET';
+      else note.textContent = '+ COINS UNLOCK MORE STARS';
     }
 
     LG.HUD.updateCoins();
@@ -647,6 +885,192 @@
     }
   }
 
+  // ---------------- mode / tournament UI (Phase 3D) ----------------
+  function refreshModeUI() {
+    var list = document.getElementById('mode-list');
+    if (!list) return;
+    list.innerHTML = '';
+    var modes = (LG.Modes && LG.Modes.list) ? LG.Modes.list() : [];
+    for (var i = 0; i < modes.length; i++) {
+      (function (m) {
+        var card = document.createElement('div');
+        card.className = 'mode-card' + (m.id === selectedMode ? ' selected' : '');
+        card.dataset.id = m.id;
+        var tag = m.id === 'tournament' ? 'KNOCKOUT · 4 TEAMS'
+          : m.id === 'challenge_match' ? 'USES YOUR 3 ACTIVE CHALLENGES'
+          : 'STANDARD MATCH';
+        card.innerHTML =
+          '<div class="mode-name">' + m.name + '</div>' +
+          '<div class="mode-blurb">' + m.blurb + '</div>' +
+          '<div class="mode-tag">' + tag + '</div>';
+        card.addEventListener('click', function () {
+          selectedMode = m.id;
+          if (LG.Modes) LG.Modes.select(m.id);
+          refreshModeUI();
+          LG.Audio.sfx.click();
+        });
+        list.appendChild(card);
+      })(modes[i]);
+    }
+  }
+
+  function refreshChallengePickUI() {
+    var list = document.getElementById('challenge-pick-list');
+    if (!list) return;
+    list.innerHTML = '';
+    var act = (LG.Progression && LG.Progression.activeChallenges) ? LG.Progression.activeChallenges() : [];
+    if (!act.length) {
+      var empty = document.createElement('div');
+      empty.className = 'pf-empty';
+      empty.textContent = 'NO ACTIVE CHALLENGES';
+      list.appendChild(empty);
+      return;
+    }
+    if (!selectedChallengeFocus || act.indexOf(selectedChallengeFocus) < 0) {
+      selectedChallengeFocus = act[0];
+    }
+    if (LG.Modes) LG.Modes.selectChallenge(selectedChallengeFocus);
+    for (var i = 0; i < act.length; i++) {
+      (function (id) {
+        var def = LG.Challenges && LG.Challenges.byId ? LG.Challenges.byId(id) : null;
+        if (!def) return;
+        var card = document.createElement('div');
+        card.className = 'challenge-card ch-' + def.difficulty +
+          (id === selectedChallengeFocus ? ' selected-focus' : '');
+        card.dataset.id = id;
+        if (id === selectedChallengeFocus) card.style.outline = '2px solid #14c8db';
+        card.innerHTML =
+          '<div class="challenge-head">' +
+            '<span class="challenge-title">' + def.title + '</span>' +
+            '<span class="challenge-diff">' + def.difficulty.toUpperCase() + '</span>' +
+          '</div>' +
+          '<div class="challenge-desc">' + def.description + '</div>' +
+          '<div class="challenge-meta">' +
+            '<span class="challenge-target">' + challengeTargetLabel(def) + '</span>' +
+            '<span class="challenge-reward"><span class="coin"></span>+' + def.reward + '</span>' +
+          '</div>';
+        card.addEventListener('click', function () {
+          selectedChallengeFocus = id;
+          if (LG.Modes) LG.Modes.selectChallenge(id);
+          refreshChallengePickUI();
+          LG.Audio.sfx.click();
+        });
+        list.appendChild(card);
+      })(act[i]);
+    }
+  }
+
+  function refreshTournamentUI() {
+    var statusEl = document.getElementById('tournament-status');
+    var bracket = document.getElementById('tournament-bracket');
+    var startBtn = document.getElementById('btn-tournament-start');
+    var T = LG.Tournament;
+    if (!T) return;
+    var st = T.status();
+    if (statusEl) {
+      if (st === 'idle') statusEl.textContent = '4 TEAMS · SEMIFINAL + FINAL';
+      else if (st === 'active') statusEl.textContent = 'IN PROGRESS · ' + T.roundLabel();
+      else if (st === 'won') statusEl.textContent = 'CHAMPIONS · START A NEW CUP';
+      else statusEl.textContent = 'ELIMINATED · START A NEW CUP';
+    }
+    if (startBtn) {
+      startBtn.textContent = st === 'active' ? 'RESUME' : 'START';
+    }
+    if (bracket) {
+      bracket.innerHTML = '';
+      if (st === 'idle' || !T.teams().length) {
+        var ph = document.createElement('div');
+        ph.className = 'pf-empty';
+        ph.textContent = 'DRAW PENDING — HIT START';
+        bracket.appendChild(ph);
+        return;
+      }
+      var teams = T.teams();
+      var results = T.results();
+      // SEMIFINAL column
+      var semi = document.createElement('div');
+      semi.className = 'tournament-round' + (T.currentRound() === 0 && st === 'active' ? ' active-round' : st !== 'idle' ? ' done-round' : '');
+      semi.innerHTML = '<div class="tr-title">SEMIFINAL</div>';
+      var you = teams[0], opp = teams[1];
+      var semiRes = results[0];
+      semi.appendChild(fixtureRow(you, opp, semiRes));
+      var otherA = teams[2], otherB = teams[3];
+      var otherWin = T.snapshot().otherSemiWinner;
+      var row2 = document.createElement('div');
+      row2.className = 'tr-fixture';
+      row2.innerHTML =
+        '<span class="' + (otherWin === otherA.id ? 'win' : 'lose') + '">' + otherA.name + '</span>' +
+        '<span class="' + (otherWin === otherB.id ? 'win' : 'lose') + '">' + otherB.name + '</span>';
+      semi.appendChild(row2);
+      bracket.appendChild(semi);
+      // FINAL column
+      var fin = document.createElement('div');
+      fin.className = 'tournament-round' + (T.currentRound() === 1 && st === 'active' ? ' active-round' : st === 'won' ? ' done-round' : '');
+      fin.innerHTML = '<div class="tr-title">FINAL</div>';
+      var finRow = document.createElement('div');
+      finRow.className = 'tr-fixture';
+      var finalRes = results[1];
+      var finalOppName = otherWin ? (otherWin === otherA.id ? otherA.name : otherB.name) : '—';
+      if (st === 'won') {
+        finRow.innerHTML = '<span class="win you">' + you.name + '</span><span class="win">' + finalOppName + '</span>';
+      } else if (st === 'eliminated' && T.currentRound() === 1 && finalRes) {
+        finRow.innerHTML = '<span class="' + (finalRes.won ? 'win' : 'lose') + ' you">' + you.name + '</span>' +
+          '<span class="' + (finalRes.won ? 'lose' : 'win') + '">' + finalOppName + '</span>';
+      } else if (st === 'active' && T.currentRound() === 1) {
+        finRow.innerHTML = '<span class="you">' + you.name + '</span><span>' + finalOppName + '</span>';
+      } else {
+        finRow.innerHTML = '<span class="you">' + you.name + '</span><span>' + finalOppName + '</span>';
+      }
+      fin.appendChild(finRow);
+      bracket.appendChild(fin);
+    }
+  }
+
+  function fixtureRow(a, b, res) {
+    var row = document.createElement('div');
+    row.className = 'tr-fixture';
+    var aCls = a.isPlayer ? 'you' : '';
+    var bCls = b.isPlayer ? 'you' : '';
+    if (res) {
+      // won flag is from the player's perspective on round 0/1 player fixture
+      var playerWon = res.won;
+      if (a.isPlayer) {
+        aCls += playerWon ? ' win' : ' lose';
+        bCls += playerWon ? ' lose' : ' win';
+      }
+      row.innerHTML = '<span class="' + aCls + '">' + a.name + '</span>' +
+        '<span class="' + bCls + '">' + b.name + '</span>';
+    } else {
+      row.innerHTML = '<span class="' + aCls + '">' + a.name + '</span>' +
+        '<span class="' + bCls + '">' + b.name + '</span>';
+    }
+    return row;
+  }
+
+  // Non-modal focus chip: mode label + optional live challenge progress.
+  function refreshModeChip() {
+    if (UIState !== 'match' && UIState !== 'paused') return;
+    var modeId = (LG.Modes && LG.Modes.id) ? LG.Modes.id() : 'quick_match';
+    if (modeId === 'tournament' && LG.Tournament) {
+      LG.HUD.setModeChip(LG.Tournament.summary());
+      return;
+    }
+    if (modeId === 'challenge_match') {
+      var def = (LG.Modes && LG.Modes.challenge && LG.Challenges)
+        ? LG.Challenges.byId(LG.Modes.challenge()) : null;
+      if (!def || !match) { LG.HUD.setModeChip('CHALLENGE MATCH'); return; }
+      var live = {
+        score: match.score,
+        stats: { home: match.stats.home, away: match.stats.away },
+        won: null,
+      };
+      var ev = LG.Challenges.evaluate(def, live, true);
+      LG.HUD.setModeChip('CHALLENGE ' + def.title + '  ' + Math.min(ev.progress, def.target) + '/' + def.target);
+      return;
+    }
+    LG.HUD.setModeChip('');
+  }
+
   // ---------------- match lifecycle ----------------
   function startMatch(playerId) {
     selectedId = playerId;
@@ -658,12 +1082,42 @@
     if (match) {
       clearMatchFromScene();
     }
-    match = new LG.MatchManager({
+
+    var matchOpts = {
       playerId: playerId, homeName: 'YOU', awayName: 'ROGUE',
       difficulty: LG.Difficulty.get(),
       outfitColor: outfitColor,
       awayColor: awayColor,
-    });
+    };
+
+    // Tournament fixture: pin the opponent side + open the once-only latch.
+    // Restarting the same fixture reuses an open latch (never double-begins).
+    if (LG.Modes && LG.Modes.is('tournament') && LG.Tournament && LG.Tournament.active()) {
+      if (!LG.Tournament.snapshot().awaitingResult) LG.Tournament.beginMatch();
+      var opp = LG.Tournament.opponent();
+      if (opp) {
+        var oppDef = LG.byId(opp.id);
+        var awayIds = [opp.id];
+        var mates = (oppDef && oppDef.team) || [];
+        for (var mi = 0; mi < mates.length && awayIds.length < 3; mi++) {
+          if (awayIds.indexOf(mates[mi]) < 0) awayIds.push(mates[mi]);
+        }
+        var fillers = ['stone', 'volt', 'brute', 'echo', 'pulse', 'cannon'];
+        for (var fi = 0; fi < fillers.length && awayIds.length < 3; fi++) {
+          if (awayIds.indexOf(fillers[fi]) < 0 && fillers[fi] !== playerId) awayIds.push(fillers[fi]);
+        }
+        matchOpts.awayIds = awayIds;
+        matchOpts.awayName = opp.name.toUpperCase();
+      }
+      matchOpts.mode = 'tournament';
+    } else if (LG.Modes && LG.Modes.is('tournament')) {
+      // cup not active yet — still label the mode, random draw like quick
+      matchOpts.mode = 'tournament';
+    } else {
+      matchOpts.mode = (LG.Modes && LG.Modes.id) ? LG.Modes.id() : 'quick_match';
+    }
+
+    match = new LG.MatchManager(matchOpts);
     match.attachScene(scene, arenaObj);
     match.camera = camCtrl;
     match.selectActive();
@@ -687,6 +1141,7 @@
     showMatchUI(true);
 
     LG.HUD.reset(match);
+    refreshModeChip();
     camCtrl.reset();
     camCtrl.pulse(0.6);
     LG.Particles.clear();
@@ -713,7 +1168,7 @@
     document.getElementById('scoreboard').classList.toggle('hidden', !on);
     document.getElementById('pause-btn').classList.toggle('hidden', !on);
     document.getElementById('coin-chip').classList.toggle('hidden', false);
-    var overlays = ['menu-overlay', 'diff-overlay', 'select-overlay', 'style-overlay', 'court-overlay', 'setup-overlay', 'how-overlay', 'profile-overlay', 'challenges-overlay', 'pause-overlay', 'result-overlay'];
+    var overlays = ['menu-overlay', 'mode-overlay', 'challenge-pick-overlay', 'tournament-overlay', 'diff-overlay', 'select-overlay', 'style-overlay', 'court-overlay', 'setup-overlay', 'how-overlay', 'profile-overlay', 'challenges-overlay', 'pause-overlay', 'result-overlay'];
     for (var i = 0; i < overlays.length; i++) document.getElementById(overlays[i]).classList.add('hidden');
   }
 

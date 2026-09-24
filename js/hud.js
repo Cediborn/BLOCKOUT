@@ -50,6 +50,26 @@ LG.HUD = (function () {
     document.getElementById('btn-profile-reset').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('profileResetRequested'); });
     document.getElementById('btn-challenges').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('challengesRequested'); });
     document.getElementById('btn-challenges-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('challengesBackRequested'); });
+    // game mode select
+    var modeBack = document.getElementById('btn-mode-back');
+    if (modeBack) modeBack.addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('modeBackRequested'); });
+    var modeGo = document.getElementById('btn-mode-go');
+    if (modeGo) modeGo.addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('modeConfirmed'); });
+    // challenge match focus pick
+    var chPickBack = document.getElementById('btn-challenge-pick-back');
+    if (chPickBack) chPickBack.addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('challengePickBackRequested'); });
+    var chPickGo = document.getElementById('btn-challenge-pick-go');
+    if (chPickGo) chPickGo.addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('challengePickConfirmed'); });
+    // tournament
+    var tBack = document.getElementById('btn-tournament-back');
+    if (tBack) tBack.addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('tournamentBackRequested'); });
+    var tStart = document.getElementById('btn-tournament-start');
+    if (tStart) tStart.addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('tournamentStartRequested'); });
+    // mode-aware results actions
+    var btnContinue = document.getElementById('btn-continue');
+    if (btnContinue) btnContinue.addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('tournamentContinueRequested'); });
+    var btnResultSetup = document.getElementById('btn-result-setup');
+    if (btnResultSetup) btnResultSetup.addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('resultSetupRequested'); });
     var startBtn = document.getElementById('btn-start-match');
     if (startBtn) startBtn.addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('startMatchRequested'); });
     // linear pre-match flow: STAR -> STYLE -> COURT -> MATCH SETUP
@@ -239,6 +259,19 @@ LG.HUD = (function () {
     if (coinEl) coinEl.textContent = LG.Util.fmtMoney(LG.Progression.coins());
   }
 
+  // Quiet non-modal mode / challenge focus readout (Phase 3D).
+  function setModeChip(text) {
+    var chip = document.getElementById('mode-chip');
+    if (!chip) return;
+    if (!text) {
+      chip.classList.add('hidden');
+      chip.textContent = '';
+      return;
+    }
+    chip.textContent = text;
+    chip.classList.remove('hidden');
+  }
+
   function reset(match) {
     setScore(0, 0);
     setClock(LG.Config.match.duration);
@@ -254,6 +287,6 @@ LG.HUD = (function () {
     updateSpecial: updateSpecial, showSpecialName: showSpecialName,
     banner: banner, flash: flash, toast: toast, aim: aim,
     updateCoins: updateCoins, setTeamNames: setTeamNames,
-    setControlMode: setControlMode,
+    setControlMode: setControlMode, setModeChip: setModeChip,
   };
 })();

@@ -32,6 +32,8 @@
   <div id="coin-chip" class="hidden"><span class="coin"></span><span id="coin-amnt">0</span></div>
   <button id="pause-btn" class="hidden" title="Pause">II</button>
 
+  <div id="mode-chip" class="hidden"></div>
+
   <div id="scoreboard" class="hidden">
     <div class="team home">
       <span class="label" id="home-label">HOME</span>
@@ -126,6 +128,44 @@
       <div id="challenge-list" class="challenge-list" aria-label="Active challenges"></div>
       <div class="row-btns">
         <button id="btn-challenges-back" class="big-btn">BACK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Game mode select -->
+  <div id="mode-overlay" class="overlay hidden">
+    <div class="panel">
+      <div class="title-xl" style="font-size:clamp(26px,6.4vmin,50px)"><span class="t1">GAME</span> <span class="t2">MODE</span></div>
+      <div class="mode-list" id="mode-list" aria-label="Game modes"></div>
+      <div class="row-btns nav-btns">
+        <button id="btn-mode-back" class="big-btn secondary">BACK</button>
+        <button id="btn-mode-go" class="big-btn gold">CONTINUE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Challenge Match: focus one active Phase 3B objective -->
+  <div id="challenge-pick-overlay" class="overlay hidden">
+    <div class="panel">
+      <div class="title-xl" style="font-size:clamp(24px,6vmin,44px)"><span class="t1">PICK A</span> <span class="t2">CHALLENGE</span></div>
+      <div class="challenge-sub">ONE ACTIVE OBJECTIVE · CLEAR IT FOR COINS</div>
+      <div id="challenge-pick-list" class="challenge-list" aria-label="Active challenges to focus"></div>
+      <div class="row-btns nav-btns">
+        <button id="btn-challenge-pick-back" class="big-btn secondary">BACK</button>
+        <button id="btn-challenge-pick-go" class="big-btn gold">CONTINUE</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tournament bracket / resume -->
+  <div id="tournament-overlay" class="overlay hidden">
+    <div class="panel">
+      <div class="title-xl" style="font-size:clamp(26px,6.4vmin,50px)"><span class="t1">STREET</span> <span class="t2">CUP</span></div>
+      <div id="tournament-status" class="challenge-sub">4 TEAMS · SEMIFINAL + FINAL</div>
+      <div id="tournament-bracket" class="tournament-bracket" aria-label="Tournament bracket"></div>
+      <div class="row-btns nav-btns">
+        <button id="btn-tournament-back" class="big-btn secondary">BACK</button>
+        <button id="btn-tournament-start" class="big-btn gold">START</button>
       </div>
     </div>
   </div>
@@ -279,6 +319,7 @@
   <div id="result-overlay" class="overlay hidden">
     <div class="panel">
       <div class="result-title" id="result-title">MATCH WON</div>
+      <div class="result-mode-tag hidden" id="result-mode-tag">QUICK MATCH</div>
       <div class="result-score"><span class="rs" id="res-home">3</span> : <span class="ra" id="res-away">1</span></div>
       <table class="match-stats" id="match-stats" aria-label="Match statistics">
         <thead>
@@ -301,11 +342,13 @@
         <div id="res-ch-empty" class="pf-empty hidden">No challenges completed.</div>
         <div id="res-ch-coins" class="result-ch-coins hidden"></div>
       </div>
-      <div class="row-btns">
+      <div class="row-btns" id="result-actions">
+        <button id="btn-continue" class="big-btn gold hidden">CONTINUE</button>
         <button id="btn-rematch" class="big-btn gold">REMATCH</button>
+        <button id="btn-result-setup" class="big-btn secondary hidden">MATCH SETUP</button>
         <button id="btn-result-menu" class="big-btn secondary">MAIN MENU</button>
       </div>
-      <div class="ko">+ COINS UNLOCK MORE STARS</div>
+      <div class="ko" id="result-mode-note">+ COINS UNLOCK MORE STARS</div>
     </div>
   </div>
 
@@ -316,6 +359,8 @@
   <script src="js/audio.js"></script>
   <script src="js/challenges.js"></script>
   <script src="js/progression.js"></script>
+  <script src="js/modes.js"></script>
+  <script src="js/tournament.js"></script>
   <script src="js/settings.js"></script>
   <script src="js/input.js"></script>
   <script src="js/particles.js"></script>

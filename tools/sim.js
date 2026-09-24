@@ -143,7 +143,7 @@ function load(rel) {
   vm.runInThisContext(fs.readFileSync(path.join(ROOT, rel), 'utf8'), { filename: rel });
 }
 
-['js/config.js', 'js/difficulty.js', 'js/settings.js', 'js/util.js', 'js/audio.js', 'js/challenges.js', 'js/models.js', 'js/ball.js',
+['js/config.js', 'js/difficulty.js', 'js/settings.js', 'js/util.js', 'js/audio.js', 'js/challenges.js', 'js/modes.js', 'js/tournament.js', 'js/models.js', 'js/ball.js',
   'js/player.js', 'js/abilities.js', 'js/ai.js', 'js/keeper.js', 'js/match.js',
   'js/input.js'].forEach(load);
 
@@ -1974,6 +1974,56 @@ section('16. challenge evaluation (pure, deterministic, no RNG)');
   assert(C.POOL.every(function (d) {
     return d.reward === C.REWARD[d.difficulty];
   }), 'reward coins match the difficulty tier');
+})();
+
+section('17. game modes + tournament (pure, once-only, no RNG)');
+(function () {
+  var M = LG.Modes;
+  var T = LG.Tournament;
+  assert(!!(M && Array.isArray(M.DEFS) && M.DEFS.length === 3), 'three modes registered');
+  assert(M.is('quick_match'), 'default mode is quick_match', M.id());
+  assert(M.select('tournament') === 'tournament' && M.is('tournament'), 'select switches mode');
+  assert(M.select('nope') === 'tournament', 'unknown mode ids are refused', M.id());
+  assert(M.selectChallenge('bogus') === false, 'focus requires a real active challenge');
+
+  // pure tournament state machine — no Math.random anywhere
+  var rngCalls = 0;
+  var realRng = Math.random;
+  Math.random = function () { rngCalls++; return realRng(); };
+  T.reset();
+  T.start('blaze');
+  Math.random = realRng;
+  assert(rngCalls === 0, 'Tournament.start does not consume Math.random', 'calls=' + rngCalls);
+  assert(T.status() === 'active' && T.currentRound() === 0, 'fresh cup starts at the semifinal');
+  assert(T.teams().length === 4 && T.teams()[0].isPlayer, 'player leads a 4-team field');
+
+  assert(T.beginMatch() === true, 'beginMatch opens the latch');
+  assert(T.beginMatch() === false, 'second beginMatch is refused while awaiting');
+  assert(T.endMatch(false, [0, 2]) === true, 'loss records once');
+  assert(T.endMatch(false, [0, 2]) === false, 'double endMatch is a no-op');
+  assert(T.status() === 'eliminated', 'semifinal loss eliminates', T.status());
+  assert(T.canContinue(false) === false, 'eliminated cup cannot CONTINUE');
+  assert(T.canRetry() === true, 'eliminated cup can START OVER');
+
+  T.reset();
+  T.start('cannon');
+  T.beginMatch();
+  assert(T.endMatch(true, [3, 1]) === true, 'semifinal win records');
+  assert(T.currentRound() === 1 && T.status() === 'active', 'advances to the final');
+  assert(T.canContinue(false) === true, 'between fixtures CONTINUE is legal');
+  assert(T.canContinue(true) === false, 'a live match blocks CONTINUE');
+  T.beginMatch();
+  assert(T.canContinue(false) === false, 'awaiting a result blocks CONTINUE');
+  assert(T.endMatch(true, [1, 0]) === true, 'final win records');
+  assert(T.status() === 'won' && T.snapshot().results.length === 2, 'cup won after two wins');
+  assert(T.endMatch(true, [1, 0]) === false, 'extra endMatch after the cup is refused');
+
+  // awayIds path in match builder is exercised via opts (no build here — sim
+  // only checks the pure mode/tournament layer). reset leaves idle storage.
+  T.reset();
+  assert(T.status() === 'idle', 'reset returns to idle');
+  M.reset();
+  assert(M.is('quick_match') && M.challenge() === null, 'Modes.reset restores defaults');
 })();
 
 // ============================================================

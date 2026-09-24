@@ -85,10 +85,17 @@ LG.MatchManager.prototype = {
     }
 
     var team0 = this.teamOf(mateDefs, 0);
-    var oppIds = U.choose([['blaze', 'cannon', 'volt'], ['stone', 'echo', 'pulse'], ['frenzy', 'brute', 'pulse'], ['volt', 'echo', 'stone'], ['cannon', 'frenzy', 'blaze']]);
-    if ((playerDef.team || []).some(function (id) { return oppIds.indexOf(id) >= 0; })) {
-      oppIds = ['blaze', 'volt', 'stone'];
-      // avoid duplicating the same 3 as player team
+    // Tournament fixtures pin the opponent side; quick/challenge keep the
+    // existing random draw (no hidden difficulty buffs either way).
+    var oppIds;
+    if (Object.prototype.toString.call(O.awayIds) === '[object Array]' && O.awayIds.length === 3) {
+      oppIds = O.awayIds.slice();
+    } else {
+      oppIds = U.choose([['blaze', 'cannon', 'volt'], ['stone', 'echo', 'pulse'], ['frenzy', 'brute', 'pulse'], ['volt', 'echo', 'stone'], ['cannon', 'frenzy', 'blaze']]);
+      if ((playerDef.team || []).some(function (id) { return oppIds.indexOf(id) >= 0; })) {
+        oppIds = ['blaze', 'volt', 'stone'];
+        // avoid duplicating the same 3 as player team
+      }
     }
 
     // Apply opponent kit color if selected (independent of the human kit)
@@ -1488,6 +1495,7 @@ LG.MatchManager.prototype = {
       playTime: Math.max(0, Math.round(this._playTime || 0)),
       ts: Date.now(),
       stats: snap,
+      mode: (LG.Modes && typeof LG.Modes.id === 'function') ? LG.Modes.id() : 'quick_match',
     };
     if (LG.Progression && LG.Progression.finalizeMatch) {
       result = LG.Progression.finalizeMatch(result) || result;
