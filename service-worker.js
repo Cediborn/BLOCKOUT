@@ -9,7 +9,7 @@
 // every release — that is what makes installed clients pick the new files up.
 // ============================================================
 
-var CACHE_NAME = 'blackout-v3';
+var CACHE_NAME = 'blackout-v4';
 var ASSETS = [
   './',
   './index.html',
@@ -47,7 +47,9 @@ var ASSETS = [
   './js/hud.js',
   './js/main.js',
   './js/living.js',
-  './lib/three.min.js'
+  './lib/three.min.js',
+  './icons/icon-192.svg',
+  './icons/icon-512.svg'
 ];
 
 // Install: pre-cache the application shell

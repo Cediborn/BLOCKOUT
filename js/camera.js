@@ -52,8 +52,15 @@ LG.MatchCamera.prototype = {
     this.camera.updateProjectionMatrix();
   },
 
-  shake: function (dur, amp) { this.shakeT = Math.max(this.shakeT, dur); this.shakeAmp = Math.max(this.shakeAmp, amp); },
-  pulse: function (v) { this.zoomPulse = Math.max(this.zoomPulse, v); },
+  shake: function (dur, amp) {
+    if (LG.Settings && LG.Settings.reducedMotion && LG.Settings.reducedMotion()) return;
+    this.shakeT = Math.max(this.shakeT, dur);
+    this.shakeAmp = Math.max(this.shakeAmp, amp);
+  },
+  pulse: function (v) {
+    if (LG.Settings && LG.Settings.reducedMotion && LG.Settings.reducedMotion()) return;
+    this.zoomPulse = Math.max(this.zoomPulse, v);
+  },
 
   update: function (dt, targetX, targetZ, ballX, ballZ) {
     var U = LG.Util;

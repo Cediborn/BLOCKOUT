@@ -45,6 +45,10 @@ LG.HUD = (function () {
     document.getElementById('btn-play').addEventListener('click', function () { LG.Audio.unlock(); LG.Audio.sfx.click(); LG.eventBus.emit('playRequested'); });
     document.getElementById('btn-how').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('howRequested'); });
     document.getElementById('btn-how-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('howBackRequested'); });
+    document.getElementById('btn-settings').addEventListener('click', function () { LG.Audio.unlock(); LG.Audio.sfx.click(); LG.eventBus.emit('settingsRequested'); });
+    document.getElementById('btn-settings-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('settingsBackRequested'); });
+    document.getElementById('btn-about').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('aboutRequested'); });
+    document.getElementById('btn-about-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('aboutBackRequested'); });
     document.getElementById('btn-profile').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('profileRequested'); });
     document.getElementById('btn-profile-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('profileBackRequested'); });
     document.getElementById('btn-profile-reset').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('profileResetRequested'); });

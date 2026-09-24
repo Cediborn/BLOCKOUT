@@ -9,6 +9,7 @@
 <meta name="theme-color" content="#141413" />
 <meta name="description" content="BLACKOUT - 3V3 street football with goalkeepers" />
 <title>BLACKOUT — Street Football</title>
+<meta name="application-name" content="BLACKOUT" />
 <link rel="stylesheet" href="css/style.css" />
 <link rel="manifest" href="manifest.json" />
 <link rel="icon" type="image/svg+xml" href="icons/icon-192.svg" />
@@ -78,8 +79,13 @@
         <button id="btn-play" class="big-btn gold">KICK OFF</button>
         <button id="btn-profile" class="big-btn secondary">PROFILE</button>
         <button id="btn-challenges" class="big-btn secondary">CHALLENGES</button>
-        <button id="btn-how" class="big-btn secondary">HOW TO PLAY</button>
       </div>
+      <div class="row-btns menu-sub">
+        <button id="btn-how" class="big-btn secondary">HOW TO PLAY</button>
+        <button id="btn-settings" class="big-btn secondary">SETTINGS</button>
+        <button id="btn-about" class="big-btn secondary">ABOUT</button>
+      </div>
+      <div class="menu-version" id="menu-version">v1.0.0</div>
     </div>
   </div>
 
@@ -272,33 +278,174 @@
     <div class="panel">
       <div class="title-xl" style="font-size:clamp(30px,7vmin,54px)"><span class="t1">HOW</span> <span class="t2">TO PLAY</span></div>
       <div class="help-sections">
-        <div class="help-section">
-          <div class="help-section-title">MOVEMENT</div>
-          <div class="help-row"><span class="help-key">ARROWS</span><span class="help-desc">Move your player</span></div>
-          <div class="help-row"><span class="help-key">W</span><span class="help-desc"><b>Sprint</b> — burns stamina, jogging restores it</span></div>
-        </div>
-        <div class="help-section">
-          <div class="help-section-title">ATTACK</div>
-          <div class="help-row"><span class="help-key">S</span><span class="help-desc"><b>Shoot</b> — hold to charge a strike</span></div>
-          <div class="help-row"><span class="help-key">A</span><span class="help-desc"><b>Pass</b> — point and fire to a teammate</span></div>
+        <div class="help-section" data-how="controls-desktop">
+          <div class="help-section-title">CONTROLS — DESKTOP</div>
+          <div class="help-row"><span class="help-key">↑↓←→</span><span class="help-desc">Move your player</span></div>
+          <div class="help-row"><span class="help-key">W / SHIFT</span><span class="help-desc"><b>Sprint</b> — burns stamina, jogging restores it</span></div>
+          <div class="help-row"><span class="help-key">A / I / SPACE</span><span class="help-desc"><b>PASS</b> when you have the ball · <b>SWITCH</b> when defending</span></div>
+          <div class="help-row"><span class="help-key">S / K</span><span class="help-desc"><b>SHOOT</b> (hold to charge) when attacking · <b>TACKLE</b> when defending</span></div>
           <div class="help-row"><span class="help-key">Q</span><span class="help-desc"><b>Special</b> — when the meter is full</span></div>
+          <div class="help-row"><span class="help-key">P / ESC</span><span class="help-desc">Pause · <b>R</b> rematch on results</span></div>
         </div>
-        <div class="help-divider"></div>
-        <div class="help-section">
-          <div class="help-section-title">DEFENSE</div>
-          <div class="help-row"><span class="help-key">S</span><span class="help-desc"><b>Tackle</b> — from front or side, never behind</span></div>
-          <div class="help-row"><span class="help-key">A</span><span class="help-desc"><b>Switch</b> — jump to the best teammate</span></div>
-        </div>
-        <div class="help-section">
-          <div class="help-section-title">MOBILE</div>
-          <div class="help-row"><span class="help-key">STICK</span><span class="help-desc">Joystick to move</span></div>
+        <div class="help-section" data-how="controls-mobile">
+          <div class="help-section-title">CONTROLS — MOBILE</div>
+          <div class="help-row"><span class="help-key">STICK</span><span class="help-desc">Left joystick moves your player</span></div>
+          <div class="help-row"><span class="help-key">PASS</span><span class="help-desc">Attack: fire a pass · Defense: switch player</span></div>
+          <div class="help-row"><span class="help-key">SHOOT</span><span class="help-desc">Attack: charged strike · Defense: tackle</span></div>
+          <div class="help-row"><span class="help-key">SPRINT</span><span class="help-desc">Hold to burn stamina for pace</span></div>
+          <div class="help-row"><span class="help-key">SPECIAL</span><span class="help-desc">Fires when the meter is full</span></div>
           <div class="help-row"><span class="help-desc">Action buttons flip between <b>PASS | SHOOT</b> (attacking) and <b>SWITCH | TACKLE</b> (defending) based on who has the ball</span></div>
         </div>
+        <div class="help-divider"></div>
+        <div class="help-section" data-how="gameplay">
+          <div class="help-section-title">GAMEPLAY</div>
+          <div class="help-row"><span class="help-key">3V3</span><span class="help-desc">You + two mates vs the Rogue Squad — each side has a goalkeeper</span></div>
+          <div class="help-row"><span class="help-key">WIN</span><span class="help-desc">First to the most goals when the clock hits zero wins</span></div>
+          <div class="help-row"><span class="help-key">AIM</span><span class="help-desc">Face a teammate and PASS — the ball flies where you point</span></div>
+          <div class="help-row"><span class="help-key">POWER</span><span class="help-desc">Hold SHOOT longer for a harder strike; a tap is a placed finish</span></div>
+          <div class="help-row"><span class="help-key">COINS</span><span class="help-desc">Wins, challenges and clean sheets pay coins that unlock more stars</span></div>
+        </div>
+        <div class="help-section" data-how="goalkeepers">
+          <div class="help-section-title">GOALKEEPERS</div>
+          <div class="help-row"><span class="help-key">AUTO</span><span class="help-desc">Keepers dive, claim and punch on their own — you never control them</span></div>
+          <div class="help-row"><span class="help-key">SAVE</span><span class="help-desc">Your keeper racks up SAVES on the results board (and challenge progress)</span></div>
+          <div class="help-row"><span class="help-key">CLEAR</span><span class="help-desc">After a grab they distribute short to a free teammate — press them early</span></div>
+          <div class="help-row"><span class="help-key">ZONE</span><span class="help-desc">AI strikers stay out of the six-yard box; chip or work the angle instead</span></div>
+        </div>
       </div>
-      <div class="help-footer">First to the most goals when the clock hits zero wins.</div>
+      <div class="help-footer">Context-sensitive controls: the same button Passes or Switches, Shoots or Tackles, depending on who has the ball.</div>
       <div class="row-btns">
         <button id="btn-how-back" class="big-btn secondary">BACK</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Settings -->
+  <div id="settings-overlay" class="overlay hidden">
+    <div class="panel">
+      <div class="title-xl" style="font-size:clamp(28px,6.5vmin,50px)"><span class="t1">GAME</span> <span class="t2">SETTINGS</span></div>
+      <div class="help-sections settings-grid">
+        <div class="help-section" data-settings="audio">
+          <div class="help-section-title">AUDIO</div>
+          <div class="help-row"><span class="help-key">MASTER</span>
+            <span class="option-row vol-row" role="group" aria-label="Master volume">
+              <button class="option-btn" id="vol-master-0" type="button">OFF</button>
+              <button class="option-btn" id="vol-master-50" type="button">50%</button>
+              <button class="option-btn" id="vol-master-100" type="button">100%</button>
+            </span>
+          </div>
+          <div class="help-row"><span class="help-key">SFX</span>
+            <span class="option-row vol-row" role="group" aria-label="Effects volume">
+              <button class="option-btn" id="vol-sfx-0" type="button">OFF</button>
+              <button class="option-btn" id="vol-sfx-50" type="button">50%</button>
+              <button class="option-btn" id="vol-sfx-100" type="button">100%</button>
+            </span>
+          </div>
+          <div class="help-row"><span class="help-key">CROWD</span>
+            <span class="option-row vol-row" role="group" aria-label="Crowd volume">
+              <button class="option-btn" id="vol-crowd-0" type="button">OFF</button>
+              <button class="option-btn" id="vol-crowd-50" type="button">50%</button>
+              <button class="option-btn" id="vol-crowd-100" type="button">100%</button>
+            </span>
+          </div>
+        </div>
+        <div class="help-section" data-settings="display">
+          <div class="help-section-title">DISPLAY</div>
+          <div class="help-row"><span class="help-key">TIME</span>
+            <span class="option-row" role="group" aria-label="Time of day">
+              <button class="option-btn" id="settings-day" type="button">☀ DAY</button>
+              <button class="option-btn" id="settings-night" type="button">🌙 NIGHT</button>
+            </span>
+          </div>
+          <div class="help-row"><span class="help-key">VIEW</span>
+            <span class="option-row" role="group" aria-label="Game view">
+              <button class="option-btn" id="settings-portrait" type="button">PORTRAIT</button>
+              <button class="option-btn" id="settings-landscape" type="button">LANDSCAPE</button>
+            </span>
+          </div>
+        </div>
+        <div class="help-section" data-settings="accessibility">
+          <div class="help-section-title">ACCESSIBILITY</div>
+          <div class="help-row"><span class="help-key">MOTION</span>
+            <span class="option-row" role="group" aria-label="Reduced motion">
+              <button class="option-btn" id="rm-on" type="button">REDUCED</button>
+              <button class="option-btn" id="rm-off" type="button">FULL</button>
+            </span>
+          </div>
+          <div class="help-row"><span class="help-desc">Reduced motion disables camera shake, zoom pulses and screen entrance animations</span></div>
+        </div>
+        <div class="help-section" data-settings="data">
+          <div class="help-section-title">DATA</div>
+          <div class="help-row"><span class="help-desc">Reset clears career stats, coins, unlocks, match history, active challenges and any Street Cup run. Display, audio, difficulty and court choices stay.</span></div>
+          <div class="help-row"><span class="help-key">WIPE</span>
+            <span class="option-row">
+              <button class="option-btn danger" id="btn-settings-reset" type="button">RESET PROGRESS</button>
+            </span>
+          </div>
+        </div>
+      </div>
+      <div class="row-btns">
+        <button id="btn-settings-back" class="big-btn secondary">BACK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- About / legal / credits / bug report -->
+  <div id="about-overlay" class="overlay hidden">
+    <div class="panel">
+      <div class="title-xl" style="font-size:clamp(28px,6.5vmin,50px)"><span class="t1">ABOUT</span> <span class="t2">BLACKOUT</span></div>
+      <div class="help-sections about-grid">
+        <div class="help-section" data-about="about">
+          <div class="help-section-title">ABOUT</div>
+          <div class="help-row"><span class="help-key">GAME</span><span class="help-desc">BLACKOUT is a 3V3 street football game with goalkeepers — quick matches, focused challenges and a four-team Street Cup.</span></div>
+          <div class="help-row"><span class="help-key">VER</span><span class="help-desc">Version <b id="about-version">1.0.0</b></span></div>
+          <div class="help-row"><span class="help-key">RUN</span><span class="help-desc">Plays fully offline after the first load. No account, no server, no purchases.</span></div>
+        </div>
+        <div class="help-section" data-about="credits">
+          <div class="help-section-title">CREDITS</div>
+          <div class="help-row"><span class="help-key">3D</span><span class="help-desc">Three.js (MIT License) by the three.js authors</span></div>
+          <div class="help-row"><span class="help-key">AUDIO</span><span class="help-desc">Procedural Web Audio — no samples or external music packs</span></div>
+          <div class="help-row"><span class="help-key">ART</span><span class="help-desc">Court art, murals and UI treatment created for this project</span></div>
+          <div class="help-row"><span class="help-key">CODE</span><span class="help-desc">Gameplay, AI, progression and UI written for BLACKOUT</span></div>
+        </div>
+        <div class="help-divider"></div>
+        <div class="help-section" data-about="privacy">
+          <div class="help-section-title">PRIVACY</div>
+          <div class="help-row"><span class="help-key">LOCAL</span><span class="help-desc">Progress, settings and preferences are stored only in this browser’s localStorage</span></div>
+          <div class="help-row"><span class="help-key">NET</span><span class="help-desc">No accounts, no analytics, no ads, no third-party trackers, no backend</span></div>
+          <div class="help-row"><span class="help-key">CLEAR</span><span class="help-desc">Reset Progress or clearing site data removes everything this game saved</span></div>
+        </div>
+        <div class="help-section" data-about="terms">
+          <div class="help-section-title">TERMS</div>
+          <div class="help-row"><span class="help-key">AS-IS</span><span class="help-desc">The game is provided as-is for personal play, without warranty</span></div>
+          <div class="help-row"><span class="help-key">SAVE</span><span class="help-desc">Local saves can be lost if you clear browser data or switch devices</span></div>
+          <div class="help-row"><span class="help-key">USE</span><span class="help-desc">Play fair, have fun, and do not use the game for unlawful purposes</span></div>
+        </div>
+        <div class="help-divider"></div>
+        <div class="help-section" data-about="report">
+          <div class="help-section-title">BUG REPORT</div>
+          <div class="help-row"><span class="help-desc">Builds a plain-text report with version, browser and storage state. Nothing is uploaded — copy it and send it however you like.</span></div>
+          <textarea id="bug-report-box" class="bug-report-box" rows="6" readonly aria-label="Bug report text"></textarea>
+          <div class="option-row" style="margin-top:10px; justify-content:center;">
+            <button class="option-btn" id="btn-bug-fill" type="button">FILL REPORT</button>
+            <button class="option-btn" id="btn-bug-copy" type="button">COPY</button>
+          </div>
+          <div id="bug-copy-status" class="kit-note" aria-live="polite"></div>
+        </div>
+      </div>
+      <div class="row-btns">
+        <button id="btn-about-back" class="big-btn secondary">BACK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Loading / fatal error -->
+  <div id="loading-overlay" class="overlay">
+    <div class="panel loading-panel">
+      <div class="title-xl"><span class="t1">BLACK</span><span class="t2">OUT</span></div>
+      <div class="street-tag" id="loading-tag">LOADING THE PITCH…</div>
+      <div id="loading-error" class="loading-error hidden" role="alert"></div>
+      <button id="btn-loading-retry" class="big-btn gold hidden" type="button">RELOAD</button>
     </div>
   </div>
 
@@ -353,6 +500,30 @@
   </div>
 
   <script src="lib/three.min.js"></script>
+  <script>
+    // Single early version stamp so a failed boot still shows a real number.
+    window.BLOCKOUT_VERSION = '1.0.0';
+    window.addEventListener('error', function (e) {
+      try {
+        var box = document.getElementById('loading-error');
+        var tag = document.getElementById('loading-tag');
+        var retry = document.getElementById('btn-loading-retry');
+        var load = document.getElementById('loading-overlay');
+        if (load && load.classList.contains('hidden')) return; // already booted
+        if (tag) tag.classList.add('hidden');
+        if (box) {
+          box.classList.remove('hidden');
+          box.textContent = 'COULD NOT START THE MATCH — ' + (e && e.message ? e.message : 'unknown error') +
+            '. Try reloading. If it keeps happening, open ABOUT → BUG REPORT.';
+        }
+        if (retry) retry.classList.remove('hidden');
+      } catch (err) { /* never mask the original error */ }
+    });
+    document.addEventListener('DOMContentLoaded', function () {
+      var b = document.getElementById('btn-loading-retry');
+      if (b) b.addEventListener('click', function () { location.reload(); });
+    });
+  </script>
   <script src="js/config.js"></script>
   <script src="js/difficulty.js"></script>
   <script src="js/util.js"></script>

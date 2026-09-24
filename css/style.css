@@ -458,6 +458,43 @@ html, body {
   background-position: center, center;
   background-repeat: no-repeat, no-repeat;
 }
+/* SETTINGS -> quiet concrete + asphalt (config lives off-pitch) */
+#settings-overlay {
+  background-image: linear-gradient(180deg, rgba(14, 13, 12, 0.78), rgba(14, 13, 12, 0.92)), url("../art/asphalt.jpg");
+  background-size: cover, cover;
+  background-position: center, center;
+  background-repeat: no-repeat, no-repeat;
+}
+/* ABOUT -> posters wall, dimmed so legal/credits read cleanly */
+#about-overlay {
+  background-image: linear-gradient(180deg, rgba(14, 13, 12, 0.78), rgba(14, 13, 12, 0.92)), url("../art/posters.jpg");
+  background-size: cover, cover;
+  background-position: center, center;
+  background-repeat: no-repeat, no-repeat;
+}
+/* LOADING -> solid ink so a slow first paint never flashes white */
+#loading-overlay {
+  background: var(--ink);
+  z-index: 80;
+}
+#loading-overlay.hidden { display: none !important; }
+.loading-panel { text-align: center; }
+.loading-error {
+  margin-top: clamp(14px, 3vmin, 22px);
+  max-width: 420px;
+  margin-left: auto;
+  margin-right: auto;
+  font-family: Arial, "Helvetica Neue", sans-serif;
+  font-size: clamp(13px, 2.6vmin, 16px);
+  line-height: 1.45;
+  letter-spacing: 0.04em;
+  color: #ffb4a8;
+  text-align: center;
+}
+.loading-error.hidden { display: none !important; }
+#btn-loading-retry { margin-top: 22px; }
+#btn-loading-retry.hidden { display: none !important; }
+
 .profile-coins {
   display: flex;
   justify-content: center;
@@ -1421,6 +1458,108 @@ html, body {
   color: rgba(230, 217, 180, 0.6);
 }
 
+/* menu secondary row + version stamp */
+.menu-sub {
+  margin-top: clamp(6px, 1.4vmin, 12px);
+  gap: 12px;
+}
+.menu-sub .big-btn {
+  margin-top: 12px;
+  min-width: 160px;
+  padding: 12px 22px;
+  font-size: clamp(13px, 3vmin, 17px);
+}
+.menu-version {
+  margin-top: clamp(14px, 3vmin, 22px);
+  font-size: 10px;
+  letter-spacing: 0.28em;
+  color: rgba(230, 217, 180, 0.38);
+  font-family: var(--font-display);
+}
+
+/* SETTINGS / ABOUT panels reuse the help-poster language */
+.settings-grid,
+.about-grid {
+  margin-top: clamp(14px, 2.8vmin, 24px);
+}
+.settings-grid .help-section,
+.about-grid .help-section {
+  max-width: 440px;
+}
+.vol-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.vol-row .option-btn,
+.settings-grid .option-row .option-btn,
+.about-grid .option-btn {
+  min-width: 0;
+  padding: 7px 12px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+}
+.settings-grid .help-row {
+  flex-wrap: wrap;
+  align-items: center;
+}
+.option-btn.danger {
+  background: linear-gradient(180deg, #8a3428, #6b241c);
+  border-color: rgba(30, 8, 4, 0.9);
+  color: #ffe8e2;
+}
+.option-btn.danger.selected {
+  border-color: var(--pink);
+  background: linear-gradient(180deg, #c44838, #8a3428);
+  color: #fff;
+}
+.bug-report-box {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  min-height: 96px;
+  resize: vertical;
+  padding: 10px 12px;
+  border-radius: 3px;
+  border: 1px solid rgba(20, 20, 19, 0.55);
+  background: rgba(236, 232, 219, 0.96);
+  color: #1d1d1a;
+  font-family: ui-monospace, Consolas, "Courier New", monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  letter-spacing: 0;
+  user-select: text;
+  -webkit-user-select: text;
+  touch-action: auto;
+}
+
+/* reduced motion: real class toggled by Settings + OS preference */
+body.reduced-motion .overlay:not(.hidden) .panel,
+body.reduced-motion .banner {
+  animation: none !important;
+}
+body.reduced-motion #announce .banner {
+  transition: none;
+  transform: none;
+}
+body.reduced-motion .rot-glyph {
+  animation: none;
+}
+body.reduced-motion #scoreboard .clock.low {
+  animation: none;
+}
+body.reduced-motion #special-btn.ready {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .overlay:not(.hidden) .panel { animation: none; }
+  #announce .banner { transition: none; transform: none; }
+  .rot-glyph { animation: none; }
+  #scoreboard .clock.low { animation: none; }
+  #special-btn.ready { animation: none; }
+}
+
 /* stat rows in character cards */
 .stat-row {
   text-align: left;
@@ -1548,9 +1687,5 @@ html, body {
   :root { --btn-size: clamp(60px, 10vmin, 80px); }
   #joystick-zone { width: 32vmin; height: 32vmin; max-width: 200px; max-height: 200px; }
   .big-btn { min-width: 260px; padding: 18px 44px; }
-}
-
-/* respect reduced-motion: keep the art, drop the entrance */
-@media (prefers-reduced-motion: reduce) {
-  .overlay:not(.hidden) .panel { animation: none; }
+  .menu-sub .big-btn { min-width: 180px; }
 }

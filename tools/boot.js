@@ -135,7 +135,8 @@ Object.keys(ids).forEach(make);
 
 // hidden state from the real markup, so overlay checks mean something
 var hiddenInMarkup = {};
-html.replace(/<div id="([^"]+)" class="([^"]*)"/g, function (m, id, cls) { if (/hidden/.test(cls)) hiddenInMarkup[id] = 1; return m; });
+html.replace(/<(?:div|button|span|p|ul|table)\s+id="([^"]+)"[^>]*class="([^"]*)"/g,
+  function (m, id, cls) { if (/\bhidden\b/.test(cls)) hiddenInMarkup[id] = 1; return m; });
 Object.keys(hiddenInMarkup).forEach(function (id) { if (elements[id]) elements[id].classList.add('hidden'); });
 
 // count real fullscreen requests on the document element
@@ -1186,6 +1187,165 @@ section('9. game modes + tournament (Phase 3D: once-only fixtures, mode-aware re
   T.reset();
   LG.eventBus.emit('quitRequested');
   check(window.LGMain.getState() === 'menu', 'modes section returns to the menu');
+})();
+
+// --- Phase 4: settings / about / how / volumes / reset / loading ---
+section('10. Phase 4 app polish (settings, about, how, volumes, data reset)');
+(function () {
+  check(window.LGMain.getState() === 'menu' && vis('menu-overlay'), 'starts on the main menu');
+  check(!vis('settings-overlay') && !vis('about-overlay') && !vis('how-overlay'),
+    'settings / about / how start closed');
+  check(elements['loading-overlay'].classList.contains('hidden'),
+    'loading overlay is hidden after a successful boot');
+
+  // HOW TO PLAY: redesigned sections + back restores the menu
+  elements['btn-how'].fire('click');
+  check(vis('how-overlay') && window.LGMain.getState() === 'how', 'HOW TO PLAY opens', window.LGMain.getState());
+  var howIds = ['controls-desktop', 'controls-mobile', 'gameplay', 'goalkeepers'];
+  var howHtml = html;
+  var missingHow = howIds.filter(function (k) { return howHtml.indexOf('data-how="' + k + '"') < 0; });
+  check(missingHow.length === 0, 'how overlay ships the four redesigned sections',
+    missingHow.join(','));
+  check(howHtml.indexOf('MOVEMENT') < 0 && howHtml.indexOf('MAGICAL SPELLS') < 0,
+    'stale how-to-play wording is gone');
+  elements['btn-how-back'].fire('click');
+  check(vis('menu-overlay') && !vis('how-overlay') && window.LGMain.getState() === 'menu',
+    'HOW BACK returns to the main menu', window.LGMain.getState());
+
+  // SETTINGS: open / close / audio buckets / reduced motion / display
+  elements['btn-settings'].fire('click');
+  check(vis('settings-overlay') && !vis('menu-overlay') && window.LGMain.getState() === 'settings',
+    'SETTINGS opens from the main menu', window.LGMain.getState());
+
+  var s = LG.Settings.snapshot();
+  check(s.volMaster === 0.55 && s.volSfx === 1 && s.volCrowd === 1 && s.reducedMotion === false,
+    'default audio + motion snapshot is sane', JSON.stringify(s));
+  check(elements['vol-master-50'].classList.contains('selected'),
+    'master 50% bucket is selected by default', LG.Settings.volMaster());
+
+  elements['vol-master-0'].fire('click');
+  check(LG.Settings.volMaster() === 0, 'master OFF writes 0', LG.Settings.volMaster());
+  elements['vol-master-100'].fire('click');
+  check(LG.Settings.volMaster() === 1, 'master 100% writes 1', LG.Settings.volMaster());
+  elements['vol-sfx-0'].fire('click');
+  check(LG.Settings.volSfx() === 0, 'sfx OFF writes 0', LG.Settings.volSfx());
+  elements['vol-sfx-50'].fire('click');
+  check(LG.Settings.volSfx() === 0.5, 'sfx 50% writes 0.5', LG.Settings.volSfx());
+  elements['vol-crowd-0'].fire('click');
+  check(LG.Settings.volCrowd() === 0, 'crowd OFF writes 0', LG.Settings.volCrowd());
+  elements['vol-crowd-100'].fire('click');
+  check(LG.Settings.volCrowd() === 1, 'crowd 100% writes 1', LG.Settings.volCrowd());
+  check(elements['vol-crowd-100'].classList.contains('selected') &&
+    !elements['vol-crowd-0'].classList.contains('selected'),
+    'crowd bucket selected state tracks the store');
+
+  // volumes persist across a settings reload (localStorage round-trip)
+  LG.Settings.setVolMaster(0);
+  (function () {
+    var raw = localStorage.getItem('blockout.settings.v1');
+    check(!!raw && raw.indexOf('"volMaster":0') >= 0, 'volume changes persist to localStorage', raw);
+  })();
+  LG.Settings.setVolMaster(0.55);
+  LG.Settings.setVolSfx(1);
+  LG.Settings.setVolCrowd(1);
+
+  // reduced motion is real: body class + settings flag
+  check(!document.body.classList.contains('reduced-motion'), 'reduced-motion starts off on body');
+  elements['rm-on'].fire('click');
+  check(LG.Settings.reducedMotion() === true && document.body.classList.contains('reduced-motion'),
+    'REDUCED motion sets the store + body class',
+    LG.Settings.reducedMotion() + '/' + document.body.classList.contains('reduced-motion'));
+  check(elements['rm-on'].classList.contains('selected') && !elements['rm-off'].classList.contains('selected'),
+    'REDUCED bucket shows selected');
+  elements['rm-off'].fire('click');
+  check(LG.Settings.reducedMotion() === false && !document.body.classList.contains('reduced-motion'),
+    'FULL motion clears the store + body class');
+
+  // display options reach the same stores as match setup
+  elements['settings-night'].fire('click');
+  check(LG.Settings.timeOfDay() === 'night' && elements['settings-night'].classList.contains('selected'),
+    'settings NIGHT writes timeOfDay', LG.Settings.timeOfDay());
+  elements['settings-day'].fire('click');
+  check(LG.Settings.timeOfDay() === 'day', 'settings DAY writes timeOfDay', LG.Settings.timeOfDay());
+  elements['settings-portrait'].fire('click');
+  check(LG.Settings.view() === 'portrait', 'settings PORTRAIT writes view', LG.Settings.view());
+  elements['settings-landscape'].fire('click');
+  check(LG.Settings.view() === 'landscape', 'settings LANDSCAPE writes view', LG.Settings.view());
+
+  // DATA reset: two-step, clears progression + tournament, keeps prefs
+  var P = LG.Progression, T = LG.Tournament, D = LG.Difficulty, C = LG.Courts;
+  LG.Settings.setVolMaster(0.25);
+  D.set('hard');
+  if (C.set) C.set('turf');
+  var coinsBefore = P.coins();
+  P.addCoins(120);
+  T.start('blaze');
+  var resetBtn = elements['btn-settings-reset'];
+  resetBtn.fire('click');
+  check(resetBtn.textContent === 'CONFIRM WIPE?' && resetBtn.classList.contains('selected'),
+    'first RESET tap arms confirm', resetBtn.textContent);
+  check(P.coins() === coinsBefore + 120 && T.status() === 'active', 'armed tap does not wipe yet',
+    JSON.stringify({ coins: P.coins(), expect: coinsBefore + 120, t: T.status() }));
+  resetBtn.fire('click');
+  check(P.coins() === 0 && (P.career().matches || 0) === 0, 'second tap clears career + coins',
+    JSON.stringify({ coins: P.coins(), m: P.career().matches }));
+  check(T.status() === 'idle', 'second tap clears any Street Cup run', T.status());
+  check(LG.Settings.volMaster() === 0.25 && LG.Settings.timeOfDay() === 'day',
+    'reset preserves audio + display settings', JSON.stringify(LG.Settings.snapshot()));
+  check(D.get() === 'hard', 'reset preserves difficulty', D.get());
+  check(resetBtn.textContent === 'RESET PROGRESS', 'reset button returns to idle label', resetBtn.textContent);
+  D.set('medium');
+  LG.Settings.setVolMaster(0.55);
+
+  // ABOUT: open, version stamp, sections, bug report, back
+  elements['btn-settings-back'].fire('click');
+  check(vis('menu-overlay') && !vis('settings-overlay') && window.LGMain.getState() === 'menu',
+    'SETTINGS BACK returns to the main menu before ABOUT', window.LGMain.getState());
+  elements['btn-about'].fire('click');
+  check(vis('about-overlay') && !vis('menu-overlay') && window.LGMain.getState() === 'about',
+    'ABOUT opens from the main menu', window.LGMain.getState());
+  check(elements['about-version'].textContent === LG.Config.version,
+    'about version matches LG.Config.version',
+    elements['about-version'].textContent + ' vs ' + LG.Config.version);
+  check(elements['menu-version'].textContent === 'v' + LG.Config.version,
+    'menu version matches LG.Config.version', elements['menu-version'].textContent);
+  var aboutHtml = html;
+  var aboutKeys = ['data-about="about"', 'data-about="credits"', 'data-about="privacy"',
+    'data-about="terms"', 'data-about="report"'];
+  var missingAbout = aboutKeys.filter(function (k) { return aboutHtml.indexOf(k) < 0; });
+  check(missingAbout.length === 0, 'about overlay ships credits/privacy/terms/report',
+    missingAbout.join(','));
+  elements['btn-bug-fill'].fire('click');
+  var box = elements['bug-report-box'];
+  check(!!box.value && box.value.indexOf('version: ' + LG.Config.version) >= 0 &&
+    box.value.indexOf('storage:') >= 0,
+    'FILL REPORT builds a plain-text report', String(box.value).slice(0, 80));
+  elements['btn-about-back'].fire('click');
+  check(vis('menu-overlay') && !vis('about-overlay') && window.LGMain.getState() === 'menu',
+    'ABOUT BACK returns to the main menu', window.LGMain.getState());
+
+  // settings/about only open from the menu (not mid-match)
+  window.LGMain.getState() === 'menu' && (function () {
+    LG.eventBus.emit('settingsRequested');
+    check(vis('settings-overlay'), 'settings openable while on menu');
+    LG.eventBus.emit('settingsBackRequested');
+    check(vis('menu-overlay') && !vis('settings-overlay'), 'settings back lands on menu');
+  })();
+
+  // quit must close settings/about (armed flags too)
+  elements['btn-settings'].fire('click');
+  elements['btn-settings-reset'].fire('click');
+  LG.eventBus.emit('quitRequested');
+  check(!vis('settings-overlay') && vis('menu-overlay') && window.LGMain.getState() === 'menu',
+    'quit from armed settings returns a clean menu', window.LGMain.getState());
+  check(elements['btn-settings-reset'].textContent === 'RESET PROGRESS',
+    'quit disarms the wipe button', elements['btn-settings-reset'].textContent);
+
+  // loading + error path: retry button exists, error box starts hidden
+  check(elements['btn-loading-retry'] && elements['btn-loading-retry'].classList.contains('hidden'),
+    'loading retry starts hidden');
+  check(elements['loading-error'] && elements['loading-error'].classList.contains('hidden'),
+    'loading error starts hidden');
 })();
 
 console.log('\n' + (FAIL === 0 ? 'BOOT + MENU FLOW PASSED' : 'BOOT + MENU FLOW FAILED (' + FAIL + ')'));

@@ -8,9 +8,10 @@
   var renderer, scene, camera, camCtrl;
   var match = null;
   var arenaObj = null;
-  var UIState = 'menu';          // menu | mode | challengePick | tournament | diff | select | style | court | setup | how | profile | challenges | match | paused | result
+  var UIState = 'menu';          // menu | mode | challengePick | tournament | diff | select | style | court | setup | how | settings | about | profile | challenges | match | paused | result
   var howFromPause = false;      // track if how-to-play was opened from pause
   var profileResetArmed = false; // two-step confirm on RESET PROFILE
+  var settingsResetArmed = false; // two-step confirm on RESET PROGRESS
   var quitting = false;          // mid-quit endMatch must not open the result board
   var resultActionLock = false;  // mode-aware result buttons: one action per result
   var selectedMode = 'quick_match';
@@ -30,8 +31,26 @@
   })();
 
   // ---------------- init ----------------
+  function hideLoading() {
+    var el = document.getElementById('loading-overlay');
+    if (el) el.classList.add('hidden');
+  }
+
   function init() {
-    renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('game-canvas'), antialias: true });
+    try {
+      renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('game-canvas'), antialias: true });
+    } catch (e) {
+      var box = document.getElementById('loading-error');
+      var tag = document.getElementById('loading-tag');
+      var retry = document.getElementById('btn-loading-retry');
+      if (tag) tag.classList.add('hidden');
+      if (box) {
+        box.classList.remove('hidden');
+        box.textContent = '3D GRAPHICS ARE UNAVAILABLE IN THIS BROWSER — WEBGL FAILED TO START.';
+      }
+      if (retry) retry.classList.remove('hidden');
+      return;
+    }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
@@ -85,6 +104,9 @@
     bindEvents();
     bindSettingsUI();
     refreshSettingsUI();
+    refreshSettingsScreen();
+    applyReducedMotionClass();
+    if (LG.Audio && LG.Audio.applyVolumes) LG.Audio.applyVolumes();
     if (LG.Challenges && LG.Challenges.bind) LG.Challenges.bind();
     // keep the focus chip in step with live stats (event-driven, never per frame)
     ['goal', 'pass', 'shoot', 'tackleWin', 'keeperSave', 'perfectPass'].forEach(function (ev) {
@@ -92,6 +114,7 @@
     });
     updateLayoutClass();
     showMenu(true);
+    hideLoading();
     requestAnimationFrame(loop);
   }
 
@@ -338,8 +361,35 @@
 
     bus.on('howRequested', function () {
       howFromPause = false;
+      UIState = 'how';
       showOverlay('menu-overlay', false);
       showOverlay('how-overlay', true);
+    });
+    bus.on('settingsRequested', function () {
+      if (UIState !== 'menu') return;
+      UIState = 'settings';
+      settingsResetArmed = false;
+      refreshSettingsScreen();
+      showOverlay('menu-overlay', false);
+      showOverlay('settings-overlay', true);
+    });
+    bus.on('settingsBackRequested', function () {
+      UIState = 'menu';
+      settingsResetArmed = false;
+      showOverlay('settings-overlay', false);
+      showOverlay('menu-overlay', true);
+    });
+    bus.on('aboutRequested', function () {
+      if (UIState !== 'menu') return;
+      UIState = 'about';
+      refreshAboutUI();
+      showOverlay('menu-overlay', false);
+      showOverlay('about-overlay', true);
+    });
+    bus.on('aboutBackRequested', function () {
+      UIState = 'menu';
+      showOverlay('about-overlay', false);
+      showOverlay('menu-overlay', true);
     });
     bus.on('profileRequested', function () {
       UIState = 'profile';
@@ -356,11 +406,13 @@
       if (profileResetArmed) {
         profileResetArmed = false;
         if (LG.Progression && LG.Progression.reset) LG.Progression.reset();
+        if (LG.Tournament && LG.Tournament.reset) LG.Tournament.reset();
         LG.HUD.updateCoins();
         refreshProfileUI();
         refreshChallengesUI();
         var rb = document.getElementById('btn-profile-reset');
         if (rb) rb.textContent = 'RESET PROFILE';
+        LG.HUD.toast('PROFILE RESET');
       } else {
         profileResetArmed = true;
         var rb2 = document.getElementById('btn-profile-reset');
@@ -380,14 +432,17 @@
     });
     bus.on('pauseHowRequested', function () {
       howFromPause = true;
+      UIState = 'how';
       showOverlay('pause-overlay', false);
       showOverlay('how-overlay', true);
     });
     bus.on('howBackRequested', function () {
       showOverlay('how-overlay', false);
       if (howFromPause) {
+        UIState = 'paused';
         showOverlay('pause-overlay', true);
       } else {
+        UIState = 'menu';
         showOverlay('menu-overlay', true);
       }
       howFromPause = false;
@@ -494,6 +549,13 @@
       showOverlay('mode-overlay', false);
       showOverlay('challenge-pick-overlay', false);
       showOverlay('tournament-overlay', false);
+      showOverlay('settings-overlay', false);
+      showOverlay('about-overlay', false);
+      showOverlay('how-overlay', false);
+      howFromPause = false;
+      settingsResetArmed = false;
+      profileResetArmed = false;
+      refreshSettingsScreen();
       showMatchUI(false);
       showOverlay('menu-overlay', true);
       LG.Particles.clear();
@@ -605,6 +667,171 @@
     on('time-night', function () { setTimeOfDay('night'); });
     on('view-portrait', function () { setView('portrait'); });
     on('view-landscape', function () { setView('landscape'); });
+    // Settings screen (Phase 4) — same stores, separate controls
+    on('settings-day', function () { setTimeOfDay('day'); refreshSettingsScreen(); });
+    on('settings-night', function () { setTimeOfDay('night'); refreshSettingsScreen(); });
+    on('settings-portrait', function () { setView('portrait'); refreshSettingsScreen(); });
+    on('settings-landscape', function () { setView('landscape'); refreshSettingsScreen(); });
+    on('vol-master-0', function () { LG.Settings.setVolMaster(0); refreshSettingsScreen(); });
+    on('vol-master-50', function () { LG.Settings.setVolMaster(0.5); refreshSettingsScreen(); });
+    on('vol-master-100', function () { LG.Settings.setVolMaster(1); refreshSettingsScreen(); });
+    on('vol-sfx-0', function () { LG.Settings.setVolSfx(0); refreshSettingsScreen(); });
+    on('vol-sfx-50', function () { LG.Settings.setVolSfx(0.5); refreshSettingsScreen(); });
+    on('vol-sfx-100', function () { LG.Settings.setVolSfx(1); refreshSettingsScreen(); });
+    on('vol-crowd-0', function () { LG.Settings.setVolCrowd(0); refreshSettingsScreen(); });
+    on('vol-crowd-50', function () { LG.Settings.setVolCrowd(0.5); refreshSettingsScreen(); });
+    on('vol-crowd-100', function () { LG.Settings.setVolCrowd(1); refreshSettingsScreen(); });
+    on('rm-on', function () { setReducedMotion(true); refreshSettingsScreen(); });
+    on('rm-off', function () { setReducedMotion(false); refreshSettingsScreen(); });
+    on('btn-settings-reset', function () { requestSettingsReset(); });
+    on('btn-bug-fill', function () { fillBugReport(); });
+    on('btn-bug-copy', function () { copyBugReport(); });
+    // stamp versions from the single source
+    var ver = (LG.Config && LG.Config.version) || '0.0.0';
+    var mv = document.getElementById('menu-version');
+    if (mv) mv.textContent = 'v' + ver;
+    var av = document.getElementById('about-version');
+    if (av) av.textContent = ver;
+    applyReducedMotionClass();
+    LG.Audio.applyVolumes();
+  }
+
+  function setReducedMotion(on) {
+    LG.Settings.setReducedMotion(on);
+    applyReducedMotionClass();
+    if (camCtrl) { camCtrl.shakeT = 0; camCtrl.shakeAmp = 0; camCtrl.zoomPulse = 0; }
+  }
+
+  function applyReducedMotionClass() {
+    var on = LG.Settings.reducedMotion();
+    document.body.classList.toggle('reduced-motion', on);
+  }
+
+  function markSelected(id, on) {
+    var b = document.getElementById(id);
+    if (b) b.classList.toggle('selected', !!on);
+  }
+
+  function volBucket(v) {
+    if (v <= 0.01) return 0;
+    if (v <= 0.6) return 50;
+    return 100;
+  }
+
+  function refreshSettingsScreen() {
+    var tod = LG.Settings.timeOfDay();
+    var view = LG.Settings.view();
+    markSelected('settings-day', tod === 'day');
+    markSelected('settings-night', tod === 'night');
+    markSelected('settings-portrait', view === 'portrait');
+    markSelected('settings-landscape', view === 'landscape');
+    var mb = volBucket(LG.Settings.volMaster());
+    var sb = volBucket(LG.Settings.volSfx());
+    var cb = volBucket(LG.Settings.volCrowd());
+    markSelected('vol-master-0', mb === 0);
+    markSelected('vol-master-50', mb === 50);
+    markSelected('vol-master-100', mb === 100);
+    markSelected('vol-sfx-0', sb === 0);
+    markSelected('vol-sfx-50', sb === 50);
+    markSelected('vol-sfx-100', sb === 100);
+    markSelected('vol-crowd-0', cb === 0);
+    markSelected('vol-crowd-50', cb === 50);
+    markSelected('vol-crowd-100', cb === 100);
+    markSelected('rm-on', LG.Settings.reducedMotion());
+    markSelected('rm-off', !LG.Settings.reducedMotion());
+    var rb = document.getElementById('btn-settings-reset');
+    if (rb) {
+      rb.textContent = settingsResetArmed ? 'CONFIRM WIPE?' : 'RESET PROGRESS';
+      rb.classList.toggle('selected', settingsResetArmed);
+    }
+    refreshSettingsUI();
+  }
+
+  // Clears profile / challenges / tournament; keeps display, audio, difficulty, court.
+  function requestSettingsReset() {
+    if (!settingsResetArmed) {
+      settingsResetArmed = true;
+      refreshSettingsScreen();
+      return;
+    }
+    settingsResetArmed = false;
+    if (LG.Progression && LG.Progression.reset) LG.Progression.reset();
+    if (LG.Tournament && LG.Tournament.reset) LG.Tournament.reset();
+    if (LG.Modes && LG.Modes.reset) LG.Modes.reset();
+    selectedChallengeFocus = null;
+    selectedMode = 'quick_match';
+    LG.HUD.updateCoins();
+    refreshProfileUI();
+    refreshChallengesUI();
+    refreshSettingsScreen();
+    LG.HUD.toast('PROGRESS RESET');
+  }
+
+  function fillBugReport() {
+    var box = document.getElementById('bug-report-box');
+    if (!box) return;
+    var ver = (LG.Config && LG.Config.version) || '0.0.0';
+    var lines = [];
+    lines.push('BLACKOUT bug report');
+    lines.push('version: ' + ver);
+    lines.push('time: ' + new Date().toISOString());
+    lines.push('state: ' + UIState);
+    lines.push('mode: ' + ((LG.Modes && LG.Modes.id) ? LG.Modes.id() : '-'));
+    lines.push('viewport: ' + window.innerWidth + 'x' + window.innerHeight);
+    lines.push('mobile: ' + isMobile);
+    lines.push('view: ' + LG.Settings.view() + '  tod: ' + LG.Settings.timeOfDay());
+    lines.push('reducedMotion: ' + LG.Settings.reducedMotion());
+    lines.push('difficulty: ' + ((LG.Difficulty && LG.Difficulty.get) ? LG.Difficulty.get() : '-'));
+    lines.push('court: ' + ((LG.Courts && LG.Courts.selected) ? LG.Courts.selected() : '-'));
+    lines.push('coins: ' + ((LG.Progression && LG.Progression.coins) ? LG.Progression.coins() : '-'));
+    lines.push('matches: ' + ((LG.Progression && LG.Progression.career) ? (LG.Progression.career().matches || 0) : '-'));
+    lines.push('tournament: ' + ((LG.Tournament && LG.Tournament.status) ? LG.Tournament.status() : '-'));
+    lines.push('ua: ' + (navigator.userAgent || 'unknown'));
+    lines.push('storage: ' + (function () {
+      try {
+        localStorage.setItem('__bo_probe__', '1');
+        localStorage.removeItem('__bo_probe__');
+        return 'ok';
+      } catch (e) { return 'blocked'; }
+    })());
+    lines.push('---');
+    lines.push('What happened?');
+    lines.push('Steps to reproduce:');
+    box.value = lines.join('\n');
+    var st = document.getElementById('bug-copy-status');
+    if (st) st.textContent = 'REPORT READY — USE COPY';
+  }
+
+  function copyBugReport() {
+    var box = document.getElementById('bug-report-box');
+    var st = document.getElementById('bug-copy-status');
+    if (!box) return;
+    if (!box.value) fillBugReport();
+    function done(ok) { if (st) st.textContent = ok ? 'COPIED TO CLIPBOARD' : 'SELECT ALL AND COPY MANUALLY'; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(box.value).then(function () { done(true); }, function () { fallbackCopy(box, done); });
+    } else {
+      fallbackCopy(box, done);
+    }
+  }
+
+  function fallbackCopy(box, done) {
+    try {
+      box.focus();
+      box.select();
+      var ok = document.execCommand && document.execCommand('copy');
+      done(!!ok);
+    } catch (e) { done(false); }
+  }
+
+  function refreshAboutUI() {
+    var ver = (LG.Config && LG.Config.version) || '0.0.0';
+    var av = document.getElementById('about-version');
+    if (av) av.textContent = ver;
+    var box = document.getElementById('bug-report-box');
+    if (box && !box.value) fillBugReport();
+    var st = document.getElementById('bug-copy-status');
+    if (st) st.textContent = '';
   }
 
   function setTimeOfDay(m) {
@@ -1168,7 +1395,7 @@
     document.getElementById('scoreboard').classList.toggle('hidden', !on);
     document.getElementById('pause-btn').classList.toggle('hidden', !on);
     document.getElementById('coin-chip').classList.toggle('hidden', false);
-    var overlays = ['menu-overlay', 'mode-overlay', 'challenge-pick-overlay', 'tournament-overlay', 'diff-overlay', 'select-overlay', 'style-overlay', 'court-overlay', 'setup-overlay', 'how-overlay', 'profile-overlay', 'challenges-overlay', 'pause-overlay', 'result-overlay'];
+    var overlays = ['menu-overlay', 'mode-overlay', 'challenge-pick-overlay', 'tournament-overlay', 'diff-overlay', 'select-overlay', 'style-overlay', 'court-overlay', 'setup-overlay', 'how-overlay', 'settings-overlay', 'about-overlay', 'profile-overlay', 'challenges-overlay', 'pause-overlay', 'result-overlay'];
     for (var i = 0; i < overlays.length; i++) document.getElementById(overlays[i]).classList.add('hidden');
   }
 

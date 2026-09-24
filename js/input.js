@@ -44,7 +44,16 @@ LG.Input = (function () {
     return null;
   }
 
+  // bug-report / any focused field must keep typing, not trigger match keys
+  function isTypingTarget(e) {
+    var t = e.target;
+    if (!t || !t.tagName) return false;
+    var tag = String(t.tagName).toLowerCase();
+    return tag === 'textarea' || tag === 'input' || !!t.isContentEditable;
+  }
+
   function onKeyDown(e) {
+    if (isTypingTarget(e)) return;
     var k = keyMap(e.code);
     if (!k) return;
     if (!enabled) return; // menus/transitions: keys fall through to native behavior
@@ -56,6 +65,7 @@ LG.Input = (function () {
     if (!keys[e.code]) { keys[e.code] = true; }
   }
   function onKeyUp(e) {
+    if (isTypingTarget(e)) return;
     var k = keyMap(e.code);
     if (!k) return;
     setBool(k, false);

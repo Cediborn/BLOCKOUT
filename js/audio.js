@@ -1,13 +1,28 @@
 // ============================================================
 // AUDIO — fully procedural WebAudio. No samples, no APIs.
+// Master -> destination; SFX + crowd ride separate gains so
+// Settings can mute each channel independently.
 // ============================================================
 var LG = window.LG = window.LG || {};
 
 LG.Audio = (function () {
-  var ctx = null, master = null, crowdGain = null, enabled = true;
+  var ctx = null, master = null, sfxGain = null, crowdGain = null;
+  var enabled = true;
   var noiseBuf = null;
   var crowdActive = false;
+  var crowdDensity = 0;
   var UI = LG.Util;
+  var DEF_MASTER = 0.55;
+
+  function volMaster() {
+    return (LG.Settings && LG.Settings.volMaster) ? LG.Settings.volMaster() : DEF_MASTER;
+  }
+  function volSfx() {
+    return (LG.Settings && LG.Settings.volSfx) ? LG.Settings.volSfx() : 1;
+  }
+  function volCrowd() {
+    return (LG.Settings && LG.Settings.volCrowd) ? LG.Settings.volCrowd() : 1;
+  }
 
   function init() {
     if (ctx) return;
@@ -16,13 +31,25 @@ LG.Audio = (function () {
       if (!AC) return;
       ctx = new AC();
       master = ctx.createGain();
-      master.gain.value = 0.55;
+      master.gain.value = enabled ? volMaster() : 0;
       master.connect(ctx.destination);
+      sfxGain = ctx.createGain();
+      sfxGain.gain.value = volSfx();
+      sfxGain.connect(master);
       noiseBuf = makeNoise(ctx, 1.5);
     } catch (e) { ctx = null; }
   }
 
   function resume() { if (ctx && ctx.state === 'suspended') ctx.resume(); }
+
+  // Called by LG.Settings whenever a volume slider / button changes.
+  function applyVolumes() {
+    if (master) master.gain.value = enabled ? volMaster() : 0;
+    if (sfxGain) sfxGain.gain.value = volSfx();
+    if (crowdGain && crowdActive) {
+      crowdGain.gain.setTargetAtTime(crowdDensity * 0.12 * volCrowd(), ctx.currentTime, 0.15);
+    }
+  }
 
   function makeNoise(c, dur) {
     var n = Math.floor(c.sampleRate * dur);
@@ -32,10 +59,14 @@ LG.Audio = (function () {
     return b;
   }
 
-  function toggle() { enabled = !enabled; if (master) master.gain.value = enabled ? 0.55 : 0; return enabled; }
+  function toggle() {
+    enabled = !enabled;
+    applyVolumes();
+    return enabled;
+  }
 
   function blip(freq, dur, type, vol, delay, slideTo) {
-    if (!ctx || !master || !enabled) return;
+    if (!ctx || !sfxGain || !enabled) return;
     var t0 = ctx.currentTime + (delay || 0);
     var o = ctx.createOscillator(), g = ctx.createGain();
     o.type = type || 'square';
@@ -44,12 +75,12 @@ LG.Audio = (function () {
     g.gain.setValueAtTime(0.0001, t0);
     g.gain.linearRampToValueAtTime(vol || 0.2, t0 + 0.006);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    o.connect(g); g.connect(master);
+    o.connect(g); g.connect(sfxGain);
     o.start(t0); o.stop(t0 + dur + 0.05);
   }
 
   function thump(freq, dur, vol, delay) {
-    if (!ctx || !master || !enabled) return;
+    if (!ctx || !sfxGain || !enabled) return;
     var t0 = ctx.currentTime + (delay || 0);
     var o = ctx.createOscillator(), g = ctx.createGain();
     o.type = 'sine';
@@ -57,12 +88,12 @@ LG.Audio = (function () {
     o.frequency.exponentialRampToValueAtTime(40, t0 + dur);
     g.gain.setValueAtTime(vol || 0.3, t0);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    o.connect(g); g.connect(master);
+    o.connect(g); g.connect(sfxGain);
     o.start(t0); o.stop(t0 + dur + 0.05);
   }
 
   function noiseHit(dur, vol, filterFreq, delay, type) {
-    if (!ctx || !master || !enabled) return;
+    if (!ctx || !sfxGain || !enabled) return;
     var t0 = ctx.currentTime + (delay || 0);
     var s = ctx.createBufferSource();
     s.buffer = noiseBuf;
@@ -74,12 +105,13 @@ LG.Audio = (function () {
     var g = ctx.createGain();
     g.gain.setValueAtTime(vol || 0.2, t0);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    s.connect(f); f.connect(g); g.connect(master);
+    s.connect(f); f.connect(g); g.connect(sfxGain);
     s.start(t0); s.stop(t0 + dur + 0.05);
   }
 
   function crowd(density) {
     if (!ctx || !master) return;
+    crowdDensity = UI.clamp(density, 0, 1);
     if (!crowdActive) {
       if (!crowdGain) {
         var s = ctx.createBufferSource();
@@ -94,7 +126,9 @@ LG.Audio = (function () {
       }
       crowdActive = true;
     }
-    if (crowdGain) crowdGain.gain.setTargetAtTime(UI.clamp(density, 0, 1) * 0.12, ctx.currentTime, 0.8);
+    if (crowdGain) {
+      crowdGain.gain.setTargetAtTime(crowdDensity * 0.12 * volCrowd(), ctx.currentTime, 0.8);
+    }
   }
 
   function crowdStop() {
@@ -160,10 +194,15 @@ LG.Audio = (function () {
     matchStart: function () { S.whistle(0.5); }
   };
 
-  function unlock() { init(); resume(); if (ctx) crowd(0.4); }
+  function unlock() {
+    init(); resume();
+    applyVolumes();
+    if (ctx) crowd(0.4);
+  }
 
   return {
     init: init, resume: resume, unlock: unlock, toggle: toggle,
+    applyVolumes: applyVolumes,
     crowd: crowd, crowdStop: crowdStop, crowdCheer: crowdCheer,
     sfx: S,
   };
