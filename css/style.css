@@ -381,9 +381,13 @@ html, body {
 }
 
 /* --- per-screen artwork compositions (crops of the reference walls) --- */
-/* MAIN MENU -> the full graffiti wall: pink bubble piece, stencils, posters */
+/* MAIN MENU -> the full graffiti wall: pink bubble piece, stencils, posters.
+   This screen barely dims the art — the wall IS the menu, so the wash stays
+   light and only the corner behind the logo gets a local scrim. */
 #menu-overlay {
-  background-image: linear-gradient(180deg, rgba(16, 15, 13, 0.5), rgba(16, 15, 13, 0.74)), url("../art/wall.jpg");
+  background-image:
+    linear-gradient(180deg, rgba(16, 15, 13, 0.14), rgba(16, 15, 13, 0.34) 62%, rgba(16, 15, 13, 0.5)),
+    url("../art/wall.jpg");
   background-size: cover, cover;
   background-position: center, center 42%;
   background-repeat: no-repeat, no-repeat;
@@ -1437,24 +1441,328 @@ html, body {
   color: rgba(230, 217, 180, 0.6);
 }
 
-/* menu secondary row + version stamp */
-.menu-sub {
-  margin-top: clamp(6px, 1.4vmin, 12px);
-  gap: 12px;
+/* ============================================================
+   MAIN MENU — full-screen street composition, asymmetric on purpose:
+
+     [ KICK OFF ][ PROFILE ]      BLACKOUT / STREET FOOTBALL
+     [ KICK OFF ][ PROFILE ]        [ CHALLENGES ][ SETTINGS ]
+                                    [ HOW TO PLAY ][ ABOUT ]
+
+   The wall is the surface: on this one screen the panel drops its painted
+   board (background, border, stripe, shadow) and only keeps the grain, so
+   the art reads edge to edge. Every other overlay keeps the board.
+   ============================================================ */
+#menu-overlay .panel.menu-stage {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.95fr) minmax(0, 2.3fr);
+  grid-template-areas: "kick profile side";
+  align-items: center;
+  gap: clamp(16px, 2.6vw, 56px);
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: clamp(46px, 7vh, 76px)
+           calc(clamp(18px, 3vw, 62px) + env(safe-area-inset-right, 0px))
+           clamp(58px, 9vh, 92px)
+           calc(clamp(18px, 3vw, 62px) + env(safe-area-inset-left, 0px));
+  overflow-x: hidden;
+  overflow-y: auto;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  -webkit-overflow-scrolling: touch;
 }
-.menu-sub .big-btn {
-  margin-top: 12px;
-  min-width: 160px;
-  padding: 12px 22px;
-  font-size: clamp(13px, 3vmin, 17px);
+#menu-overlay .panel.menu-stage::before { display: none; }  /* no paint stripe */
+#menu-overlay .menu-kick { grid-area: kick; }
+#menu-overlay .menu-profile { grid-area: profile; }
+#menu-overlay .menu-side { grid-area: side; }
+
+/* --- entrance: the three blocks settle in, once, in reading order --- */
+@keyframes menu-rise {
+  from { opacity: 0; transform: translateY(16px) scale(0.985); }
+  to { opacity: 1; transform: none; }
 }
-.menu-version {
-  margin-top: clamp(14px, 3vmin, 22px);
-  font-size: 10px;
-  letter-spacing: 0.28em;
-  color: rgba(230, 217, 180, 0.38);
+#menu-overlay .menu-rise { animation: menu-rise 0.5s cubic-bezier(0.2, 0.7, 0.3, 1) backwards; }
+#menu-overlay .menu-kick { animation-delay: 0.05s; }
+#menu-overlay .menu-brand { animation-delay: 0.1s; }
+#menu-overlay .menu-profile { animation-delay: 0.13s; }
+#menu-overlay .menu-nav { animation-delay: 0.2s; }
+
+/* the two big cards are positioned so nothing painted by the right column
+   (the brand scrim below) can ever bleed across them */
+#menu-overlay .menu-kick,
+#menu-overlay .menu-profile { position: relative; z-index: 1; }
+
+/* --- KICK OFF: the dominant slab, orange, glowing, icon-led --- */
+#menu-overlay .menu-kick {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: clamp(6px, 1.4vh, 16px);
+  width: 100%;
+  height: clamp(150px, 50vh, 380px);
+  padding: clamp(12px, 1.3vw, 24px);
+  border: 3px solid rgba(20, 16, 10, 0.92);
+  border-radius: 14px;
+  cursor: pointer;
   font-family: var(--font-display);
+  text-align: left;
+  color: #1c1206;
+  background: linear-gradient(162deg, #f9a254 0%, #e87727 45%, #c85c15 100%);
+  box-shadow:
+    0 0 0 3px rgba(255, 172, 92, 0.42),
+    0 0 42px rgba(244, 132, 45, 0.4),
+    0 24px 46px rgba(0, 0, 0, 0.55),
+    inset 0 2px 0 rgba(255, 244, 226, 0.42),
+    inset 0 -16px 28px rgba(116, 46, 8, 0.3);
+  transition: transform 0.16s ease, filter 0.16s ease, box-shadow 0.16s ease;
 }
+#menu-overlay .mk-head { display: block; }
+#menu-overlay .mk-label {
+  display: block;
+  font-size: clamp(16px, 1.6vw, 27px);
+  letter-spacing: 0.16em;
+  line-height: 1;
+}
+#menu-overlay .mk-sub {
+  display: block;
+  margin-top: 6px;
+  font-size: clamp(9px, 0.76vw, 13px);
+  letter-spacing: 0.26em;
+  color: rgba(28, 18, 6, 0.6);
+}
+#menu-overlay .mk-art {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(4px, 1.2vh, 16px);
+  width: 100%;
+  min-height: 0;
+}
+#menu-overlay .mk-ball {
+  width: clamp(44px, 5.6vw, 104px);
+  height: auto;
+  filter: drop-shadow(0 8px 12px rgba(58, 22, 4, 0.45));
+}
+#menu-overlay .mk-players {
+  width: clamp(84px, 10vw, 190px);
+  height: auto;
+  color: #fff6e6;
+  filter: drop-shadow(0 6px 10px rgba(58, 22, 4, 0.4));
+}
+#menu-overlay .mk-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: clamp(9px, 0.76vw, 13px);
+  letter-spacing: 0.28em;
+  color: rgba(28, 18, 6, 0.62);
+}
+#menu-overlay .mk-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(28, 18, 6, 0.75);
+}
+
+/* --- PROFILE: the light card, same slab height, dark type --- */
+#menu-overlay .menu-profile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(8px, 1.6vh, 18px);
+  width: 100%;
+  height: clamp(150px, 50vh, 380px);
+  padding: clamp(12px, 1.3vw, 24px);
+  border: 3px solid rgba(20, 16, 10, 0.92);
+  border-radius: 14px;
+  cursor: pointer;
+  font-family: var(--font-display);
+  text-align: center;
+  color: #191a17;
+  background: linear-gradient(170deg, #fbf9f3 0%, #e9e4d7 58%, #d9d3c3 100%);
+  box-shadow:
+    0 24px 46px rgba(0, 0, 0, 0.5),
+    inset 0 2px 0 rgba(255, 255, 255, 0.85);
+  transition: transform 0.16s ease, filter 0.16s ease, box-shadow 0.16s ease;
+}
+#menu-overlay .mp-label {
+  font-size: clamp(24px, 2.7vw, 54px);
+  letter-spacing: 0.03em;
+  line-height: 0.95;
+  transform: rotate(-1.2deg);
+}
+#menu-overlay .mp-sub {
+  font-size: clamp(9px, 0.76vw, 13px);
+  letter-spacing: 0.24em;
+  color: rgba(25, 26, 23, 0.5);
+}
+
+/* --- right column: brand on the wall, then the secondary nav --- */
+#menu-overlay .menu-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: clamp(14px, 2.4vh, 30px);
+  min-width: 0;
+}
+#menu-overlay .menu-brand { position: relative; align-self: stretch; }
+/* local scrim so the logo reads over any patch of graffiti — no full dim */
+#menu-overlay .menu-brand::before {
+  content: "";
+  position: absolute;
+  inset: -22% -6% -18% -4%;
+  background: radial-gradient(ellipse at 44% 50%, rgba(8, 8, 7, 0.6), rgba(8, 8, 7, 0.3) 48%, rgba(8, 8, 7, 0) 74%);
+  pointer-events: none;
+  z-index: 0;
+}
+#menu-overlay .menu-brand .title-xl,
+#menu-overlay .menu-brand .street-tag { position: relative; z-index: 1; }
+#menu-overlay .title-xl { font-size: clamp(38px, 4.6vw, 96px); }
+#menu-overlay .title-xl .t1 {
+  text-shadow: clamp(2px, 0.6vmin, 5px) clamp(3px, 0.8vmin, 6px) 0 rgba(87, 31, 48, 0.8),
+               0 0 26px rgba(236, 234, 224, 0.28);
+}
+/* a restrained neon kick on the pink half, like the sign on the wall */
+#menu-overlay .title-xl .t2 {
+  text-shadow: clamp(2px, 0.6vmin, 5px) clamp(3px, 0.8vmin, 6px) 0 rgba(20, 20, 19, 0.85),
+               0 0 18px rgba(240, 79, 155, 0.55),
+               0 0 40px rgba(240, 79, 155, 0.3);
+}
+#menu-overlay .menu-brand .title-xl::after { margin-left: 0; }
+
+#menu-overlay .menu-nav {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: clamp(10px, 1.3vw, 22px);
+  width: 100%;
+  max-width: min(100%, 720px);
+}
+#menu-overlay .menu-card {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+  min-height: clamp(46px, 8.4vh, 88px);
+  margin-top: 0;
+  padding: clamp(8px, 1.4vh, 18px) clamp(8px, 1vw, 22px);
+  border: 3px solid rgba(20, 16, 10, 0.9);
+  border-radius: 10px;
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: clamp(13px, 1.5vw, 26px);
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  text-shadow: none;
+  transition: transform 0.16s ease, filter 0.16s ease, box-shadow 0.16s ease;
+}
+#menu-overlay .menu-card.gold {
+  color: #1c1206;
+  background: linear-gradient(168deg, #f79646 0%, #e2711f 48%, #c85a15 100%);
+  box-shadow:
+    0 0 0 2px rgba(255, 168, 82, 0.32),
+    0 0 24px rgba(240, 124, 40, 0.3),
+    0 14px 26px rgba(0, 0, 0, 0.45),
+    inset 0 2px 0 rgba(255, 240, 220, 0.38);
+}
+#menu-overlay .menu-card.secondary {
+  color: #191a17;
+  background: linear-gradient(170deg, #fbf9f3, #e4dfd1);
+  box-shadow: 0 14px 26px rgba(0, 0, 0, 0.45), inset 0 2px 0 rgba(255, 255, 255, 0.85);
+}
+#menu-overlay .menu-version {
+  margin-top: 0;
+  align-self: flex-start;
+  font-size: clamp(9px, 0.7vw, 12px);
+  letter-spacing: 0.3em;
+  color: rgba(230, 217, 180, 0.55);
+  text-shadow: 0 2px 5px rgba(0, 0, 0, 0.8);
+}
+
+/* --- feedback: a small lift, a little brightness, nothing flashy --- */
+@media (hover: hover) and (pointer: fine) {
+  #menu-overlay .menu-kick:hover,
+  #menu-overlay .menu-profile:hover,
+  #menu-overlay .menu-card:hover {
+    transform: translateY(-4px) scale(1.012);
+    filter: brightness(1.06);
+  }
+}
+#menu-overlay .menu-kick:active,
+#menu-overlay .menu-profile:active,
+#menu-overlay .menu-card:active {
+  transform: translateY(2px) scale(0.985);
+  filter: brightness(0.97);
+}
+#menu-overlay .menu-kick:focus-visible,
+#menu-overlay .menu-profile:focus-visible,
+#menu-overlay .menu-card:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 3px;
+}
+body.reduced-motion #menu-overlay .menu-rise { animation: none; }
+
+/* --- reflow, never shrink-to-death: same three blocks, stacked ---
+   The right column opens up (display:contents) so the brand, the two big
+   cards and the nav can interleave in one tall column: brand, KICK OFF
+   (still the biggest thing on screen), PROFILE, then the 2x2 nav. */
+@media (max-width: 760px), (orientation: portrait) {
+  #menu-overlay .panel.menu-stage {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "brand" "kick" "profile" "nav" "ver";
+    align-content: center;
+    justify-items: stretch;
+    gap: clamp(12px, 2vh, 22px);
+    padding-top: clamp(44px, 6vh, 64px);
+    padding-bottom: calc(clamp(44px, 6vh, 68px) + env(safe-area-inset-bottom, 0px));
+    text-align: center;
+  }
+  #menu-overlay .menu-side { display: contents; }
+  #menu-overlay .menu-brand { grid-area: brand; text-align: center; align-self: center; }
+  #menu-overlay .menu-kick { grid-area: kick; text-align: left; }
+  #menu-overlay .menu-profile { grid-area: profile; }
+  #menu-overlay .menu-nav { grid-area: nav; max-width: 100%; margin: 0 auto; }
+  #menu-overlay .menu-version { grid-area: ver; align-self: center; justify-self: center; }
+  #menu-overlay .menu-kick { height: clamp(142px, 28vh, 250px); }
+  #menu-overlay .menu-profile { height: clamp(112px, 20vh, 180px); }
+  #menu-overlay .menu-card { min-height: clamp(48px, 7vh, 68px); font-size: clamp(14px, 4.4vw, 22px); }
+  #menu-overlay .mk-ball { width: clamp(40px, 13vw, 78px); }
+  #menu-overlay .mk-players { width: clamp(78px, 24vw, 140px); }
+  #menu-overlay .mk-label { font-size: clamp(17px, 5vw, 24px); }
+  #menu-overlay .mp-label { font-size: clamp(26px, 8vw, 46px); }
+}
+
+/* --- short landscape (phones held sideways): tighten the vertical budget
+   so KICK OFF, the brand and the nav all land on one screen --- */
+@media (orientation: landscape) and (max-height: 470px) {
+  #menu-overlay .panel.menu-stage {
+    gap: clamp(12px, 2vw, 30px);
+    padding-top: clamp(42px, 7vh, 56px);
+    padding-bottom: clamp(50px, 8vh, 66px);
+  }
+  #menu-overlay .menu-kick,
+  #menu-overlay .menu-profile { height: clamp(132px, 50vh, 250px); }
+  #menu-overlay .menu-side { gap: clamp(9px, 2.4vh, 18px); }
+  #menu-overlay .menu-card {
+    min-height: clamp(40px, 12vh, 64px);
+    font-size: clamp(12px, 1.6vw, 20px);
+    padding: clamp(6px, 2.4vh, 12px) clamp(6px, 1vw, 16px);
+  }
+  #menu-overlay .title-xl { font-size: clamp(34px, 4.6vw, 72px); }
+  #menu-overlay .mk-label { font-size: clamp(15px, 2vw, 22px); }
+  #menu-overlay .mk-foot, #menu-overlay .mk-sub, #menu-overlay .mp-sub { font-size: clamp(8px, 1vw, 11px); }
+}
+
 
 /* SETTINGS / ABOUT panels reuse the help-poster language */
 .settings-grid,
@@ -1533,6 +1841,7 @@ body.reduced-motion #special-btn.ready {
 }
 @media (prefers-reduced-motion: reduce) {
   .overlay:not(.hidden) .panel { animation: none; }
+  #menu-overlay .menu-rise { animation: none; }
   #announce .banner { transition: none; transform: none; }
   .rot-glyph { animation: none; }
   #scoreboard .clock.low { animation: none; }
@@ -1740,5 +2049,4 @@ body.reduced-motion #now-playing { transition: none; }
   :root { --btn-size: clamp(60px, 10vmin, 80px); }
   #joystick-zone { width: 32vmin; height: 32vmin; max-width: 200px; max-height: 200px; }
   .big-btn { min-width: 260px; padding: 18px 44px; }
-  .menu-sub .big-btn { min-width: 180px; }
 }

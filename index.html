@@ -85,20 +85,62 @@
   <!-- ================= OVERLAYS ================= -->
   <!-- Main menu -->
   <div id="menu-overlay" class="overlay">
-    <div class="panel">
-      <div class="title-xl"><span class="t1">BLACK</span><span class="t2">OUT</span></div>
-      <div class="street-tag">STREET FOOTBALL</div>
-      <div class="row-btns">
-        <button id="btn-play" class="big-btn gold">KICK OFF</button>
-        <button id="btn-profile" class="big-btn secondary">PROFILE</button>
-        <button id="btn-challenges" class="big-btn secondary">CHALLENGES</button>
+    <div class="panel menu-stage">
+      <!-- LEFT: the primary action, the biggest thing on the screen -->
+      <button id="btn-play" class="menu-kick menu-rise" type="button">
+        <span class="mk-head">
+          <span class="mk-label">KICK OFF</span>
+          <span class="mk-sub">3V3 &middot; STREET RULES</span>
+        </span>
+        <span class="mk-art" aria-hidden="true">
+          <svg class="mk-ball" viewBox="0 0 100 100" role="img" aria-hidden="true">
+            <circle cx="50" cy="50" r="45" fill="#f7f3e8" stroke="#17160f" stroke-width="5"/>
+            <g fill="#17160f">
+              <path d="M50 30 L69 43.8 L61.8 66.2 L38.2 66.2 L31 43.8 Z"/>
+              <path d="M50 8 L58.6 14.2 L55.3 24.3 L44.7 24.3 L41.4 14.2 Z"/>
+              <path d="M89.9 37 L86.7 47.1 L76.1 47.1 L72.8 37 L81.4 30.8 Z"/>
+              <path d="M74.7 84 L64.1 84 L60.8 73.9 L69.4 67.7 L78 73.9 Z"/>
+              <path d="M25.3 84 L35.9 84 L39.2 73.9 L30.6 67.7 L22 73.9 Z"/>
+              <path d="M10 37 L18.6 30.8 L27.2 37 L23.9 47.1 L13.3 47.1 Z"/>
+            </g>
+          </svg>
+          <svg class="mk-players" viewBox="0 0 150 70" aria-hidden="true">
+            <g fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="30" cy="15" r="8.5" fill="currentColor" stroke="none"/>
+              <path d="M30 26 L26 44"/>
+              <path d="M28 31 L15 25"/><path d="M28 34 L42 41"/>
+              <path d="M26 44 L15 60"/><path d="M26 44 L37 58"/>
+              <circle cx="112" cy="14" r="8.5" fill="currentColor" stroke="none"/>
+              <path d="M112 25 L108 43"/>
+              <path d="M110 30 L97 24"/><path d="M110 33 L124 40"/>
+              <path d="M108 43 L97 59"/><path d="M108 43 L119 57"/>
+            </g>
+            <circle cx="75" cy="55" r="11" fill="#f7f3e8" stroke="#17160f" stroke-width="3.5"/>
+          </svg>
+        </span>
+        <span class="mk-foot"><span class="mk-dot"></span>PRESS TO PLAY</span>
+      </button>
+
+      <!-- CENTER: the career card -->
+      <button id="btn-profile" class="menu-profile menu-rise" type="button">
+        <span class="mp-label">PROFILE</span>
+        <span class="mp-sub">CAREER &middot; STATS &middot; KITS</span>
+      </button>
+
+      <!-- RIGHT: brand + the secondary navigation -->
+      <div class="menu-side">
+        <div class="menu-brand menu-rise">
+          <div class="title-xl"><span class="t1">BLACK</span><span class="t2">OUT</span></div>
+          <div class="street-tag">STREET FOOTBALL</div>
+        </div>
+        <div class="menu-nav menu-rise">
+          <button id="btn-challenges" class="big-btn gold menu-card" type="button">CHALLENGES</button>
+          <button id="btn-settings" class="big-btn secondary menu-card" type="button">SETTINGS</button>
+          <button id="btn-how" class="big-btn gold menu-card" type="button">HOW TO PLAY</button>
+          <button id="btn-about" class="big-btn gold menu-card" type="button">ABOUT</button>
+        </div>
+        <div class="menu-version" id="menu-version">v1.0.0</div>
       </div>
-      <div class="row-btns menu-sub">
-        <button id="btn-how" class="big-btn secondary">HOW TO PLAY</button>
-        <button id="btn-settings" class="big-btn secondary">SETTINGS</button>
-        <button id="btn-about" class="big-btn secondary">ABOUT</button>
-      </div>
-      <div class="menu-version" id="menu-version">v1.0.0</div>
     </div>
   </div>
 
