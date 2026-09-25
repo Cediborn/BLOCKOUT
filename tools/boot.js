@@ -198,6 +198,15 @@ global.window.removeEventListener = function (ev, fn) {
 };
 global.window.fire = function (ev, arg) { (winHandlers[ev] || []).slice().forEach(function (f) { f(arg || {}); }); };
 
+// document-level listeners (fullscreenchange / visibilitychange) go through a
+// separate bus so the harness can fire them independently of window events
+var docHandlers = {};
+global.document.addEventListener = function (ev, fn) { (docHandlers[ev] = docHandlers[ev] || []).push(fn); };
+global.document.removeEventListener = function (ev, fn) {
+  var a = docHandlers[ev] || []; var i = a.indexOf(fn); if (i >= 0) a.splice(i, 1);
+};
+global.document.fire = function (ev, arg) { (docHandlers[ev] || []).slice().forEach(function (f) { f(arg || {}); }); };
+
 var rafQueue = [];
 global.requestAnimationFrame = function (cb) { rafQueue.push(cb); return rafQueue.length; };
 global.performance = global.performance || { now: function () { return Date.now(); } };
@@ -227,6 +236,11 @@ check(!initErr, 'init() survives boot on a touch device', initErr && (initErr.me
 
 var vis = function (id) { return elements[id] && !elements[id].classList.contains('hidden'); };
 check(vis('menu-overlay'), 'main menu ends up visible');
+check(vis('loading-overlay'),
+  'the boot cover is still up before the first frame (it lifts only after a real render)');
+var vp0 = window.LGMain.getViewport();
+check(vp0.w === window.innerWidth && vp0.h === window.innerHeight && vp0.dpr === 2,
+  'startup sized the renderer from the real viewport (pixel ratio capped at 2)', JSON.stringify(vp0));
 
 section('1b. court registration + metadata are the single source of truth');
 (function () {
@@ -372,6 +386,8 @@ try {
   for (var i = 0; i < 240; i++) { var q = rafQueue; rafQueue = []; q.forEach(function (cb) { cb(performance.now()); }); }
 } catch (e) { frameErr = e; }
 check(!frameErr, '240 frames of the match loop run clean', frameErr && (frameErr.message + '\n' + (frameErr.stack || '').split('\n')[1]));
+check(!vis('loading-overlay'),
+  'the boot cover lifts as soon as the first frame has been presented');
 var m = window.LGMain.getMatch();
 check(!!m, 'a match object exists');
 check(m && (m.state === 'PLAY' || m.state === 'KICKOFF'), 'the match advanced past IDLE', m && m.state);
@@ -452,19 +468,114 @@ check(fsCalls === 1, 'starting the match asked for fullscreen once', fsCalls);
 window.fire('pointerdown', { clientX: 10, clientY: 10 });
 check(fsCalls === 1, 'a stray tap afterwards does not re-request fullscreen', fsCalls);
 
-section('4. the rotate overlay cannot get stuck over the game');
+section('4. the rotate hint + the viewport layout survive orientation changes');
+function pump(n) {
+  for (var i = 0; i < (n || 1); i++) { var q = rafQueue; rafQueue = []; q.forEach(function (cb) { cb(performance.now()); }); }
+}
 check(elements['rotate-overlay'] && elements['rotate-overlay'].classList.contains('hidden'),
-  'landscape phone hides the rotate overlay');
+  'landscape phone hides the rotate hint');
 window.innerWidth = 390; window.innerHeight = 844;
-window.fire('resize');
-check(!elements['rotate-overlay'].classList.contains('hidden'), 'portrait shows it again');
+window.fire('resize'); pump(2);
+check(!elements['rotate-overlay'].classList.contains('hidden'), 'portrait shows the hint again');
+check(document.body.classList.contains('is-portrait') && !document.body.classList.contains('is-landscape'),
+  'the layout pass moved the body classes to is-portrait',
+  'portrait=' + document.body.classList.contains('is-portrait'));
 window.innerWidth = 844; window.innerHeight = 390;
-window.fire('orientationchange');
-check(elements['rotate-overlay'].classList.contains('hidden'), 'rotating back hides it');
+window.fire('orientationchange'); pump(2);
+check(elements['rotate-overlay'].classList.contains('hidden'), 'rotating back hides the hint');
+check(document.body.classList.contains('is-landscape'),
+  'the layout pass moved the body classes back to is-landscape');
 window.innerWidth = 390; window.innerHeight = 844;
-for (var k = 0; k < 3; k++) { var q2 = rafQueue; rafQueue = []; q2.forEach(function (cb) { cb(performance.now()); }); }
+pump(3);
 check(!elements['rotate-overlay'].classList.contains('hidden'),
-  'the loop re-checks orientation and re-shows the overlay (no resize event needed)');
+  'the loop re-checks orientation and re-shows the hint (no resize event needed)');
+
+section('4b. viewport layout is one centralised pipeline');
+(function () {
+  var before = window.LGMain.getViewport();
+  // one real gesture on a phone fires resize + orientationchange +
+  // fullscreenchange + pageshow together; all of them funnel into the SAME
+  // scheduled relayout, so a burst must cost one pass, not one per event
+  window.innerWidth = 900; window.innerHeight = 420;
+  window.fire('resize');
+  window.fire('resize');
+  window.fire('orientationchange');
+  document.fire('fullscreenchange');
+  window.fire('pageshow');
+  pump(2);
+  var vp = window.LGMain.getViewport();
+  check(vp.applies - before.applies === 2,
+    'five viewport events collapse into one relayout + one confirming pass',
+    vp.applies - before.applies);
+  check(vp.w === 900 && vp.h === 420, 'the relayout read the size the browser reports now',
+    vp.w + 'x' + vp.h);
+  check(vp.dpr === 2, 'devicePixelRatio reaches the renderer, capped at 2', vp.dpr);
+
+  // fullscreen announces itself; it must relayout WITHOUT asking for fullscreen
+  var fs0 = fsCalls;
+  window.innerWidth = 740; window.innerHeight = 360;
+  document.fire('fullscreenchange');
+  document.fire('webkitfullscreenchange');
+  pump(2);
+  vp = window.LGMain.getViewport();
+  check(vp.w === 740 && vp.h === 360, 'a fullscreen change relayouts the canvas', vp.w + 'x' + vp.h);
+  check(fsCalls === fs0,
+    'relayout never re-requests fullscreen (no resize -> fullscreen -> resize loop)', fsCalls);
+
+  // startup must happen exactly once
+  var apps = window.LGMain.getViewport().applies;
+  window.fire('load');
+  pump(2);
+  check(window.LGMain.getViewport().applies === apps,
+    'a repeated load event cannot initialise the game a second time',
+    window.LGMain.getViewport().applies - apps);
+})();
+
+section('4c. the mobile control layer is on screen and actually takes touch');
+(function () {
+  check(vis('controls'), 'the control layer is visible as soon as the match starts (no rotation needed)');
+  check(vis('scoreboard') && vis('pause-btn'), 'scoreboard + pause button come with the match UI');
+  var zone = elements['joystick-zone'];
+  check(!!zone && !zone.classList.contains('hidden'), 'the joystick zone exists and is not display:none');
+  var shown = ['btn-pass', 'btn-shoot', 'btn-tackle', 'btn-switch', 'btn-sprint'].filter(function (id) {
+    return elements[id] && !elements[id].classList.contains('hidden-control');
+  });
+  check(shown.length >= 3, 'the action buttons are on screen (context pair + sprint)', shown.join(','));
+
+  // the zone must not only be visible — a drag on it has to steer the player
+  var touchErr = null;
+  try {
+    zone.fire('pointerdown', { pointerId: 7, clientX: 40, clientY: 40 });
+    zone.fire('pointermove', { pointerId: 7, clientX: 130, clientY: 40 });
+  } catch (e) { touchErr = e; }
+  check(!touchErr, 'touching the joystick runs clean', touchErr && touchErr.message);
+  var mv = LG.Input.moveVec();
+  check(mv.x > 0.5 && Math.abs(mv.y) < 0.3, 'a drag on the joystick really steers the player',
+    JSON.stringify(mv));
+  zone.fire('pointerup', { pointerId: 7, clientX: 130, clientY: 40 });
+  mv = LG.Input.moveVec();
+  check(mv.x === 0 && mv.y === 0, 'lifting the thumb stops the stick', JSON.stringify(mv));
+
+  // and a button press must reach the input layer too
+  var sp = elements['btn-sprint'];
+  sp.fire('pointerdown', { pointerId: 3 });
+  check(LG.Input.down('sprint'), 'an action button goes down on touch');
+  sp.fire('pointerup', { pointerId: 3 });
+  check(!LG.Input.down('sprint'), 'and releases again');
+
+  // the rotate hint is pure CSS, so assert its contract in the stylesheet:
+  // never swallow a touch, never paint over the whole HUD
+  var cssText = fs.readFileSync(path.join(ROOT, 'css/style.css'), 'utf8');
+  var rotRule = (cssText.match(/#rotate-overlay\s*\{[^}]*\}/) || [''])[0];
+  check(/pointer-events:\s*none/.test(rotRule),
+    'the rotate hint never intercepts touches over the controls', rotRule.replace(/\s+/g, ' ').slice(0, 110));
+  check(!/radial-gradient|inset:\s*0\b/.test(rotRule),
+    'the rotate hint is no longer a full-screen wash', rotRule.replace(/\s+/g, ' ').slice(0, 110));
+  var ctlRule = (cssText.match(/#controls\s*\{[^}]*\}/) || [''])[0];
+  check(/inset:\s*0/.test(ctlRule) && !/height:\s*0/.test(ctlRule),
+    'the control layer spans the viewport so its 3%/4% insets resolve against the real screen',
+    ctlRule.replace(/\s+/g, ' ').slice(0, 110));
+})();
 
 check(missed.length === 0, 'no getElementById ever missed the real DOM', missed.join(', '));
 

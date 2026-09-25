@@ -185,11 +185,15 @@ html, body {
 /* Player head markers were removed: possession is shown by ONE world-space
    indicator above the ball carrier (owned by the match, not the DOM). */
 
-/* ---------- bottom controls ---------- */
+/* ---------- bottom controls ----------
+   The layer spans the whole viewport so the children's percentage offsets
+   (3% / 4% / 2.5%) resolve against the REAL screen height. It used to be a
+   zero-height strip, which silently collapsed every percentage to 0 and left
+   the thumb zones flush against the edge. pointer-events stays none: only the
+   joystick, the buttons and the special button are tappable. */
 #controls {
   position: fixed;
-  inset: auto 0 0 0;
-  height: 0;
+  inset: 0;
   z-index: 25;
   pointer-events: none;
 }
@@ -1567,16 +1571,23 @@ body.reduced-motion #special-btn.ready {
   #joystick-zone { opacity: 0.32; }
 }
 
-/* ---------- mobile "rotate phone" overlay ---------- */
+/* ---------- mobile "rotate phone" hint ----------
+   A HINT, never a modal. It must not swallow touches and must not paint over
+   the scoreboard, the joystick or the action buttons: the old full-screen wash
+   hid the whole control layer, so players had to rotate the phone back and
+   forth just to make the joystick reappear. pointer-events: none sends every
+   tap straight to the game, and the pill only occupies the strip between the
+   scoreboard and the pitch. */
 #rotate-overlay {
   position: fixed;
-  inset: 0;
+  left: 0;
+  right: 0;
+  top: calc(clamp(56px, 9vh, 92px) + env(safe-area-inset-top, 0px));
   z-index: 70;
   display: flex;
   align-items: center;
   justify-content: center;
-  background:
-    radial-gradient(ellipse at 50% 30%, #2a2924 0%, #131211 75%);
+  pointer-events: none;
 }
 #rotate-overlay.hidden { display: none; }
 #rotate-overlay::after {
@@ -1588,30 +1599,42 @@ body.reduced-motion #special-btn.ready {
   mix-blend-mode: overlay;
   pointer-events: none;
 }
-.rot-box { position: relative; z-index: 1; text-align: center; color: var(--hud-text); max-width: 80%; }
+.rot-box {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 86%;
+  padding: 9px 16px;
+  border-radius: 999px;
+  background: rgba(20, 20, 19, 0.86);
+  border: 1px solid rgba(230, 217, 180, 0.3);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+  text-align: left;
+}
 .rot-glyph {
-  font-size: clamp(90px, 24vmin, 150px);
+  font-size: clamp(30px, 6vmin, 46px);
   line-height: 1;
   color: var(--rust);
-  text-shadow: 0 5px 0 rgba(12, 12, 11, 0.6);
+  text-shadow: 0 4px 0 rgba(12, 12, 11, 0.6);
   animation: rot-bounce 1.4s ease-in-out infinite;
   display: inline-block;
 }
 @keyframes rot-bounce { 0%,100% { transform: rotate(-90deg) translateY(0); } 50% { transform: rotate(-90deg) translateY(-12px); } }
-.rot-title { margin-top: 28px; font-size: clamp(24px, 6vmin, 42px); letter-spacing: 0.22em; color: var(--offw); }
-.rot-sub { margin-top: 10px; font-size: clamp(13px, 3vmin, 18px); letter-spacing: 0.28em; color: var(--cream); opacity: 0.65; }
+.rot-title { margin: 0; font-size: clamp(14px, 3.2vmin, 20px); letter-spacing: 0.2em; color: var(--offw); }
+.rot-sub { margin-top: 3px; font-size: clamp(11px, 2.4vmin, 14px); letter-spacing: 0.16em; color: var(--cream); opacity: 0.65; }
 
-/* ---------- mobile portrait / narrow screens ---------- */
+/* ---------- mobile portrait / narrow screens ----------
+   The safe-area offsets live on the CHILDREN (#controls itself is a plain
+   full-viewport layer) so the inset is applied exactly once. */
 @media (orientation: portrait) and (pointer: coarse) {
-  /* push controls clear of the notch / safe-area at the bottom */
-  #controls { bottom: env(safe-area-inset-bottom, 0px); }
   #actions { bottom: calc(3% + env(safe-area-inset-bottom, 0px)); }
   #joystick-zone { bottom: calc(4% + env(safe-area-inset-bottom, 0px)); }
   #scoreboard { top: calc(clamp(8px,2.2vmin,18px) + env(safe-area-inset-top, 0px)); }
   .overlay .panel { padding-bottom: calc(clamp(18px,4vmin,40px) + env(safe-area-inset-bottom, 0px)); }
 }
 @media (orientation: landscape) and (pointer: coarse) {
-  #controls { bottom: env(safe-area-inset-bottom, 0px); }
   #actions { right: calc(3% + env(safe-area-inset-right, 0px)); bottom: calc(3% + env(safe-area-inset-bottom, 0px)); }
   #joystick-zone { left: calc(4% + env(safe-area-inset-left, 0px)); bottom: calc(4% + env(safe-area-inset-bottom, 0px)); }
   #scoreboard { top: calc(clamp(8px,2.2vmin,18px) + env(safe-area-inset-top, 0px)); }

@@ -36,7 +36,13 @@
     if (el) el.classList.add('hidden');
   }
 
+  var booted = false;
   function init() {
+    // exactly one boot: a repeated 'load' (or anything else re-firing it) must
+    // never build a second renderer, a second game loop or a second set of
+    // listeners on top of a live one
+    if (booted) return;
+    booted = true;
     try {
       renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('game-canvas'), antialias: true });
     } catch (e) {
@@ -51,8 +57,6 @@
       if (retry) retry.classList.remove('hidden');
       return;
     }
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.outputEncoding = THREE.sRGBEncoding;
@@ -63,6 +67,10 @@
     camera = new THREE.PerspectiveCamera(LG.Config.camera.fov, window.innerWidth / window.innerHeight, 0.1, 220);
     camCtrl = new LG.MatchCamera(camera);
     camCtrl.reset();
+
+    // size the drawing buffer + camera from the REAL viewport before anything
+    // downstream (lighting, particles, HUD, the first render) can read them
+    applyViewportLayout();
 
     // Day/Night atmosphere lives in LG.Lighting (owns the key lights). The
     // arena environment is untouched by it — only its lighting is rebalanced.
@@ -79,15 +87,19 @@
     LG.HUD.bindButtons();
     refreshDifficultyUI();
     buildSelectGrid();
-    if (LG.Courts) {
-      LG.Courts.probeAll(function () {
-        if (UIState === 'court') buildCourtGrid();
-        refreshEnvironment(true);
-      });
-    }
 
-    window.addEventListener('resize', onResize);
-    window.addEventListener('orientationchange', onResize);
+    // every signal that can change the visible area funnels into the SAME
+    // layout pipeline (see scheduleViewportLayout) — no handler ever applies
+    // a size of its own, and nothing here can bounce back into fullscreen
+    window.addEventListener('resize', scheduleViewportLayout);
+    window.addEventListener('orientationchange', scheduleViewportLayout);
+    window.addEventListener('pageshow', scheduleViewportLayout);
+    document.addEventListener('fullscreenchange', scheduleViewportLayout);
+    document.addEventListener('webkitfullscreenchange', scheduleViewportLayout);
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden) scheduleViewportLayout();   // back from another app
+    });
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', scheduleViewportLayout);
 
     if (IS_MOBILE) {
       isMobile = true;
@@ -112,10 +124,32 @@
     ['goal', 'pass', 'shoot', 'tackleWin', 'keeperSave', 'perfectPass'].forEach(function (ev) {
       LG.eventBus.on(ev, function () { refreshModeChip(); });
     });
-    updateLayoutClass();
     showMenu(true);
-    hideLoading();
-    requestAnimationFrame(loop);
+
+    // Boot hand-off, in one animation frame, in this order:
+    //   1. the FIRST real render happens BEHIND the loading cover. Compiling
+    //      the scene's shaders is the biggest stall a phone pays at startup;
+    //      revealing the UI first is exactly what "the game opens laggy"
+    //      feels like. If this render throws, the cover stays up so the boot
+    //      error box can report it instead of showing a black screen.
+    //   2. only then is the cover lifted (no flash of empty canvas), and
+    //   3. the court probes — they fetch every court png — start afterwards so
+    //      they never fight the first frame for bandwidth or decode time.
+    requestAnimationFrame(function () {
+      renderer.render(scene, camera);
+      hideLoading();
+      if (LG.Courts) {
+        LG.Courts.probeAll(function () {
+          if (UIState === 'court') buildCourtGrid();
+          refreshEnvironment(true);
+        });
+      }
+      // the mobile viewport can still settle after boot (url bar collapse,
+      // fullscreen already pending) — measure once more now that we are live
+      scheduleViewportLayout();
+      lastNow = nowSec();
+      requestAnimationFrame(loop);
+    });
   }
 
   var lastRotate = null;
@@ -127,7 +161,10 @@
     // The phone is always held landscape during a match (both GAME VIEW options
     // run the device in landscape — only the camera/HUD follow the setting).
     // Prompt whenever a match is live on a portrait-held device, regardless of
-    // the selected view; menus are never covered so the player can still act.
+    // the selected view. It is a HINT, never a modal: it never blocks touches
+    // and never covers the thumb zones (see css #rotate-overlay), because a
+    // full-screen wash here is what made players rotate the phone just to get
+    // their joystick back.
     var want = portraitDevice &&
       (UIState === 'match' || UIState === 'paused');
     if (want === lastRotate) return;      // only touch the DOM on a real change
@@ -151,10 +188,14 @@
     try {
       var fs = document.documentElement;
       if (fs.requestFullscreen) {
-        fs.requestFullscreen().then(function () { requestOrientation('landscape'); }).catch(function () {});
+        fs.requestFullscreen().then(function () {
+          requestOrientation('landscape');
+          scheduleViewportLayout();   // fullscreen changes the visible size
+        }).catch(function () {});
       } else if (fs.webkitRequestFullscreen) {
         fs.webkitRequestFullscreen();
         requestOrientation('landscape');
+        scheduleViewportLayout();
       }
     } catch (e) {}
   }
@@ -185,14 +226,61 @@
     document.body.classList.toggle('view-portrait', !wantLandscape);
   }
 
-  function onResize() {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  // ---------------- viewport layout (single source of truth) ----------------
+  // Everything that depends on "how big is the visible screen" runs through
+  // this one pipeline: renderer buffer + pixel ratio, camera aspect, the body
+  // orientation/view classes and the rotate hint. Startup, resize,
+  // orientationchange, fullscreenchange, visualViewport and pageshow all just
+  // SCHEDULE it — no caller ever applies a size of its own.
+  //
+  // Why schedule instead of run synchronously: a phone announces a dimension
+  // change BEFORE it has the final numbers (orientationchange and
+  // fullscreenchange fire first, the resize carrying the real size follows),
+  // and one gesture usually fires several of these at once. Reading the size
+  // on the next animation frame therefore measures valid numbers, collapses a
+  // burst into a single renderer reallocation instead of four, and a confirming
+  // pass on the frame after that catches browsers that were still reporting
+  // the old size. Nothing here ever re-enters fullscreen, so the
+  // resize -> fullscreen -> resize loop is impossible by construction.
+  var vpPending = false, vpConfirm = false;
+  var vpW = 0, vpH = 0, vpDPR = 0, vpApplies = 0;
+
+  function applyViewportLayout() {
+    vpApplies++;
+    if (!renderer || !camera) return;
+    var w = Math.max(1, Math.round(window.innerWidth || 1));
+    var h = Math.max(1, Math.round(window.innerHeight || 1));
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var sizeMoved = w !== vpW || h !== vpH;
+    var dprMoved = dpr !== vpDPR;
+    if (dprMoved) {
+      vpDPR = dpr;
+      renderer.setPixelRatio(dpr);   // BEFORE setSize: one buffer allocation, not two
+    }
+    if (sizeMoved) {
+      vpW = w; vpH = h;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    if (sizeMoved || dprMoved) renderer.setSize(w, h);
     updateLayoutClass();
     updateRotate();
-    if (LG.DBG) LG.DBG.log('[viewport] ' + window.innerWidth + 'x' + window.innerHeight + ' aspect ' + (window.innerWidth / window.innerHeight).toFixed(3));
+    if (LG.DBG) LG.DBG.log('[viewport] ' + w + 'x' + h + ' @' + dpr);
+  }
+
+  function scheduleViewportLayout() {
+    if (vpPending) return;          // a burst of events = one relayout
+    vpPending = true;
+    requestAnimationFrame(function () {
+      vpPending = false;
+      applyViewportLayout();
+      if (vpConfirm) return;        // a confirm is already queued behind us
+      vpConfirm = true;
+      requestAnimationFrame(function () {
+        vpConfirm = false;
+        applyViewportLayout();      // no-op unless the size moved again
+      });
+    });
   }
 
   // ---------------- events ----------------
@@ -1732,6 +1820,14 @@
     LG.Input.setEnabled(UIState === 'match');
     LG.Input.update(now);
     bgT += dt;
+    // dimension guard: integer reads only, no layout, no allocation. The
+    // browser is allowed to change the visible size without a usable event
+    // (or with one that fired before the numbers settled), so the layout is
+    // re-verified against reality every frame instead of trusting the events.
+    var vw = Math.max(1, Math.round(window.innerWidth || 1));
+    var vh = Math.max(1, Math.round(window.innerHeight || 1));
+    var vdpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (vw !== vpW || vh !== vpH || vdpr !== vpDPR) scheduleViewportLayout();
     updateRotate();
 
     if (UIState === 'match') {
@@ -1764,15 +1860,22 @@
   // PWA service worker registration. A phone that has already run an older
   // worker keeps being served the OLD game out of its cache with no way to see
   // the fix, so: never serve the worker script from HTTP cache, force an update
-  // check on every load, and when a new worker takes over reload once (only in
-  // the menu, at most once per session) so the fresh build actually lands.
-  if ('serviceWorker' in navigator) {
+  // check on every load, and take the new build as soon as it takes over — but
+  // ONLY while the boot cover is still on screen. Reloading after the menu is
+  // up is a visible "game appears, disappears, appears again" plus a second
+  // full init (every shader compiled twice: that is startup lag you can feel).
+  // Arriving too late for an invisible swap simply leaves this session on the
+  // old build: the new worker is already installed, so its build lands on the
+  // next visit, and the once-per-session latch still applies either way.
+  if ('serviceWorker' in navigator && navigator.serviceWorker) {
     window.addEventListener('load', function () {
-      var hadController = !!navigator.serviceWorker.controller;
+      var sw = navigator.serviceWorker;
+      var hadController = !!sw.controller;
       var reloaded = false;
-      navigator.serviceWorker.addEventListener('controllerchange', function () {
+      sw.addEventListener('controllerchange', function () {
         if (!hadController || reloaded) return;
-        if (window.LGMain && window.LGMain.getState() !== 'menu') return;
+        var load = document.getElementById('loading-overlay');
+        if (!load || load.classList.contains('hidden')) return;   // too late to swap invisibly
         try {
           if (sessionStorage.getItem('blockout.swReload')) return;
           sessionStorage.setItem('blockout.swReload', '1');
@@ -1780,7 +1883,7 @@
         reloaded = true;
         location.reload();
       });
-      navigator.serviceWorker.register('./service-worker.js', { updateViaCache: 'none' })
+      sw.register('./service-worker.js', { updateViaCache: 'none' })
         .then(function (reg) { reg.update(); })
         .catch(function () {});
     });
@@ -1792,6 +1895,12 @@
     startMatch: startMatch,
     getState: function () { return UIState; },
     getMatch: function () { return match; },
+    // read-only view of the layout pipeline: the size the renderer was last
+    // actually given, and how many times the pipeline has run (a burst of
+    // resize/orientation/fullscreen events must cost ONE run, not one each)
+    getViewport: function () {
+      return { w: vpW, h: vpH, dpr: vpDPR, applies: vpApplies };
+    },
     // read-only view of the pre-match choices — used by the boot harness to
     // prove the menu selections really reach the match
     getSelections: function () {

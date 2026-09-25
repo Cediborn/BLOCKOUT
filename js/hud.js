@@ -193,8 +193,14 @@ LG.HUD = (function () {
     show('btn-switch', !attack);
   }
 
+  var lastCoins = null;
   function updateCoins() {
-    if (coinEl) coinEl.textContent = LG.Util.fmtMoney(LG.Progression.coins());
+    if (!coinEl) return;
+    // called every frame of a match — only touch the DOM when the number moved
+    var c = LG.Progression.coins();
+    if (c === lastCoins) return;
+    lastCoins = c;
+    coinEl.textContent = LG.Util.fmtMoney(c);
   }
 
   // Quiet non-modal mode / challenge focus readout (Phase 3D).

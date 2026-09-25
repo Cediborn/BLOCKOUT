@@ -20,12 +20,16 @@
   <div id="vignette"></div>
   <div id="flash"></div>
 
-  <!-- mobile rotate-phone overlay: the match always plays on a landscape-held device -->
+  <!-- mobile rotate-phone hint: shown ONLY while a match runs on a portrait-held
+       device. Non-blocking by design (css): it never covers or intercepts the
+       controls, so the joystick is reachable whatever way the phone is held. -->
   <div id="rotate-overlay" class="hidden">
     <div class="rot-box">
       <div class="rot-glyph">↻</div>
-      <div class="rot-title">ROTATE YOUR PHONE</div>
-      <div class="rot-sub">hold your phone in landscape — the match runs that way</div>
+      <div class="rot-text">
+        <div class="rot-title">ROTATE YOUR PHONE</div>
+        <div class="rot-sub">hold your phone in landscape — the match runs that way</div>
+      </div>
     </div>
   </div>
 

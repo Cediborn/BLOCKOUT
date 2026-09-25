@@ -211,7 +211,11 @@ LG.Input = (function () {
   }
 
   function setEnabled(on) {
-    enabled = !!on;
+    on = !!on;
+    // menus run hundreds of frames: only act on a real transition, otherwise
+    // reset() (and its knob style writes) would fire on every single frame
+    if (on === enabled) return;
+    enabled = on;
     if (!enabled) reset();
   }
 
