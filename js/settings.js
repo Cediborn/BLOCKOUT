@@ -14,6 +14,7 @@ LG.Settings = (function () {
     volMaster: 0.55,      // 0..1 — historical master gain default
     volSfx: 1,            // 0..1 — procedural blips / kicks / whistle
     volCrowd: 1,          // 0..1 — ambient crowd bed + cheers
+    volMusic: 0.7,        // 0..1 — menu music only (match audio untouched)
     reducedMotion: false, // real: body class + camera shake/pulse off
   };
 
@@ -36,6 +37,7 @@ LG.Settings = (function () {
         if (p.volMaster !== undefined) data.volMaster = num01(p.volMaster, data.volMaster);
         if (p.volSfx !== undefined) data.volSfx = num01(p.volSfx, data.volSfx);
         if (p.volCrowd !== undefined) data.volCrowd = num01(p.volCrowd, data.volCrowd);
+        if (p.volMusic !== undefined) data.volMusic = num01(p.volMusic, data.volMusic);
         if (p.reducedMotion !== undefined) data.reducedMotion = !!p.reducedMotion;
       }
     } catch (e) { /* ignore */ }
@@ -47,6 +49,7 @@ LG.Settings = (function () {
 
   function pushAudio() {
     if (LG.Audio && LG.Audio.applyVolumes) LG.Audio.applyVolumes();
+    if (LG.Music && LG.Music.applyVolume) LG.Music.applyVolume();
   }
 
   load();
@@ -87,6 +90,11 @@ LG.Settings = (function () {
       data.volCrowd = num01(v, data.volCrowd); save(); pushAudio();
       return data.volCrowd;
     },
+    volMusic: function () { return data.volMusic; },
+    setVolMusic: function (v) {
+      data.volMusic = num01(v, data.volMusic); save(); pushAudio();
+      return data.volMusic;
+    },
 
     // ---- accessibility (must be real or absent — it is real) ----
     reducedMotion: function () { return data.reducedMotion; },
@@ -103,6 +111,7 @@ LG.Settings = (function () {
         volMaster: data.volMaster,
         volSfx: data.volSfx,
         volCrowd: data.volCrowd,
+        volMusic: data.volMusic,
         reducedMotion: data.reducedMotion,
       };
     },

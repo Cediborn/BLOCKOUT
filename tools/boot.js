@@ -214,6 +214,7 @@ global.console.error = global.console.error;
 
 // ---------------- load the real code ----------------
 var SRC = ['js/config.js', 'js/difficulty.js', 'js/util.js', 'js/audio.js', 'js/challenges.js', 'js/progression.js', 'js/modes.js', 'js/tournament.js', 'js/settings.js',
+  'js/menu-music.js',
   'js/input.js', 'js/particles.js', 'js/courts.js', 'js/models.js', 'js/ball.js', 'js/player.js', 'js/arena.js', 'js/abilities.js',
   'js/ai.js', 'js/keeper.js', 'js/camera.js', 'js/lighting.js', 'js/match.js', 'js/celebration.js', 'js/hud.js', 'js/main.js', 'js/living.js'];
 
@@ -1532,6 +1533,96 @@ section('10. Phase 4 app polish (settings, about, how, volumes, data reset)');
     'loading retry starts hidden');
   check(elements['loading-error'] && elements['loading-error'].classList.contains('hidden'),
     'loading error starts hidden');
+
+  // ---------------- 11. menu music ----------------
+  section('11. menu music — one controller, menus only, one chip');
+  var M = LG.Music;
+  check(!!M && typeof M.setActive === 'function' && typeof M.unlock === 'function',
+    'one central menu music controller ships with the game', M ? typeof M.setActive : 'missing');
+
+  var mFiles = M.files();
+  check(mFiles.length === 5, 'every file already in audio/menu is on the playlist', mFiles.length + ' tracks');
+  var mMissing = mFiles.filter(function (f) { return !fs.existsSync(path.join(ROOT, f)); });
+  check(mMissing.length === 0, 'every playlist entry is a real file where it already lives', mMissing.join(','));
+
+  var mTitles = [];
+  for (var mi = 0; mi < mFiles.length; mi++) mTitles.push(M.titleOf(mi));
+  check(mTitles.every(function (t) { return t && t === t.trim() && !/[.\-_]/.test(t); }),
+    'titles are cleaned for display (no extension, no underscores)', mTitles.join(' | '));
+  check(mTitles.indexOf('Concrete Turf') >= 0 && mTitles.indexOf('Otra Vez') >= 0,
+    'already-styled filenames keep their exact casing', mTitles.join(' | '));
+
+  check(html.indexOf('id="now-playing"') >= 0, 'the now-playing chip ships with the page');
+  var npCss = fs.readFileSync(path.join(ROOT, 'css/style.css'), 'utf8');
+  var npAt = npCss.indexOf('#now-playing {');
+  var npRule = npAt >= 0 ? npCss.slice(npAt, npCss.indexOf('#now-playing .np-glyph')) : '';
+  check(npRule.indexOf('pointer-events: none') >= 0, 'the chip can never swallow a tap', npRule.slice(0, 60));
+  check(npRule.indexOf('bottom:') >= 0 && npRule.indexOf('z-index: 60') >= 0,
+    'the chip sits low, over the menu boards (never behind them)');
+
+  // menus play
+  M.setActive(true);
+  var mPlay = M.snapshot();
+  check(mPlay.active && mPlay.playing, 'the menu runs the music', JSON.stringify({ active: mPlay.active, playing: mPlay.playing }));
+  check(mPlay.shown === mPlay.index && mPlay.starts >= 1,
+    'the first track was announced on the chip', JSON.stringify({ shown: mPlay.shown, index: mPlay.index, starts: mPlay.starts }));
+  check(mPlay.title && !/[.\-_]/.test(mPlay.title), 'the chip title is the cleaned track name', mPlay.title);
+
+  // one full pass covers every track exactly once, never repeating the last one
+  var cycle = [mPlay.index].concat(mPlay.queue), seenIdx = {}, cycleDup = false;
+  for (var ci = 0; ci < cycle.length; ci++) {
+    if (seenIdx[cycle[ci]]) cycleDup = true;
+    seenIdx[cycle[ci]] = 1;
+  }
+  check(cycle.length === mFiles.length && !cycleDup,
+    'one pass covers every track exactly once', JSON.stringify(cycle));
+  check(cycle[0] !== cycle[1], 'the next track is never the one that just played',
+    cycle[0] + ' -> ' + cycle[1]);
+
+  // navigating between menus must change nothing at all
+  var navBefore = mPlay.starts;
+  var navShown = elements['now-playing'].classList.contains('show');
+  M.setActive(true); M.setActive(true); M.setActive(true);
+  var mNav = M.snapshot();
+  check(mNav.starts === navBefore, 'navigating the menus never restarts the track', mNav.starts);
+  check(elements['now-playing'].classList.contains('show') === navShown,
+    'navigating the menus never re-triggers the chip', String(navShown));
+
+  // the match stops it, and takes the chip with it
+  M.setActive(false);
+  var mOff = M.snapshot();
+  check(!mOff.active && !mOff.playing, 'starting a match stops the menu music',
+    JSON.stringify({ active: mOff.active, playing: mOff.playing }));
+  check(!elements['now-playing'].classList.contains('show'), 'the chip is off during a match');
+
+  // coming back resumes the SAME track — no restart, no second chip
+  M.setActive(true);
+  var mBack = M.snapshot();
+  check(mBack.active && mBack.playing, 'returning to the menu resumes the music',
+    JSON.stringify({ active: mBack.active, playing: mBack.playing }));
+  check(mBack.index === mOff.index && mBack.title === mOff.title, 'the same track resumes where it stopped', mBack.title);
+  check(mBack.starts === mOff.starts, 'resuming does not count as a new track', mBack.starts + ' vs ' + mOff.starts);
+  check(!elements['now-playing'].classList.contains('show'), 'resuming shows no second chip');
+
+  // music is its own channel, wired into the existing settings screen
+  elements['vol-music-0'].fire('click');
+  check(LG.Settings.volMusic() === 0, 'music OFF writes 0', LG.Settings.volMusic());
+  check(M.snapshot().volume === 0, 'music OFF silences the controller', M.snapshot().volume);
+  elements['vol-music-50'].fire('click');
+  check(LG.Settings.volMusic() === 0.5, 'music 50% writes 0.5', LG.Settings.volMusic());
+  check(M.snapshot().volume > 0, 'music 50% comes back on', M.snapshot().volume);
+  elements['vol-music-100'].fire('click');
+  check(LG.Settings.volMusic() === 1, 'music 100% writes 1', LG.Settings.volMusic());
+  check(elements['vol-music-100'].classList.contains('selected') && !elements['vol-music-0'].classList.contains('selected'),
+    'music bucket selected state tracks the store');
+  check(LG.Settings.snapshot().volSfx === 1 && LG.Settings.snapshot().volCrowd === 1,
+    'music volume never touches the sfx / crowd channels', JSON.stringify(LG.Settings.snapshot()));
+  LG.Settings.setVolMusic(0.5);
+  (function () {
+    var raw = localStorage.getItem('blockout.settings.v1');
+    check(!!raw && raw.indexOf('"volMusic":0.5') >= 0, 'music volume persists to localStorage', raw);
+  })();
+  LG.Settings.setVolMusic(0.7);
 })();
 
 console.log('\n' + (FAIL === 0 ? 'BOOT + MENU FLOW PASSED' : 'BOOT + MENU FLOW FAILED (' + FAIL + ')'));

@@ -57,6 +57,15 @@
   <div id="aim-hint">TAP TO FIRE</div>
   <div id="toast" class="toast"></div>
 
+  <!-- menu music: a small chip in the corner, only when the track changes -->
+  <div id="now-playing">
+    <span class="np-glyph" aria-hidden="true">♪</span>
+    <span class="np-meta">
+      <span class="np-label">NOW PLAYING</span>
+      <span class="np-title"></span>
+    </span>
+  </div>
+
   <!-- bottom controls -->
   <div id="controls" class="hidden">
     <div id="joystick-zone"><div id="joy-base"><div id="joy-knob"></div></div></div>
@@ -352,6 +361,13 @@
               <button class="option-btn" id="vol-crowd-100" type="button">100%</button>
             </span>
           </div>
+          <div class="help-row"><span class="help-key">MUSIC</span>
+            <span class="option-row vol-row" role="group" aria-label="Menu music volume">
+              <button class="option-btn" id="vol-music-0" type="button">OFF</button>
+              <button class="option-btn" id="vol-music-50" type="button">50%</button>
+              <button class="option-btn" id="vol-music-100" type="button">100%</button>
+            </span>
+          </div>
         </div>
         <div class="help-section" data-settings="display">
           <div class="help-section-title">DISPLAY</div>
@@ -537,6 +553,7 @@
   <script src="js/modes.js"></script>
   <script src="js/tournament.js"></script>
   <script src="js/settings.js"></script>
+  <script src="js/menu-music.js"></script>
   <script src="js/input.js"></script>
   <script src="js/particles.js"></script>
   <script src="js/courts.js"></script>

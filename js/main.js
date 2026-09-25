@@ -110,7 +110,7 @@
     }
 
     // audio unlock on first gesture
-    var unlockOnce = function () { LG.Audio.unlock(); window.removeEventListener('pointerdown', unlockOnce); };
+    var unlockOnce = function () { LG.Audio.unlock(); if (LG.Music) LG.Music.unlock(); window.removeEventListener('pointerdown', unlockOnce); };
     window.addEventListener('pointerdown', unlockOnce);
 
     bindEvents();
@@ -125,6 +125,7 @@
       LG.eventBus.on(ev, function () { refreshModeChip(); });
     });
     showMenu(true);
+    syncMusic();
 
     // Boot hand-off, in one animation frame, in this order:
     //   1. the FIRST real render happens BEHIND the loading cover. Compiling
@@ -170,6 +171,15 @@
     if (want === lastRotate) return;      // only touch the DOM on a real change
     lastRotate = want;
     el.classList.toggle('hidden', !want);
+  }
+
+  // Menu music follows the screen, not the other way round: the loop asks
+  // every frame (setActive is a no-op when nothing changed), so Play ->
+  // difficulty -> court -> kit -> settings all keep the same track running
+  // while a match, its pause screen and the result board stop it.
+  function syncMusic() {
+    if (!LG.Music) return;
+    LG.Music.setActive(UIState !== 'match' && UIState !== 'paused' && UIState !== 'result');
   }
 
   // Landscape + fullscreen, requested when a match actually starts — for BOTH
@@ -769,6 +779,9 @@
     on('vol-crowd-0', function () { LG.Settings.setVolCrowd(0); refreshSettingsScreen(); });
     on('vol-crowd-50', function () { LG.Settings.setVolCrowd(0.5); refreshSettingsScreen(); });
     on('vol-crowd-100', function () { LG.Settings.setVolCrowd(1); refreshSettingsScreen(); });
+    on('vol-music-0', function () { LG.Settings.setVolMusic(0); refreshSettingsScreen(); });
+    on('vol-music-50', function () { LG.Settings.setVolMusic(0.5); refreshSettingsScreen(); });
+    on('vol-music-100', function () { LG.Settings.setVolMusic(1); refreshSettingsScreen(); });
     on('rm-on', function () { setReducedMotion(true); refreshSettingsScreen(); });
     on('rm-off', function () { setReducedMotion(false); refreshSettingsScreen(); });
     on('btn-settings-reset', function () { requestSettingsReset(); });
@@ -825,6 +838,10 @@
     markSelected('vol-crowd-0', cb === 0);
     markSelected('vol-crowd-50', cb === 50);
     markSelected('vol-crowd-100', cb === 100);
+    var mb2 = volBucket(LG.Settings.volMusic());
+    markSelected('vol-music-0', mb2 === 0);
+    markSelected('vol-music-50', mb2 === 50);
+    markSelected('vol-music-100', mb2 === 100);
     markSelected('rm-on', LG.Settings.reducedMotion());
     markSelected('rm-off', !LG.Settings.reducedMotion());
     var rb = document.getElementById('btn-settings-reset');
@@ -1456,6 +1473,7 @@
     LG.Particles.clear();
     match.start();
     UIState = 'match';
+    syncMusic();   // stop now, not on the next frame — the whistle and the menu
     lastNow = nowSec();
   }
 
@@ -1828,6 +1846,7 @@
     var vh = Math.max(1, Math.round(window.innerHeight || 1));
     var vdpr = Math.min(window.devicePixelRatio || 1, 2);
     if (vw !== vpW || vh !== vpH || vdpr !== vpDPR) scheduleViewportLayout();
+    syncMusic();
     updateRotate();
 
     if (UIState === 'match') {

@@ -1566,6 +1566,63 @@ body.reduced-motion #special-btn.ready {
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
+/* menu music chip — a small corner detail, never a popup. It appears only
+   when the track actually changes (js/menu-music.js), sits clear of the
+   thumb zones, and is pointer-events:none so it can never swallow a tap. */
+#now-playing {
+  position: fixed;
+  left: calc(14px + env(safe-area-inset-left, 0px));
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  z-index: 60;                      /* over the menu boards (50), under the boot cover */
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  max-width: min(76vw, 320px);
+  padding: 7px 13px 7px 11px;
+  background: rgba(20, 20, 19, 0.94);
+  border: 1px solid rgba(230, 217, 180, 0.3);
+  border-left: 3px solid var(--rust);
+  border-radius: 3px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(8px);
+  transition: opacity 0.26s ease, transform 0.26s ease, visibility 0s linear 0.26s;
+}
+#now-playing.show {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition: opacity 0.26s ease, transform 0.26s ease, visibility 0s linear 0s;
+}
+#now-playing .np-glyph {
+  font-size: 16px;
+  line-height: 1;
+  color: var(--rust);
+}
+#now-playing .np-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+#now-playing .np-label {
+  font-family: var(--font-display);
+  font-size: 9px;
+  letter-spacing: 0.24em;
+  color: rgba(230, 217, 180, 0.5);
+}
+#now-playing .np-title {
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: var(--offw);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+body.reduced-motion #now-playing { transition: none; }
+
 /* adapt desktop: hide joystick ghosts when using keyboard */
 @media (min-width: 900px) and (pointer: fine) {
   #joystick-zone { opacity: 0.32; }

@@ -17,7 +17,7 @@ function check(cond, label, detail) {
 function section(t) { console.log('\n== ' + t + ' =='); }
 
 // ---------------- static server ----------------
-var MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.json': 'application/json', '.svg': 'image/svg+xml', '.jpg': 'image/jpeg', '.webmanifest': 'application/manifest+json' };
+var MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.json': 'application/json', '.svg': 'image/svg+xml', '.jpg': 'image/jpeg', '.webmanifest': 'application/manifest+json', '.mp3': 'audio/mpeg' };
 var server = http.createServer(function (req, res) {
   var url = decodeURIComponent(String(req.url).split('?')[0]);
   if (url === '/') url = '/index.html';
@@ -147,10 +147,22 @@ function show(tag, r) {
 function dbg(cdp, tag) {
   var e = '(function(){var v=window.LGMain?LGMain.getViewport():null;' +
     'return JSON.stringify({inner:[innerWidth,innerHeight],applies:v?v.applies:-1,' +
-    'raf:(window.__raf||0),rz:(window.__rz||0),' +
+    'raf:(window.__raf||0),rz:(window.__rz||0),loop:(window.__loopN||0),' +
     'rot:document.getElementById("rotate-overlay").className,ds:(window.LG&&LG.Player?LG.Player.deviceScale:null),' +
     'vis:document.visibilityState,hidden:document.hidden,now:Math.round(performance.now())});})()';
   return ev(cdp, e).then(function (s) { console.log('   [' + tag + '] ' + s); return JSON.parse(s); });
+}
+
+// everything the menu music controller + its chip are doing right now
+function musicState(cdp) {
+  var e = '(function(){if(!(window.LG&&LG.Music))return null;' +
+    'var s=LG.Music.snapshot(),n=document.getElementById("now-playing"),t=document.querySelector("#now-playing .np-title");' +
+    'var r=n?n.getBoundingClientRect():null,cs=n?getComputedStyle(n):null;' +
+    'return {snap:s, show:!!n&&n.classList.contains("show"), title:t?t.textContent:"",' +
+    'st:(window.LGMain?LGMain.getState():null), loopN:(window.__loopN||0),' +
+    'inView:!!r&&r.left>=-1&&r.top>=-1&&r.right<=innerWidth+1&&r.bottom<=innerHeight+1,' +
+    'w:r?Math.round(r.width):0,h:r?Math.round(r.height):0,pe:cs?cs.pointerEvents:null};})()';
+  return ev(cdp, e);
 }
 
 // click the real controls with trusted input (a real mouse press, so
@@ -272,6 +284,9 @@ async function main() {
     '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
     '--disable-backgrounding-occluded-windows', '--disable-features=Translate,MediaRouter',
     '--enable-unsafe-swiftshader', '--use-angle=swiftshader', '--window-size=844,390',
+    // keep the browser's real autoplay gate in place: the menu music must
+    // start on the player's first tap, never on its own
+    '--autoplay-policy=user-gesture-required',
   ], { stdio: 'ignore', windowsHide: true });
 
   // wait for the devtools endpoint
@@ -319,7 +334,9 @@ async function main() {
   await cdp.send('Page.navigate', { url: url });
   var booted = await waitFor(cdp, 'window.LGMain && LGMain.getState()==="menu" && document.getElementById("loading-overlay").classList.contains("hidden")', 30000);
   check(booted, 'the game boots to the menu and lifts the boot cover');
-  await ev(cdp, 'window.__rz=0;window.addEventListener("resize",function(){window.__rz++;});window.__raf=0;(function f(){window.__raf++;requestAnimationFrame(f);})();true');
+  await ev(cdp, 'window.__rz=0;window.addEventListener("resize",function(){window.__rz++;});window.__raf=0;(function f(){window.__raf++;requestAnimationFrame(f);})();' +
+    'window.__loopN=0;(function(){if(!window.LG||!LG.Input)return;var o=LG.Input.setEnabled;' +
+    'LG.Input.setEnabled=function(on){window.__loopN++;return o.call(LG.Input,on);};})();true');
   var r = await report(cdp);
   show('boot', r);
   check(r.vp && r.vp.w === 844 && r.vp.h === 390, 'the renderer was sized from the real viewport',
@@ -327,15 +344,51 @@ async function main() {
   check(!r.portrait, 'body is-landscape on a landscape phone', r.portrait);
   check(r.menu, 'the full menu interface is up', 'menu=' + r.menu);
 
+  var ms = await musicState(cdp);
+  check(ms && ms.snap && ms.snap.index >= 0 && !!ms.snap.title,
+    'the first menu track is already queued on load', ms && ms.snap.title);
+  check(ms && ms.snap.playing === false,
+    'nothing plays before the first real gesture (autoplay gate)', JSON.stringify(ms && ms.snap));
+  check(ms && !ms.show, 'no now-playing chip before a track actually starts');
+
   section('B. menu -> match: the whole control layer appears at once');
   await tap(cdp, 'btn-play');
   await sleep(420);
+
+  // the first trusted tap is what the browser was waiting for
+  var musicUp = await waitFor(cdp, 'window.LG && LG.Music && LG.Music.snapshot().playing === true', 12000);
+  check(musicUp, 'the first real tap starts the menu music');
+  ms = await musicState(cdp);
+  check(ms && ms.show, 'the now-playing chip appears when a track starts', ms && ms.title);
+  check(ms && ms.title && !/\.(mp3|ogg|wav|m4a|flac)$/i.test(ms.title) && !/[._]/.test(ms.title),
+    'the chip shows a clean song title', ms && ms.title);
+  check(ms && ms.pe === 'none', 'the chip can never block a tap', ms && ms.pe);
+  check(ms && ms.inView && ms.w > 40 && ms.h > 10,
+    'the chip sits on screen and is a sensible size', JSON.stringify({ w: ms && ms.w, h: ms && ms.h }));
+  var starts0 = ms && ms.snap ? ms.snap.starts : -1;
+
+  // ~5 seconds of screen time, then it gets out of the way on its own
+  await sleep(5400);
+  ms = await musicState(cdp);
+  check(ms && !ms.show, 'the chip fades away after about 5 seconds');
+  check(ms && ms.snap.playing, 'the same song keeps playing after the chip is gone');
+
+  await dbg(cdp, 'B menu');
   await touchScrollPanel(cdp);          // the mode panel overflows a 390px-tall phone
   await playMatch(cdp, 1);
   await waitFor(cdp, 'window.LGMain && LGMain.getState()==="match"', 15000);
   await sleep(400);
   r = await report(cdp); show('landscape match', r);
   checkControls(r, 'landscape', false);
+  // the stop may land on the very same tick or on the next frame — wait for it
+  // instead of sampling at a fixed moment
+  var musicOff = await waitFor(cdp, 'window.LG && LG.Music && LG.Music.snapshot().active === false', 8000);
+  ms = await musicState(cdp);
+  check(musicOff && !ms.snap.playing,
+    'menu music stops when the match kicks off', JSON.stringify(ms));
+  check(ms && !ms.show, 'the chip is gone over the match');
+  check(ms && ms.snap.starts === starts0, 'entering the match never starts a new track',
+    ms && ms.snap.starts);
   await dragStick(cdp);
 
   section('C. rotate to portrait during gameplay (the reported workaround)');
@@ -365,6 +418,13 @@ async function main() {
   await sleep(450);
   await tap(cdp, 'btn-quit-menu');
   await waitFor(cdp, 'LGMain.getState()==="menu"', 8000);
+  var resumed = await waitFor(cdp,
+    'window.LG && LG.Music && LG.Music.snapshot().active && LG.Music.snapshot().playing', 10000);
+  check(resumed, 'returning to the menu resumes the music');
+  ms = await musicState(cdp);
+  check(ms && !ms.show, 'resuming the same song shows no second chip', ms && ms.title);
+  check(ms && ms.snap.starts === starts0, 'the round trip never counts a new track',
+    ms && ms.snap.starts);
   await playMatch(cdp);
   await waitFor(cdp, 'LGMain.getState()==="match"', 15000);
   await sleep(400);
@@ -378,6 +438,10 @@ async function main() {
   r = await report(cdp); show('reloaded', r);
   check(r.vp && r.vp.w === 844 && r.vp.h === 390, 'the reload measures the same viewport', r.vp && (r.vp.w + 'x' + r.vp.h));
   check(r.coverHidden && r.menu, 'interface complete after reload', 'coverHidden=' + r.coverHidden);
+  ms = await musicState(cdp);
+  check(ms && ms.snap.index >= 0 && !ms.snap.playing && !ms.show,
+    'a reload re-queues the playlist and waits for a gesture again',
+    JSON.stringify(ms && ms.snap));
 
   section('G. no javascript / console errors');
   check(jsErrors.length === 0, 'the page raised no JS or console errors', jsErrors.slice(0, 4).join(' | '));
