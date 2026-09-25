@@ -182,33 +182,8 @@ html, body {
 }
 #pause-btn:active { transform: scale(0.92); }
 
-/* ---------- player tags (dots only) ---------- */
-.tag {
-  position: fixed;
-  transform: translate(-50%, -100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 12px; height: 12px;
-  padding: 0;
-  border-radius: 50%;
-  background: transparent;
-  border: none;
-  pointer-events: none;
-  z-index: 20;
-  transition: left 0.05s linear, top 0.05s linear, opacity 0.3s;
-}
-.tag .tdot {
-  width: 10px; height: 10px;
-  border-radius: 50%;
-  background: var(--cyan);
-  box-shadow: 0 0 6px rgba(20, 200, 216, 0.65), 0 1px 3px rgba(0,0,0,0.7);
-  flex-shrink: 0;
-}
-.tag.team-away .tdot { background: var(--hud-red); box-shadow: 0 0 6px rgba(193, 74, 53, 0.65), 0 1px 3px rgba(0,0,0,0.7); }
-.tag.tag-gk .tdot { background: var(--cream); box-shadow: 0 0 6px rgba(230, 217, 180, 0.7), 0 1px 3px rgba(0,0,0,0.7); }
-.tag.tag-me .tdot { width: 12px; height: 12px; box-shadow: 0 0 8px rgba(20, 200, 216, 0.85), 0 0 0 2px rgba(12, 12, 11, 0.55); }
-.tag.carrier .tdot { background: var(--rust); box-shadow: 0 0 8px rgba(196, 106, 43, 0.8), 0 1px 3px rgba(0,0,0,0.7); }
+/* Player head markers were removed: possession is shown by ONE world-space
+   indicator above the ball carrier (owned by the match, not the DOM). */
 
 /* ---------- bottom controls ---------- */
 #controls {
@@ -1656,8 +1631,6 @@ body.reduced-motion #special-btn.ready {
   .big-btn { padding: 18px 40px; font-size: clamp(19px, 4.5vmin, 26px); min-width: 200px; }
   #coin-chip { padding: 8px 16px; font-size: 16px; }
   #special-btn { width: calc(var(--btn-size) + 18px); height: calc(var(--btn-size) + 18px); }
-  .tag .tdot { width: 13px; height: 13px; }
-  .tag.tag-me .tdot { width: 15px; height: 15px; }
 }
 
 /* small screens: keep buttons tappable but not cramped */

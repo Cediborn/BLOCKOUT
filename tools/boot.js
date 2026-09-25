@@ -19,10 +19,14 @@ function section(t) { console.log('\n== ' + t + ' =='); }
 // ---------------- fake THREE ----------------
 function vec3() {
   var v = { x: 0, y: 0, z: 0, w: 0 };
-  ['set', 'copy', 'add', 'sub', 'multiplyScalar', 'normalize', 'lerp', 'project', 'setFromMatrixPosition',
-    'distanceTo', 'applyQuaternion', 'crossVectors', 'addVectors', 'subVectors', 'clone', 'setScalar'].forEach(function (m) {
+  ['copy', 'add', 'sub', 'multiplyScalar', 'normalize', 'lerp', 'project', 'setFromMatrixPosition',
+    'distanceTo', 'applyQuaternion', 'crossVectors', 'addVectors', 'subVectors', 'clone'].forEach(function (m) {
       v[m] = function () { return v; };
     });
+  // set() must actually store, exactly like THREE.Vector3 — otherwise a check
+  // on where a marker ended up silently reads the initial zeros
+  v.set = function (x, y, z) { v.x = x; v.y = y; v.z = z; return v; };
+  v.setScalar = function (s) { v.x = v.y = v.z = s; return v; };
   return v;
 }
 function fakeNode() {
@@ -372,7 +376,78 @@ var m = window.LGMain.getMatch();
 check(!!m, 'a match object exists');
 check(m && (m.state === 'PLAY' || m.state === 'KICKOFF'), 'the match advanced past IDLE', m && m.state);
 
-section('3b. fullscreen is taken at match start, never mid-tap');
+section('3b. visibility pass — player size, team kits, one carrier indicator');
+try {
+  var vm = window.LGMain.getMatch();
+  if (!vm) {
+    check(false, 'a match exists for the visibility checks');
+  } else {
+    // 1) one body size: model scale, collision body and height all move together
+    var S = LG.Player.visualScale();
+    var p0 = vm.home[0];
+    check(S >= 1.25, 'players are substantially bigger than before', S);
+    check(p0.height > 1.62, 'the height used by markers grew with the body', p0.height);
+    var bodiesOk = true, worst = '';
+    for (var bi = 0; bi < vm.all.length; bi++) {
+      var bp = vm.all[bi];
+      var bw = (bp.def.body && bp.def.body.wide) || 1;
+      var bwant = 0.42 * bw * S;
+      if (Math.abs(bp.radius - bwant) > 1e-9) { bodiesOk = false; worst = bp.name + ' ' + bp.radius + ' != ' + bwant; }
+    }
+    check(bodiesOk, 'every player body (both teams, keepers included) uses the same scale', worst || 'all ' + vm.all.length);
+
+    // 2) one readable kit colour per side — keeper included
+    var uniformShirt = function (list) {
+      var c = list[0].def.palette.shirt;
+      for (var i = 1; i < list.length; i++) if (list[i].def.palette.shirt !== c) return null;
+      return c;
+    };
+    var hKit = uniformShirt(vm.home), aKit = uniformShirt(vm.away);
+    check(hKit != null, 'every home player wears one kit colour (keeper included)', hKit && hKit.toString(16));
+    check(aKit != null, 'every Rogue player wears one kit colour (keeper included)', aKit && aKit.toString(16));
+    check(hKit != null && aKit != null && hKit !== aKit, 'the two sides are never the same colour',
+      hKit && aKit && (hKit.toString(16) + '/' + aKit.toString(16)));
+
+    // 3) the ball-carrier indicator: 0 with nobody on the ball, exactly 1 with
+    //    a carrier, always anchored to that player's WORLD position
+    var carriers = [], ci;
+    for (ci = 0; ci < vm.all.length; ci++) if (vm.all[ci].hasBall) carriers.push(vm.all[ci]);
+    check(carriers.length <= 1, 'never more than one ball carrier', carriers.length);
+    check(!!vm.carrierMark, 'the match owns exactly one carrier indicator object');
+    check(vm.carrierMark && vm.carrierMark.visible === (carriers.length === 1),
+      'the indicator shows for the carrier and for nobody else',
+      carriers.length + ' carrier(s), visible=' + (vm.carrierMark && vm.carrierMark.visible));
+    if (carriers.length === 1 && vm.carrierMark.visible) {
+      var cp = carriers[0];
+      var off = Math.abs(vm.carrierMark.position.x - cp.x) + Math.abs(vm.carrierMark.position.z - cp.z);
+      check(off < 1e-6, 'the indicator tracks the carrier position, not the screen', off);
+      check(vm.carrierMark.position.y >= cp.height, 'the indicator floats above the head', vm.carrierMark.position.y);
+    } else if (carriers.length === 0 && vm.carrierMark) {
+      // nobody has won the ball in this window of frames — hand it to a player
+      // for one read-only probe and put everything back exactly as it was
+      var target = vm.home[0];
+      target.hasBall = true;
+      vm.updateCarrierMark();
+      var dx = Math.abs(vm.carrierMark.position.x - target.x) + Math.abs(vm.carrierMark.position.z - target.z);
+      var dy = vm.carrierMark.position.y - (target.height + vm.carrierLift);
+      check(vm.carrierMark.visible === true, 'the indicator appears the moment someone holds the ball');
+      check(dx < 1e-6, 'the indicator tracks the carrier position, not the screen', dx);
+      check(Math.abs(dy) <= vm.carrierBob + 1e-6, 'the indicator floats just above that head', dy);
+      target.hasBall = false;
+      vm.updateCarrierMark();
+      check(vm.carrierMark.visible === false, 'the indicator disappears again with the ball');
+    }
+
+    // 4) per-player screen-space head dots are gone for good
+    check(typeof LG.HUD.updateTags !== 'function', 'per-player screen-space tags are removed from the HUD');
+    check(typeof LG.HUD.clearTags === 'function', 'the defensive tag cleanup still exists');
+  }
+} catch (e) {
+  console.log('  FAIL visibility checks threw  ->  ' + e.message + '\n' + (e.stack || '').split('\n').slice(1, 4).join('\n'));
+  FAIL++;
+}
+
+section('3c. fullscreen is taken at match start, never mid-tap');
 check(fsCalls === 1, 'starting the match asked for fullscreen once', fsCalls);
 window.fire('pointerdown', { clientX: 10, clientY: 10 });
 check(fsCalls === 1, 'a stray tap afterwards does not re-request fullscreen', fsCalls);

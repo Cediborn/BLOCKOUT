@@ -1344,25 +1344,19 @@
       matchOpts.mode = (LG.Modes && LG.Modes.id) ? LG.Modes.id() : 'quick_match';
     }
 
+    // phone screens get one extra size bump, baked into every player as it is
+    // built (model + collision body + height move together) — see LG.Config.player
+    if (LG.Player) LG.Player.deviceScale = isMobile ? (LG.Config.player.mobileScale || 1) : 1;
+
     match = new LG.MatchManager(matchOpts);
     match.attachScene(scene, arenaObj);
     match.camera = camCtrl;
     match.selectActive();
 
-    // Mobile: scale players larger for better visibility on small screens
-    if (isMobile) {
-      var mobileScale = 1.35;
-      var allPlayers = match.all;
-      for (var pi = 0; pi < allPlayers.length; pi++) {
-        allPlayers[pi].model.group.scale.set(mobileScale, mobileScale, mobileScale);
-        allPlayers[pi].radius *= mobileScale;
-        allPlayers[pi].height *= mobileScale;
-      }
-      // scale ball slightly
-      if (match.ball && match.ball.mesh) {
-        match.ball.mesh.scale.set(1.25, 1.25, 1.25);
-        match.ball.r *= 1.25;
-      }
+    // the ball is read a touch larger on phones only
+    if (isMobile && match.ball && match.ball.mesh) {
+      match.ball.mesh.scale.set(1.25, 1.25, 1.25);
+      match.ball.r *= 1.25;
     }
 
     showMatchUI(true);
@@ -1380,6 +1374,7 @@
   function clearMatchFromScene() {
     if (match.ball && match.ball.mesh) scene.remove(match.ball.mesh);
     if (match.ballGlow) scene.remove(match.ballGlow);
+    if (match.carrierMark) scene.remove(match.carrierMark);
     var all = match.all || [];
     for (var i = 0; i < all.length; i++) {
       var p = all[i];
@@ -1742,7 +1737,6 @@
     if (UIState === 'match') {
       match.update(dt);
       camCtrl.update(dt, match.active.x, match.active.z, match.ball.x, match.ball.z);
-      LG.HUD.updateTags(match, camera, dt);
       LG.HUD.updateSpecial(match.active);
       LG.HUD.updateCoins();
       LG.HUD.aim(match.active.shotCharge > 0.15 && match.active.hasBall);

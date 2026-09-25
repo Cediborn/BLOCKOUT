@@ -72,19 +72,16 @@ LG.MatchManager.prototype = {
     var mateDefs = [playerDef];
     (playerDef.team || []).forEach(function (id) { mateDefs.push(LG.byId(id)); });
 
-    // Apply outfit color to human team if selected
-    var outfit = O.outfitColor;
-    if (outfit) {
-      mateDefs = mateDefs.map(function(d) {
-        var clone = JSON.parse(JSON.stringify(d));
-        clone.palette = JSON.parse(JSON.stringify(clone.palette));
-        clone.palette.shirt = outfit.color;
-        clone.palette.shoe = outfit.color;
-        return clone;
-      });
-    }
+    // ONE kit colour per side — always. A kit picked in PLAYER STYLE wins,
+    // otherwise the default from LG.Config.kits applies, so the two teams are
+    // told apart at a glance instead of dissolving into a mix of individual
+    // street outfits (the old REGULAR case was one colour per PLAYER).
+    var K = LG.Config.kits || {};
+    var homeKit = (O.outfitColor && O.outfitColor.color != null) ? O.outfitColor.color : K.home;
+    var awayKit = (O.awayColor && O.awayColor.color != null) ? O.awayColor.color : K.away;
+    this.kitColors = [homeKit, awayKit];
 
-    var team0 = this.teamOf(mateDefs, 0);
+    var team0 = this.teamOf(this.applyKit(mateDefs, homeKit), 0);
     // Tournament fixtures pin the opponent side; quick/challenge keep the
     // existing random draw (no hidden difficulty buffs either way).
     var oppIds;
@@ -98,19 +95,8 @@ LG.MatchManager.prototype = {
       }
     }
 
-    // Apply opponent kit color if selected (independent of the human kit)
-    var awayKit = O.awayColor;
     var awayDefs = oppIds.map(function (id) { return LG.byId(id); });
-    if (awayKit) {
-      awayDefs = awayDefs.map(function (d) {
-        var clone = JSON.parse(JSON.stringify(d));
-        clone.palette = JSON.parse(JSON.stringify(clone.palette));
-        clone.palette.shirt = awayKit.color;
-        clone.palette.shoe = awayKit.color;
-        return clone;
-      });
-    }
-    var team1 = this.teamOf(awayDefs, 1);
+    var team1 = this.teamOf(this.applyKit(awayDefs, awayKit), 1);
 
     // one dedicated goalkeeper per team (outfield stays 3v3)
     team0.push(this.makeGoalkeeper(0));
@@ -127,14 +113,23 @@ LG.MatchManager.prototype = {
       this.ensureAI(this.all[i]);
     }
 
-    // attach rings — a clean circular selection ring: thin annulus flat on the
-    // ground + a small chevron that points the active player's heading.
+    // attach rings — a clean circular selection ring: a dark backing annulus
+    // + a thin cyan annulus flat on the ground + a small chevron that points
+    // the active player's heading. The backing is what keeps the ring readable
+    // over bright court paint; the ring itself stays a snug ground halo now
+    // that the bodies are bigger.
     var ringM = new THREE.MeshBasicMaterial({ color: 0x35e0ff, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false });
     var ringG = new THREE.RingGeometry(0.66, 0.8, 48);
+    var backM = new THREE.MeshBasicMaterial({ color: 0x0b0c10, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false });
+    var backG = new THREE.RingGeometry(0.6, 0.86, 48);
     var tickM = new THREE.MeshBasicMaterial({ color: 0xdfffff, transparent: true, opacity: 1, side: THREE.DoubleSide, depthWrite: false });
     var tickG = new THREE.ConeGeometry(0.11, 0.2, 3);
     for (i = 0; i < this.all.length; i++) {
       var sel = new THREE.Group();
+      var back = new THREE.Mesh(backG, backM);
+      back.rotation.x = -Math.PI / 2;
+      back.position.y = 0.03;
+      sel.add(back);
       var ann = new THREE.Mesh(ringG, ringM.clone());
       ann.rotation.x = -Math.PI / 2;
       ann.position.y = 0.045;
@@ -144,7 +139,7 @@ LG.MatchManager.prototype = {
       tick.position.set(0, 0.045, 0.73);
       sel.add(tick);
       sel.visible = false;
-      sel.userData = { ann: ann, tick: tick };
+      sel.userData = { ann: ann, tick: tick, back: back };
       this.all[i].ring = sel;
       // aura sprite for abilities
       var auraTex = LG.Util.makeCanvasTexture(function (g, w, h) {
@@ -157,13 +152,83 @@ LG.MatchManager.prototype = {
       }, 64, 64);
       var aura = new THREE.Mesh(
         new THREE.PlaneGeometry(2.6, 2.6),
-        new THREE.MeshBasicMaterial({ map: auraTex, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending })
+        new THREE.MeshBasicMaterial({ map: auraTex, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending })
       );
       aura.rotation.x = 0;
       aura.position.y = 1.1;
       aura.visible = false;
+      aura.scale.set(this.all[i].scale, this.all[i].scale, this.all[i].scale);
       this.all[i].setAura(aura);
     }
+
+    // exactly ONE ball-carrier indicator exists for the whole match — it is
+    // repositioned from the live possession state every frame, never spawned
+    // per player, so it can never outnumber the ball carrier.
+    this.carrierMark = this.buildCarrierMark();
+  },
+
+  // Uniform kit for one side: shirt + trousers + boots all take the side's
+  // colour (skin, hair, trim and gloves stay with the character).
+  applyKit: function (defs, color) {
+    if (color == null) return defs;
+    return defs.map(function (d) {
+      var clone = JSON.parse(JSON.stringify(d));
+      clone.palette = JSON.parse(JSON.stringify(clone.palette));
+      clone.palette.shirt = color;
+      clone.palette.pants = color;
+      clone.palette.shoe = color;
+      return clone;
+    });
+  },
+
+  // The single ball-carrier head marker: a camera-facing sprite carrying an
+  // outlined arrow, so it stays legible against the sky, the court paint or a
+  // wall from ANY angle (a flat plane would go edge-on in the landscape view).
+  // Built once, sized to the current player scale.
+  buildCarrierMark: function () {
+    var C = LG.Config.indicator || {};
+    var S = LG.Player.visualScale();
+    this.carrierLift = C.lift != null ? C.lift : 0.34;
+    this.carrierBob = C.bob != null ? C.bob : 0.05;
+    this.carrierBobHz = C.bobHz != null ? C.bobHz : 1.4;
+
+    var hex = function (n) {
+      return '#' + ('000000' + (n >>> 0).toString(16)).slice(-6);
+    };
+    var tex = LG.Util.makeCanvasTexture(function (g, w, h) {
+      // downward arrow — the tip points at whoever has the ball
+      g.beginPath();
+      g.moveTo(w / 2, h * 0.88);
+      g.lineTo(w * 0.13, h * 0.3);
+      g.lineTo(w * 0.87, h * 0.3);
+      g.closePath();
+      g.lineWidth = w * 0.16;
+      g.strokeStyle = hex(C.outline != null ? C.outline : 0x141413);
+      g.stroke();
+      g.fillStyle = hex(C.color != null ? C.color : 0xffc14d);
+      g.fill();
+    }, 64, 64);
+
+    var sp = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: tex, transparent: true, depthWrite: false,
+    }));
+    var size = 0.72 * S;                 // world units across the texture quad
+    sp.scale.set(size, size, 1);
+    sp.visible = false;
+    return sp;
+  },
+
+  // One indicator, always derived from live possession: 0 markers with no
+  // carrier, exactly 1 with a carrier. The mesh itself is the guard against
+  // duplicates — there is only ever a single instance of it in the scene.
+  updateCarrierMark: function () {
+    var m = this.carrierMark;
+    if (!m) return;
+    var owner = (this.state === 'END') ? null : this.ownerPlayer();
+    if (!owner) { m.visible = false; return; }
+    var bob = Math.sin((this.t || 0) * Math.PI * 2 * this.carrierBobHz) * this.carrierBob;
+    m.visible = true;
+    m.position.set(owner.x, (owner.y || 0) + owner.height + this.carrierLift + bob, owner.z);
   },
 
   teamOf: function (defs, team) {
@@ -198,10 +263,14 @@ LG.MatchManager.prototype = {
         { skin: 0xd99f72, hair: 0x20242c, shirt: 0x2ee65a, trim: 0xffffff, pants: 0x141a12, shoe: 0x171c14 } :
         { skin: 0x8a5a3c, hair: 0x1d2026, shirt: 0xffa62e, trim: 0x2b1500, pants: 0x23201a, shoe: 0x181c22 },
     };
-    // away keeper wears the selected opponent kit if there is one
-    if (team === 1 && this.opts.awayColor) {
-      def.palette.shirt = this.opts.awayColor.color;
-      def.palette.shoe = this.opts.awayColor.color;
+    // the keeper wears their own side's kit as well (gloves stay the keeper
+    // accent) — a keeper never reads as a member of the other team, and the
+    // high-visibility shirt is what "goalkeeper" is now recognised by
+    var kit = (this.kitColors && this.kitColors[team] != null) ? this.kitColors[team] : null;
+    if (kit != null) {
+      def.palette.shirt = kit;
+      def.palette.pants = kit;
+      def.palette.shoe = kit;
     }
     var p = new LG.Player(def, team, 3);
     p.isHuman = false;
@@ -221,6 +290,7 @@ LG.MatchManager.prototype = {
       scene.add(this.all[i].ring);
       scene.add(this.all[i].auraMesh);
     }
+    scene.add(this.carrierMark);
   },
 
   // evaluate world half — home(0) defends +z, attacks -z
@@ -430,6 +500,8 @@ LG.MatchManager.prototype = {
     var owned = !!this.ownerPlayer();
     this.ballGlow.material.opacity = owned ? (0.5 + Math.sin(this.t * 10) * 0.2) : 0;
     this.t = (this.t || 0) + dt;
+    // last: the marker reflects possession as it stands AFTER this frame
+    this.updateCarrierMark();
   },
 
   ticks: function (dt) {

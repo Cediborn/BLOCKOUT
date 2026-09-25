@@ -25,6 +25,43 @@ LG.Config = {
     swapCooldown: 0.5,
   },
 
+  // ------------------------------------------------------------
+  // PLAYER VISUALS — readability pass.
+  // scale multiplies the character model, its collision radius and its
+  // height TOGETHER, so a bigger player still matches the body that
+  // tackles, picks the ball up and collides. Bumping the size therefore
+  // widens spacing exactly as much as it widens the silhouette.
+  // ------------------------------------------------------------
+  player: {
+    scale: 1.35,        // baseline — 1.35x the original body size
+    mobileScale: 1.05,  // extra bump on phones (small screens) -> ~1.42 total
+  },
+
+  // ------------------------------------------------------------
+  // TEAM KITS — both squads always wear ONE readable colour per side,
+  // so "which team is that?" is answered at a glance. A kit picked in
+  // PLAYER STYLE overrides the default for that side; when no kit is
+  // picked (REGULAR) the default below applies instead of the roster's
+  // mixed street palettes.
+  // ------------------------------------------------------------
+  kits: {
+    home: 0x4488ff,
+    away: 0xff4444,
+  },
+
+  // ------------------------------------------------------------
+  // BALL-CARRIER HEAD INDICATOR — exactly ONE world-space mesh, owned
+  // by the match, repositioned every frame from the live carrier.
+  // Nothing else in the scene ever draws one.
+  // ------------------------------------------------------------
+  indicator: {
+    lift: 0.34,       // metres above the head (at scale 1)
+    bob: 0.05,        // subtle float, keeps it alive without wobbling
+    bobHz: 1.4,
+    color: 0xffc14d,
+    outline: 0x141413,
+  },
+
   physics: {
     gravity: -17,
     bounce: 0.6,            // ground bounce coefficient (low = rolls)

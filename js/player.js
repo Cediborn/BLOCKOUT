@@ -17,10 +17,13 @@ LG.Player = function (def, team, idx) {
   this.sprintMul = LG.Config.physics.sprintMul || 1.55;
 
   var wide = (def.body && def.body.wide) || 1;
-  this.radius = 0.42 * wide;
-  this.height = 1.62 * ((def.body && def.body.tall) || 1);
+  var S = LG.Player.visualScale();
+  this.scale = S;
+  this.radius = 0.42 * wide * S;
+  this.height = 1.62 * ((def.body && def.body.tall) || 1) * S;
 
   this.model = LG.Models.buildCharacter(def);
+  this.model.group.scale.set(S, S, S);
   this.x = 0; this.z = 0;
   this.y = 0;               // for buffs / effects lifts
   this.vx = 0; this.vz = 0;
@@ -54,6 +57,14 @@ LG.Player = function (def, team, idx) {
   // selection ring (match attaches)
   this.ring = null;
   this.auraMesh = null;
+};
+
+// Single source of truth for how big every player on screen is. The model,
+// the collision radius and the height are all multiplied by it, so a bigger
+// body never ends up with the old, smaller physics footprint.
+LG.Player.visualScale = function () {
+  var cfg = (LG.Config && LG.Config.player) || {};
+  return (cfg.scale || 1) * (LG.Player.deviceScale || 1);
 };
 
 LG.Player.prototype.setupModel = function () {
@@ -172,6 +183,13 @@ LG.Player.prototype.update = function (dt) {
   }
 
   if (!this.hasBall) this.faceBallLoose();
+
+  // the ability aura rides with the player — it used to be parked at the world
+  // origin, so the glow sat in the middle of the court instead of around the
+  // character who actually triggered it
+  if (this.auraMesh) {
+    this.auraMesh.position.set(this.x, this.y + 1.1 * this.scale, this.z);
+  }
 
   // selection ring: keeps its true circular shape, hugs the ground under the
   // player, chevron points the heading, and only the opacity pulses so it
