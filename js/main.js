@@ -59,6 +59,7 @@
     }
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // sRGB in -> linear working space (see the inline hook in index.html) -> sRGB out
     renderer.outputEncoding = THREE.sRGBEncoding;
 
     scene = new THREE.Scene();
@@ -81,6 +82,10 @@
     // gather the environment's own lights/emissive signs/sky now that it exists
     LG.Lighting.collect(scene);
     LG.Lighting.setMode(LG.Settings.timeOfDay());
+
+    // read-only handles for the offline verification tooling (tools/) — lets a
+    // headless probe raycast the live scene without touching gameplay
+    LG.debug = { scene: scene, camera: camera, renderer: renderer, arena: arenaObj ? arenaObj.root : null };
 
     LG.Input.init();
     LG.HUD.init();
@@ -1935,3 +1940,4 @@
     },
   };
 })();
+

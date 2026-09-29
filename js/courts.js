@@ -191,6 +191,8 @@ LG.Courts = (function () {
         if (onLoad) onLoad(tx);
       });
       t.anisotropy = 4;
+      // court art is a painted sRGB image — decode it before the lighting pass
+      if (LG.Util && LG.Util.markColorTexture) LG.Util.markColorTexture(t);
       return t;
     } catch (e) { return null; }
   }

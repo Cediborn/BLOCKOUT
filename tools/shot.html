@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>shot harness</title>
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
+  iframe { border: 0; width: 100%; height: 100%; display: block; }
+</style>
+</head>
+<body>
+<iframe id="f" src="../index.html"></iframe>
+<script>
+// Drives the REAL game (inside the iframe) straight into the requested state
+// through its own event bus, then leaves it running so --screenshot captures
+// a live frame. Pure verification tooling; nothing here ships in the game.
+(function () {
+  var q = {};
+  location.search.replace(/[?&]+([^=&]+)=([^&]*)/g, function (m, k, v) { q[k] = decodeURIComponent(v); });
+  var state = q.state || 'match';
+  var time = q.time || 'day';
+  var court = q.court || '';
+  var DBG = null;
+  var f = document.getElementById('f');
+  var busy = false;
+  var T0 = Date.now();
+
+  function stage(label) { try { f.contentWindow.__shotStage = label; } catch (e) {} console.log('STAGE:' + label); }
+
+  function wait(test, cb, tag) {
+    var n = 0;
+    (function poll() {
+      var ok = false;
+      try { ok = test(); } catch (e) { ok = false; }
+      if (ok) { stage(tag || 'ready'); cb(); return; }
+      if (++n > 600) { stage('TIMEOUT:' + (tag || '')); return; }
+      setTimeout(poll, 20);
+    })();
+  }
+
+  function booted() {
+    var w = f.contentWindow;
+    if (!w || !w.LG || !w.LG.eventBus) return false;
+    var d = f.contentDocument;
+    var lo = d && d.getElementById('loading-overlay');
+    return !!(lo && lo.classList.contains('hidden'));
+  }
+
+  function flow() {
+    if (busy) return;
+    busy = true;
+    var w = f.contentWindow, LG = w.LG;
+    try { LG.Settings.setTimeOfDay(time); } catch (e) {}
+    try { LG.Settings.setView(q.view || 'landscape'); } catch (e) {}
+
+    if (state === 'menu') { stage('menu'); return; }
+
+    wait(function () { return LG.Courts && LG.Courts.probeAll; }, function () {
+      LG.Courts.probeAll(function () {
+        stage('courts');
+        // linear pre-match flow, exactly as the UI would emit it; the court
+        // screen builds its own grid, so the tile is CLICKED like a player
+        // would (LG.Courts.set alone would never repaint the pitch surface)
+        var steps = ['playRequested', 'modeConfirmed', 'difficultyConfirmed',
+                     'selectConfirmed', 'styleConfirmed'];
+        var i = 0;
+        (function next() {
+          if (i < steps.length) {
+            var st = steps[i++];
+            console.log('STEP:' + st);
+            try { LG.eventBus.emit(st); console.log('STEPok:' + st); }
+            catch (e) { console.log('STEPerr:' + st + ' ' + e.message); }
+            setTimeout(next, 60); return;
+          }
+          setTimeout(function () {
+            var d = f.contentDocument;
+            var grid = d.getElementById('court-grid');
+            if (grid) {
+              var list = LG.Courts.list();
+              var want = 0;
+              for (var k = 0; k < list.length; k++) if (list[k].id === court) want = k + 1;
+              var tile = grid.children[want];
+              console.log('STEP:tile click grid=' + !!grid + ' children=' + grid.children.length + ' want=' + want);
+              if (tile && tile.click) tile.click();
+            } else console.log('STEP:no court-grid');
+            setTimeout(function () {
+              console.log('STEP:courtConfirmed');
+              LG.eventBus.emit('courtConfirmed');
+              setTimeout(function () {
+                console.log('STEP:startMatch');
+                LG.eventBus.emit('startMatchRequested');
+                stage('match');
+              }, 80);
+            }, 80);
+          }, 120);
+        })();
+      });
+    }, 'probed');
+  }
+
+  // Optional: ?ray=757,500;772,300 — raycast the live scene at those CSS
+  // pixels and dump what is actually there to the Chrome console (shot.js
+  // echoes CONSOLE lines), so a visual artifact can be identified by name.
+  // ?sweep=1 does a grid sweep over the whole frame instead, run just before
+  // the screenshot so both describe the same frame.
+  var ARENA_CH = ['sky', 'ground', 'surface', 'goals', 'bleacher-1', 'bleacher+1',
+    'sideSpect+1', 'sideSpect-1', 'buildings', 'props', 'graffiti', 'crosswalks',
+    'barriers', 'lamps', 'benches', 'trees', 'vehicles', 'streetFurniture',
+    'perimeterSpect', 'fenceH-1', 'fenceH+1', 'fenceV-1', 'fenceV+1'];
+
+  function topInfo(o) {
+    var t = o, p = o;
+    var chain = [];
+    while (p) { if (p.parent && p.parent === DBG.arena) break; p = p.parent; t = p; if (!p) break; }
+    var idx = DBG.arena.children.indexOf(t);
+    var g = o.geometry && o.geometry.type;
+    return (idx >= 0 ? ARENA_CH[idx] || ('ch' + idx) : 'other') + '/' + (g || '-') + '/' + (o.name || '-');
+  }
+
+  var TARGETS = null;
+
+  function buildTargets() {
+    if (TARGETS) return TARGETS;
+    console.log('PROBE:traverse-start ' + Date.now());
+    var list = [], meshes = 0, tris = 0, inst = 0, bad = 0;
+    DBG.scene.traverse(function (o) {
+      if (!o.isMesh && !o.isPoints && !o.isLine) return;
+      meshes++;
+      var g = o.geometry;
+      if (g && g.attributes && g.attributes.position) {
+        var n = g.attributes.position.count;
+        tris += (g.index ? g.index.count : n) / 3;
+        if (g.attributes.position.count > 200000) bad++;
+      }
+      if (o.isInstancedMesh) inst += o.count;
+      list.push(o);
+    });
+    TARGETS = list;
+    console.log('SCENE meshes=' + meshes + ' tris=' + Math.round(tris) +
+      ' instanced=' + inst + ' heavy=' + bad + ' list=' + list.length);
+    return list;
+  }
+
+  function firstHit(rc) {
+    var hits = rc.intersectObjects(buildTargets(), false);
+    for (var i = 0; i < hits.length; i++) {
+      var o = hits[i].object;
+      if (o.visible === false) continue;
+      var m = Array.isArray(o.material) ? o.material[0] : o.material;
+      if (m && m.transparent && m.opacity < 0.35) continue;
+      return hits[i];
+    }
+    return hits[0] || null;
+  }
+
+  function castPx(px, py, rc, r) {
+    rc.setFromCamera({ x: (px - r.left) / r.width * 2 - 1, y: -((py - r.top) / r.height * 2 - 1) }, DBG.camera);
+    var h = firstHit(rc);
+    if (!h) return 'none';
+    return topInfo(h.object) + ' @' + h.point.x.toFixed(1) + ',' + h.point.y.toFixed(1) + ',' + h.point.z.toFixed(1);
+  }
+
+  function raycast() {
+    if (!q.ray && !q.sweep) return;
+    console.log('PROBE:enter ' + Date.now());
+    try {
+      var w = f.contentWindow, THREE = w.THREE, LG = w.LG;
+      var d = f.contentDocument;
+      var cv = d.getElementById('game-canvas');
+      var r = cv.getBoundingClientRect();
+      var cam = LG.debug && LG.debug.camera;
+      DBG = LG.debug;
+      if (!cam) { console.log('RAY:no-debug'); return; }
+      // the probe can run before the next render, so make sure the camera
+      // matrices describe the pose we are about to sample
+      cam.updateProjectionMatrix(); cam.updateMatrixWorld(true);
+      // the scene graph can be rebuilt (court surface swap, props) after the
+      // first probe pass — always re-collect the raycast targets and refresh
+      // world matrices so the hits describe the frame we are looking at
+      DBG.scene.updateMatrixWorld(true);
+      TARGETS = null;
+      buildTargets();
+      console.log('RECT ' + JSON.stringify({l:Math.round(r.left),t:Math.round(r.top),w:Math.round(r.width),h:Math.round(r.height),vw:f.contentWindow.innerWidth,vh:f.contentWindow.innerHeight,asp:cam.aspect}));
+      var t0 = performance.now();
+      var rc = new THREE.Raycaster();
+      rc.params.Points = { threshold: 0.01 };
+
+      if (q.sweep) {
+        var rows = [140, 300, 450, 600, 750];
+        for (var yi = 0; yi < rows.length; yi++) {
+          var y = rows[yi], segs = [], cur = null;
+          for (var x = 680; x <= 840; x += 2) {
+            var k = castPx(x, y, rc, r);
+            if (!cur || cur.k !== k) {
+              if (cur) { segs.push(cur); }
+              cur = { k: k, a: x, b: x };
+            } else cur.b = x;
+          }
+          if (cur) segs.push(cur);
+          var out = ['SWEEP y=' + y + ' n=' + segs.length];
+          for (var s = 0; s < segs.length; s++) {
+            var sg = segs[s];
+            // keep every segment - a 2px line IS the artifact we are hunting
+            out.push(sg.a + '-' + sg.b + ':' + sg.k);
+          }
+          console.log(out.join(' | ') + ' [t=' + Math.round(performance.now() - t0) + 'ms]');
+        }
+        var cp = cam.position;
+        console.log('CAM ' + cp.x.toFixed(1) + ',' + cp.y.toFixed(1) + ',' + cp.z.toFixed(1) + ' fov=' + cam.fov.toFixed(1));
+        return;
+      }
+
+      console.log('WIN ' + JSON.stringify({
+        iw: f.contentWindow.innerWidth, ih: f.contentWindow.innerHeight,
+        de: [f.contentDocument.documentElement.clientWidth, f.contentDocument.documentElement.clientHeight],
+        buf: [cv.width, cv.height], css: [cv.clientWidth, cv.clientHeight], rect: [Math.round(r.width), Math.round(r.height)]
+      }));
+      var vd0 = new THREE.Vector3(); cam.getWorldDirection(vd0);
+      var org0 = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld);
+      console.log('VDIR ' + vd0.toArray().map(function(n){return n.toFixed(3)}).join(',') +
+        ' | ORG ' + org0.toArray().map(function(n){return n.toFixed(2)}).join(',') +
+        ' | POS ' + cam.position.toArray().map(function(n){return n.toFixed(2)}).join(',') +
+        ' | rot ' + cam.rotation.x.toFixed(3) + ',' + cam.rotation.y.toFixed(3) + ',' + cam.rotation.z.toFixed(3) +
+        ' | up ' + cam.up.toArray().map(function(n){return n.toFixed(2)}).join(','));
+      var pts = q.ray.split(';');
+      for (var i = 0; i < pts.length; i++) {
+        var ab = pts[i].split(',');
+        var px = parseFloat(ab[0]), py = parseFloat(ab[1]);
+        var s0 = performance.now();
+        rc.setFromCamera({ x: (px - r.left) / r.width * 2 - 1, y: -((py - r.top) / r.height * 2 - 1) }, DBG.camera);
+        var all = rc.intersectObjects(buildTargets(), false);
+        var desc = [];
+        for (var q2 = 0; q2 < Math.min(all.length, 8); q2++) {
+          var o2 = all[q2].object, m2 = Array.isArray(o2.material) ? o2.material[0] : o2.material;
+          desc.push(all[q2].distance.toFixed(2) + 'm ' + topInfo(o2) + ' pos' + o2.position.x.toFixed(1) + ',' + o2.position.y.toFixed(2) + ',' + o2.position.z.toFixed(1) + ' vis=' + o2.visible + '/' + (o2.parent ? o2.parent.visible : '?') + ' @' + all[q2].point.x.toFixed(1) + ',' + all[q2].point.y.toFixed(2) + ',' + all[q2].point.z.toFixed(1) +
+            (m2 ? ' col#' + (m2.color ? m2.color.getHexString() : '') + (m2.transparent ? ' tr' + m2.opacity : '') + (m2.map ? ' map' : '') : ''));
+        }
+        console.log('HITS ' + px + ',' + py + ': ' + desc.join(' || '));
+        var res = castPx(px, py, rc, r);
+        console.log('RAY ' + px + ',' + py + ': ' + res + ' [t=' + Math.round(performance.now() - s0) + 'ms]');
+        var el = d.elementFromPoint(px, py);
+        console.log('DOM ' + px + ',' + py + ': ' + (el ? (el.tagName + '#' + el.id + ' cls=' + el.className + ' z=' + (d.defaultView.getComputedStyle(el).zIndex || '-')) : 'null'));
+      }
+      var cp2 = cam.position;
+      console.log('CAM ' + cp2.x.toFixed(1) + ',' + cp2.y.toFixed(1) + ',' + cp2.z.toFixed(1) + ' fov=' + cam.fov.toFixed(1));
+    } catch (e) { console.log('RAY:ERR ' + (e && e.message)); }
+  }
+
+  // ?tex=1 - dump every textured ground/pitch material's image and look for
+  // suspiciously dark rows/columns (a stray line drawn into a canvas texture).
+  function scanImage(name, img, w, h) {
+    try {
+      var cv2 = d2canvas(w, h);
+      var cx = cv2.getContext('2d');
+      cx.drawImage(img, 0, 0, w, h);
+      var data = cx.getImageData(0, 0, w, h).data;
+      var eL = 0, eR = 0, eT = 0, eB = 0, t2;
+      for (t2 = 0; t2 < h; t2++) { eL += lum(0, t2); eR += lum(w - 1, t2); }
+      for (t2 = 0; t2 < w; t2++) { eT += lum(t2, 0); eB += lum(t2, h - 1); }
+      eL /= h; eR /= h; eT /= w; eB /= w;
+      function lum(x, y) { var i = (y * w + x) * 4; return 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]; }
+      var colMean = [], rowMean = [], i2, x, y, s;
+      for (x = 0; x < w; x++) { s = 0; for (y = 0; y < h; y++) s += lum(x, y); colMean.push(s / h); }
+      for (y = 0; y < h; y++) { s = 0; for (x = 0; x < w; x++) s += lum(x, y); rowMean.push(s / w); }
+      function anomalies(arr, tag) {
+        var out = [];
+        for (var k = 1; k < arr.length - 1; k++) {
+          var nb = (arr[k - 1] + arr[k + 1]) / 2;
+          if (arr[k] < nb - 14) out.push(tag + k + ':' + arr[k].toFixed(0) + '<' + nb.toFixed(0));
+        }
+        return out.slice(0, 24);
+      }
+      console.log('TEX ' + name + ' ' + w + 'x' + h +
+        ' | darkCols ' + anomalies(colMean, 'c').join(',') +
+        ' | darkRows ' + anomalies(rowMean, 'r').join(',') +
+        ' | edge dX=' + (eL - eR).toFixed(1) + ' dY=' + (eT - eB).toFixed(1) +
+        ' L=' + eL.toFixed(0) + ' R=' + eR.toFixed(0) + ' T=' + eT.toFixed(0) + ' B=' + eB.toFixed(0));
+    } catch (e) { console.log('TEX ' + name + ' ERR ' + e.message); }
+  }
+  function d2canvas(w, h) {
+    var c2 = f.contentDocument.createElement('canvas');
+    c2.width = w; c2.height = h;
+    return c2;
+  }
+
+  function texProbe() {
+    if (!q.tex) return;
+    try {
+      var THREE = f.contentWindow.THREE;
+      DBG = f.contentWindow.LG.debug;
+      var seen = 0;
+      DBG.scene.traverse(function (o) {
+        if (!o.isMesh || seen > 14) return;
+        var m = Array.isArray(o.material) ? o.material[0] : o.material;
+        if (!m || !m.map || !m.map.image) return;
+        if (o.position.y > 1 || o.position.y < -1) return;
+        var img = m.map.image;
+        var w = img.width || img.naturalWidth, h = img.height || img.naturalHeight;
+        if (!w || !h || w > 4096) return;
+        seen++;
+        var gp = new THREE.Vector3(); o.getWorldPosition(gp);
+        var gg = o.geometry.parameters || {};
+        scanImage((o.geometry && o.geometry.type) + '@y' + o.position.y.toFixed(2) +
+          ' rep' + (m.map.repeat ? m.map.repeat.x + 'x' + m.map.repeat.y : '-') +
+          ' wp(' + gp.x.toFixed(1) + ',' + gp.y.toFixed(2) + ',' + gp.z.toFixed(1) + ')' +
+          ' dim=' + (gg.width || '?') + 'x' + (gg.height || '?') +
+          ' vis=' + o.visible + ' parent=' + (o.parent ? (o.parent.name || o.parent.type) : '-') +
+          ' side=' + m.side + ' col=#' + m.color.getHexString(), img, w, h);
+      });
+      if (!seen) console.log('TEX none');
+    } catch (e) { console.log('TEX:ERR ' + e.message); }
+  }
+
+  // ?findz=-2.14 — list every mesh whose world bounding box crosses that
+  // constant-z line near the ground, so a rendered artifact can be named.
+  function findProbe() {
+    if (q.findz === undefined || q.findz === '') return;
+    try {
+      var THREE = f.contentWindow.THREE;
+      DBG = f.contentWindow.LG.debug;
+      DBG.scene.updateMatrixWorld(true);
+      var zc = Number(q.findz);
+      var n = 0;
+      DBG.scene.traverse(function (o) {
+        if (!o.isMesh && !o.isLine && !o.isPoints) return;
+        var bb = new THREE.Box3().setFromObject(o);
+        if (!isFinite(bb.min.x)) return;
+        if (bb.max.z < zc - 0.4 || bb.min.z > zc + 0.4) return;
+        if (bb.max.y < -1 || bb.min.y > 6) return;
+        var m = Array.isArray(o.material) ? o.material[0] : o.material;
+        n++;
+        if (n > 80) return;
+        console.log('FIND ' + (n) + ' ' + o.geometry.type +
+          ' x[' + bb.min.x.toFixed(1) + ',' + bb.max.x.toFixed(1) + ']' +
+          ' y[' + bb.min.y.toFixed(2) + ',' + bb.max.y.toFixed(2) + ']' +
+          ' z[' + bb.min.z.toFixed(2) + ',' + bb.max.z.toFixed(2) + ']' +
+          ' dx=' + (bb.max.x - bb.min.x).toFixed(1) +
+          ' dz=' + (bb.max.z - bb.min.z).toFixed(1) +
+          ' vis=' + o.visible +
+          ' mat=' + (m ? (m.type + (m.map ? '+map' : '') + '#' + m.color.getHexString() + ' t' + (m.transparent ? m.opacity : 1)) : '-') +
+          ' parent=' + (o.parent ? (o.parent.name || o.parent.type) : '-'));
+      });
+      console.log('FIND done n=' + n);
+    } catch (e) { console.log('FIND:ERR ' + e.message); }
+  }
+
+  // ?hide=asphalt,walk,slab,lines,logo — hide ground-plane layers by shape so
+  // a rendered artifact can be attributed to the layer that draws it.
+  function hideProbe() {
+    if (!q.hide) return;
+    try {
+      var THREE = f.contentWindow.THREE;
+      DBG = f.contentWindow.LG.debug;
+      var want = q.hide.split(',');
+      var n = 0;
+      DBG.scene.traverse(function (o) {
+        if (!o.isMesh && !o.isLine && !o.isPoints) return;
+        var p = o.geometry && o.geometry.parameters;
+        var m = o.material && (Array.isArray(o.material) ? o.material[0] : o.material);
+        var hit = '';
+        if (o.isLine || o.isPoints) hit = 'line';
+        else if (p && o.geometry.type === 'PlaneGeometry') {
+          if (p.width === 100 && p.height === 100) hit = 'asphalt';
+          else if (p.width === 17) hit = 'walk';
+          else if (p.width === 26 && p.height === 44) hit = (m && m.isMeshBasicMaterial) ? 'lines' : 'slab';
+          else if (p.width === 10.4) hit = 'logo';
+        }
+        if (want.indexOf('all') >= 0 || (hit && want.indexOf(hit) >= 0)) {
+          if (o.visible) { o.visible = false; n++; }
+        }
+      });
+      console.log('HIDE ' + q.hide + ' -> ' + n);
+    } catch (e) { console.log('HIDE:ERR ' + e.message); }
+  }
+
+  function startProbes() {
+    if (q.noshadow) {
+      try {
+        var LGn = f.contentWindow.LG, rn = LGn.debug.renderer, sn = LGn.debug.scene;
+        var nl = 0, nm = 0;
+        sn.traverse(function (o) {
+          if (o.isLight) { if (o.castShadow) nl++; o.castShadow = false; }
+          if (o.material) {
+            var arr = Array.isArray(o.material) ? o.material : [o.material];
+            for (var i = 0; i < arr.length; i++) { arr[i].needsUpdate = true; nm++; }
+          }
+        });
+        rn.shadowMap.enabled = false;
+        console.log('NOSHADOW lights=' + nl + ' mats=' + nm);
+      } catch (e) { console.log('NOSHADOW:ERR ' + e.message); }
+    }
+    if (q.tex) { texProbe(); stage('texed'); return; }
+    if (q.findz) { findProbe(); stage('finded'); return; }
+    if (q.hide) { hideProbe(); stage('hid'); return; }
+    if (!q.ray && !q.sweep) return;
+    if (q.sweep) {
+      // run the sweep as close to the screenshot instant as the virtual clock
+      // allows, so the raycast and the PNG describe the same frame
+      var budget = Number(q.budget || 9000);
+      var elapsed = Date.now() - T0;
+      setTimeout(function () { raycast(); stage('swept'); }, 0);
+    } else {
+      setTimeout(raycast, 300);
+    }
+  }
+
+  f.addEventListener('load', function () { wait(booted, flow, 'booted'); });
+  setTimeout(function () { wait(booted, flow, 'booted'); }, 1500); // belt and braces
+})();
+</script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

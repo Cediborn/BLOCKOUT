@@ -563,6 +563,12 @@
 
   <script src="lib/three.min.js"></script>
   <script>
+    // Colour pipeline: hex colours and every colour map in the game are sRGB,
+    // the renderer writes sRGB out — so the working space must be linear too.
+    // Set here (before any module builds a THREE.Color) or the lighting pass
+    // runs on raw sRGB numbers and the whole block renders washed out.
+    if (window.THREE && THREE.ColorManagement) THREE.ColorManagement.legacyMode = false;
+
     // Single early version stamp so a failed boot still shows a real number.
     window.BLOCKOUT_VERSION = '1.0.0';
     window.addEventListener('error', function (e) {

@@ -77,5 +77,17 @@ LG.Util.makeCanvasTexture = function (draw, w, h) {
   var t = new THREE.CanvasTexture(c);
   t.anisotropy = 4;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  LG.Util.markColorTexture(t);
+  return t;
+};
+
+// Every colour map the game draws is authored on a 0-255 sRGB canvas (or is a
+// photographed PNG), so it MUST declare sRGB encoding once the renderer writes
+// sRGB out.  Skipping this is what made the whole block read as a washed-out
+// grey prototype: the canvas colours were fed to the lighting pass as LINEAR
+// values and then encoded to sRGB again on output, lifting every mid-tone by
+// ~2 stops.  Non-colour maps (normal/roughness/height) must NOT be marked.
+LG.Util.markColorTexture = function (t) {
+  if (t && THREE.sRGBEncoding !== undefined) t.encoding = THREE.sRGBEncoding;
   return t;
 };

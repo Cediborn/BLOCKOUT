@@ -263,6 +263,7 @@ LG.Models = (function () {
       }
       var t = new THREE.CanvasTexture(c);
       t.anisotropy = 4;
+      LG.Util.markColorTexture(t);
       return t;
     })();
     var ball = new THREE.Mesh(new THREE.SphereGeometry(LG.Config.court.ballRadius, 20, 16), new THREE.MeshLambertMaterial({ map: tex }));
