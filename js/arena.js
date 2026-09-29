@@ -15,17 +15,22 @@ LG.Arena = (function () {
   var cheerDur = 2.8;
   var boundGoal = false;
 
+  function skyGradient(c, w, h, stops) {
+    var grd = c.createLinearGradient(0, 0, 0, h);
+    for (var i = 0; i < stops.length; i++) grd.addColorStop(stops[i][0], stops[i][1]);
+    c.fillStyle = grd;
+    c.fillRect(0, 0, w, h);
+  }
+
   function skyBox() {
     var g = new THREE.SphereGeometry(70, 16, 12);
-    var t = LG.Util.makeCanvasTexture(function (c, w, h) {
-      var grd = c.createLinearGradient(0, 0, 0, h);
-      grd.addColorStop(0, '#0b0f18');
-      grd.addColorStop(0.45, '#141b2b');
-      grd.addColorStop(0.62, '#2a2f3f');
-      grd.addColorStop(0.75, '#3a2a24');
-      grd.addColorStop(1, '#0e0b0a');
-      c.fillStyle = grd;
-      c.fillRect(0, 0, w, h);
+
+    // night / dusk dome (default) — deep blue zenith, warm sodium glow at the horizon
+    var night = LG.Util.makeCanvasTexture(function (c, w, h) {
+      skyGradient(c, w, h, [
+        [0, '#0b0f18'], [0.45, '#141b2b'], [0.62, '#2a2f3f'],
+        [0.75, '#3a2a24'], [1, '#0e0b0a'],
+      ]);
       c.fillStyle = 'rgba(255,255,255,0.85)';
       for (var i = 0; i < 40; i++) {
         var x = Math.random() * w, y = Math.random() * h * 0.5;
@@ -36,7 +41,42 @@ LG.Arena = (function () {
       c.beginPath();
       c.arc(w * 0.78, h * 0.42, 26, 0, 7); c.fill();
     }, 512, 256);
-    var m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ map: t, side: THREE.BackSide, fog: false }));
+
+    // day dome — clear afternoon sky, hazier and warmer towards the horizon
+    var day = LG.Util.makeCanvasTexture(function (c, w, h) {
+      skyGradient(c, w, h, [
+        [0, '#2c62c4'], [0.34, '#4f8ade'], [0.56, '#87b6ea'],
+        [0.72, '#c2d6ef'], [0.86, '#e6dccb'], [1, '#9a9081'],
+      ]);
+      // soft horizon haze band
+      var hz = c.createLinearGradient(0, h * 0.66, 0, h * 0.88);
+      hz.addColorStop(0, 'rgba(255,255,255,0)');
+      hz.addColorStop(0.5, 'rgba(255,250,238,0.55)');
+      hz.addColorStop(1, 'rgba(255,250,238,0)');
+      c.fillStyle = hz;
+      c.fillRect(0, h * 0.66, w, h * 0.24);
+      // sun with a wide bloom
+      var sx = w * 0.76, sy = h * 0.3;
+      var glow = c.createRadialGradient(sx, sy, 4, sx, sy, 74);
+      glow.addColorStop(0, 'rgba(255,247,224,0.95)');
+      glow.addColorStop(0.25, 'rgba(255,238,190,0.55)');
+      glow.addColorStop(1, 'rgba(255,238,190,0)');
+      c.fillStyle = glow;
+      c.beginPath(); c.arc(sx, sy, 74, 0, 7); c.fill();
+      c.fillStyle = 'rgba(255,253,244,1)';
+      c.beginPath(); c.arc(sx, sy, 15, 0, 7); c.fill();
+      // thin high clouds
+      c.fillStyle = 'rgba(255,255,255,0.5)';
+      for (var i = 0; i < 9; i++) {
+        var x = Math.random() * w, y = h * (0.14 + Math.random() * 0.34);
+        var rw = 40 + Math.random() * 110, rh = 5 + Math.random() * 8;
+        c.beginPath(); c.ellipse(x, y, rw, rh, 0, 0, 7); c.fill();
+      }
+    }, 512, 256);
+
+    var mat = new THREE.MeshBasicMaterial({ map: night, side: THREE.BackSide, fog: false });
+    mat.userData.lgMaps = { day: day, night: night };
+    var m = new THREE.Mesh(g, mat);
     m.position.set(0, 6, 0);
     return m;
   }
@@ -336,7 +376,10 @@ LG.Arena = (function () {
       p.rotation.y = Math.PI / 2;
       p.position.set(x, C.fenceHeight / 2, z0 + w / 2);
       g.add(p);
-      g.add(LG.Models.bar(postM, x, C.fenceHeight - 0.45, z0 + w / 2, 0.09, w));
+      var rail = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, w), postM);
+      rail.position.set(x, C.fenceHeight - 0.45, z0 + w / 2);
+      rail.castShadow = true;
+      g.add(rail);
     }
     return g;
   }

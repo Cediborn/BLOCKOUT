@@ -23,13 +23,16 @@ LG.Lighting = (function () {
 
   var PRESETS = {
     day: {
-      hemiSky: 0x9db4da, hemiGround: 0x23272f, hemiIntensity: 0.72,
-      ambColor: 0x3a4150, ambIntensity: 0.42,
-      sunColor: 0xffd9a0, sunIntensity: 1.0,
-      fogColor: 0x10141c, fogNear: 45, fogFar: 120,
+      // Key/fill ratio is what sells depth: the directional sun carries the
+      // scene, hemisphere only separates sky-lit tops from ground bounce, and
+      // the ambient is just enough to keep shadow interiors readable.
+      hemiSky: 0xaecbf2, hemiGround: 0x3a332c, hemiIntensity: 0.40,
+      ambColor: 0x2f3949, ambIntensity: 0.15,
+      sunColor: 0xfff1d6, sunIntensity: 2.35,
+      fogColor: 0x9fb9d8, fogNear: 78, fogFar: 230,
       exposure: 1.0,
-      pointIntensity: 1.0, pointDistance: 1.0,
-      emissive: 1.0,
+      pointIntensity: 0.3, pointDistance: 1.0,
+      emissive: 0.35,
       skyTint: 0xffffff,
       fill: 0.0,
     },
@@ -109,6 +112,14 @@ LG.Lighting = (function () {
         skies.push(m);
         m._lgBase = m.color ? m.color.getHex() : 0xffffff;
         stats.skies++;
+        var maps = m.userData && m.userData.lgMaps;
+        if (maps) {
+          m._lgDayMap = maps.day || null;
+          m._lgNightMap = maps.night || null;
+          // honour whichever mode is already active
+          var wantMap = mode === 'day' ? m._lgDayMap : m._lgNightMap;
+          if (wantMap && m.map !== wantMap) { m.map = wantMap; m.needsUpdate = true; }
+        }
       }
     });
   }
@@ -168,6 +179,8 @@ LG.Lighting = (function () {
     for (i = 0; i < skies.length; i++) {
       var s = skies[i];
       if (s.color) s.color.setHex(P.skyTint);
+      var skyMap = mode === 'day' ? s._lgDayMap : s._lgNightMap;
+      if (skyMap && s.map !== skyMap) { s.map = skyMap; s.needsUpdate = true; }
     }
 
     if (renderer && renderer.toneMapping !== undefined) {
@@ -186,3 +199,5 @@ LG.Lighting = (function () {
     stats: function () { return { points: stats.points, emissives: stats.emissives, skies: stats.skies }; },
   };
 })();
+
+
