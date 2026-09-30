@@ -143,7 +143,7 @@ function load(rel) {
   vm.runInThisContext(fs.readFileSync(path.join(ROOT, rel), 'utf8'), { filename: rel });
 }
 
-['js/config.js', 'js/difficulty.js', 'js/settings.js', 'js/util.js', 'js/audio.js', 'js/challenges.js', 'js/modes.js', 'js/tournament.js', 'js/models.js', 'js/ball.js',
+['js/config.js', 'js/difficulty.js', 'js/settings.js', 'js/util.js', 'js/audio.js', 'js/challenges.js', 'js/modes.js', 'js/tournament.js', 'js/models.js', 'js/rig.js', 'js/ball.js',
   'js/player.js', 'js/abilities.js', 'js/ai.js', 'js/keeper.js', 'js/match.js',
   'js/input.js'].forEach(load);
 

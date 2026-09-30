@@ -35,6 +35,9 @@ LG.Config = {
   player: {
     scale: 1.35,        // baseline — 1.35x the original body size
     mobileScale: 1.05,  // extra bump on phones (small screens) -> ~1.42 total
+    rig: 1,             // 1 = skinned humanoid rig (AnimationMixer) as the shipped
+                        // default player system; 0 falls back to limb maths.
+                        // Try it with index.html?rig=0 to compare.
   },
 
   // ------------------------------------------------------------

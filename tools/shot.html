@@ -46,14 +46,132 @@
     return !!(lo && lo.classList.contains('hidden'));
   }
 
+  // Two samples, 1.6s apart, of the live squads: which body each player
+  // got, whether the mixer clock is advancing (real animation), the state
+  // it is in, and the two y values that prove the figure is standing on
+  // the deck (gameplay y and the node y the group is written with).
+  function diagMatch() {
+    var LG = f.contentWindow.LG;
+    function snap() {
+      var out = [];
+      var teams = [LG.Match && LG.Match.home, LG.Match && LG.Match.away];
+      for (var t = 0; t < teams.length; t++) {
+        var arr = teams[t] || [];
+        for (var i = 0; i < Math.min(arr.length, 3); i++) {
+          var p = arr[i], m = p && p.model;
+          if (!m) continue;
+          var st = m.anim ? m.anim.state() : null;
+          out.push((m.skinned ? 'rig' : 'proc') +
+            ' y=' + p.y + '/' + (m.group.position.y).toFixed(3) +
+            ' t=' + (st ? st.time.toFixed(2) : '-') +
+            ' s=' + (st ? st.cur : '-') +
+            ' legR=' + (m.limbs && m.limbs.legR ? Number(m.limbs.legR.rotation.x).toFixed(2) : '-'));
+        }
+      }
+      return out.join(' | ');
+    }
+    try { console.log('MATCHDIAG A ' + snap()); } catch (e) { console.log('MATCHDIAG err ' + e.message); }
+    setTimeout(function () {
+      try { console.log('MATCHDIAG B ' + snap()); } catch (e) { console.log('MATCHDIAG err ' + e.message); }
+    }, 1600);
+  }
+
+  // ?rigtest=1 — drop the match flow entirely and line four characters up
+  // for a close side view, so the player body itself (legs, boots, arms,
+  // proportions) can be judged instead of a top-down match frame.
+  // model 0 = idle, 1 + 2 = running, 3 = kicking.
+  function rigTest() {
+    var w = f.contentWindow, LG = w.LG;
+    LG.Config.player.rig = 1;
+    var d = f.contentDocument;
+    ['menu-overlay', 'loading-overlay'].forEach(function (id) {
+      try { d.getElementById(id).classList.add('hidden'); } catch (e) {}
+    });
+    var dbg = LG.debug;
+    if (!dbg || !dbg.scene) { console.log('RIGTEST:no-scene'); stage('done'); return; }
+
+    var ids = ['blaze', 'cannon', 'frenzy', 'stone'];
+    var zs = [-2.1, -0.7, 0.7, 2.1];
+    // clip + time each model is pinned to (frame-rate independent poses)
+    var poses = [['idle', 0.8], ['run', 0.0], ['run', 0.31], ['kick', 0.26]];
+    var lane = [], report = [];
+    for (var i = 0; i < ids.length; i++) {
+      var def = null;
+      for (var k = 0; k < LG.Roster.length; k++) if (LG.Roster[k].id === ids[i]) def = LG.Roster[k];
+      if (!def) { report.push(ids[i] + ':noroster'); continue; }
+      try {
+        var m = LG.Models.buildCharacter(def);
+        m.group.scale.set(1.35, 1.35, 1.35);   // exactly what player.js applies
+        m.group.position.set(0, 0, zs[i]);
+        m.group.rotation.y = 0;                 // face +Z: we look from +Z
+        dbg.scene.add(m.group);
+        lane.push({ m: m, p: poses[i], f: 0 });
+        report.push(ids[i] + ':' + (m.skinned ? 'skinned' : 'procedural') +
+          ' parts=' + (m.group.children.length));
+      } catch (e) { report.push(ids[i] + ':ERR ' + e.message); }
+    }
+    console.log('RIGTEST ' + report.join(' | '));
+
+    var cam = dbg.camera;
+    // the game's own loop keeps posing the camera, so pin ours from inside
+    // renderer.render — the last word before the frame is drawn
+    function pin() {
+      cam.position.set(5.4, 1.15, 0);
+      cam.lookAt(0, 0.85, 0);
+      if (Math.abs(cam.fov - 45) > 0.01) { cam.fov = 45; cam.updateProjectionMatrix(); }
+      cam.updateMatrixWorld(true);
+    }
+    try {
+      var r = dbg.renderer, orig = r.render;
+      r.render = function (sc, cm) { pin(); return orig.call(r, sc, cm); };
+    } catch (e) { console.log('RIGTEST:renderwrap ' + e.message); }
+
+    var FR = 0, T1 = w.performance.now();
+    function frame() {
+      FR++;
+      pin();
+      for (var i = 0; i < lane.length; i++) {
+        var o = lane[i];
+        o.f++;
+        if (o.m.anim) o.m.anim.pose(o.p[0], o.p[1]);
+      }
+      w.requestAnimationFrame(frame);
+    }
+    w.requestAnimationFrame(frame);
+    setTimeout(function () {
+      console.log('RIGTEST frames=' + FR + ' elapsed=' +
+        Math.round(w.performance.now() - T1) + ' vis=' + w.document.visibilityState +
+        ' pvis=' + document.visibilityState);
+      for (var i = 0; i < lane.length; i++) {
+        var o = lane[i], L = o.m.limbs;
+        console.log('RIGTEST pose ' + i +
+          ' legR=' + (L ? L.legR.rotation.x.toFixed(2) : 'n/a') +
+          ' legL=' + (L ? L.legL.rotation.x.toFixed(2) : 'n/a') +
+          ' armL=' + (L ? L.armL.rotation.x.toFixed(2) : 'n/a') +
+          ' anim=' + (o.m.anim ? JSON.stringify(o.m.anim.state()) : 'none'));
+      }
+    }, 700);
+    setTimeout(function () { stage('done'); }, 900);
+  }
+
   function flow() {
     if (busy) return;
     busy = true;
     var w = f.contentWindow, LG = w.LG;
     try { LG.Settings.setTimeOfDay(time); } catch (e) {}
     try { LG.Settings.setView(q.view || 'landscape'); } catch (e) {}
+    // ?rig=1 / ?rig=0 force the skinned player rig on/off before the match
+    // builds its characters; with no flag the shipped default in
+    // LG.Config.player.rig applies. Always echo both so the .log can prove
+    // which body actually ran.
+    if (q.rig === '1' || q.rig === '0') {
+      try { LG.Config.player.rig = Number(q.rig); } catch (e) {}
+    }
+    console.log('RIG enabled=' + ((LG.Rig && LG.Rig.enabled) ? LG.Rig.enabled() : 'no-rig-module') +
+      ' cfg=' + LG.Config.player.rig);
 
     if (state === 'menu') { stage('menu'); return; }
+    if (q.rigtest) { rigTest(); return; }
 
     wait(function () { return LG.Courts && LG.Courts.probeAll; }, function () {
       LG.Courts.probeAll(function () {
@@ -89,7 +207,16 @@
               setTimeout(function () {
                 console.log('STEP:startMatch');
                 LG.eventBus.emit('startMatchRequested');
-                stage('match');
+                // the scene is built asynchronously — only report the match
+                // stage once a few frames have rendered, then run any probe
+                // and finish with the terminal stage the driver waits for
+                setTimeout(function () {
+                  stage('match');
+                  if (q.rigtest) { /* rigtest returns earlier */ }
+                  else if (!q.ray && !q.sweep && !q.tex && !q.findz && !q.hide) diagMatch();
+                  if (q.ray || q.sweep || q.tex || q.findz || q.hide) startProbes();
+                  else stage('done');
+                }, 900);
               }, 80);
             }, 80);
           }, 120);
@@ -389,18 +516,16 @@
         console.log('NOSHADOW lights=' + nl + ' mats=' + nm);
       } catch (e) { console.log('NOSHADOW:ERR ' + e.message); }
     }
-    if (q.tex) { texProbe(); stage('texed'); return; }
-    if (q.findz) { findProbe(); stage('finded'); return; }
-    if (q.hide) { hideProbe(); stage('hid'); return; }
-    if (!q.ray && !q.sweep) return;
+    if (q.tex) { texProbe(); stage('done'); return; }
+    if (q.findz) { findProbe(); stage('done'); return; }
+    if (q.hide) { hideProbe(); stage('done'); return; }
+    if (!q.ray && !q.sweep) { stage('done'); return; }
     if (q.sweep) {
-      // run the sweep as close to the screenshot instant as the virtual clock
-      // allows, so the raycast and the PNG describe the same frame
-      var budget = Number(q.budget || 9000);
-      var elapsed = Date.now() - T0;
-      setTimeout(function () { raycast(); stage('swept'); }, 0);
+      // run the sweep as close to the capture instant as possible, so the
+      // raycast and the PNG describe the same frame
+      setTimeout(function () { raycast(); stage('done'); }, 0);
     } else {
-      setTimeout(raycast, 300);
+      setTimeout(function () { raycast(); stage('done'); }, 300);
     }
   }
 
@@ -410,6 +535,7 @@
 </script>
 </body>
 </html>
+
 
 
 

@@ -28,6 +28,21 @@ LG.Models = (function () {
   // ------------------------------------------------------------
   // CHARACTER
   // ------------------------------------------------------------
+  // shared with js/rig.js so both characters wear the same face/hair
+  function hairStyleFor(def) {
+    var hsIdx = def.hairStyle;
+    if (hsIdx == null) {
+      for (var k = 0; k < LG.Roster.length; k++) if (LG.Roster[k].id === def.id) hsIdx = k;
+      if (hsIdx == null) hsIdx = 0;
+    }
+    return HAIR_STYLE[hsIdx] || 'short';
+  }
+
+  function attachHair(holder, def) {
+    if (!def || !def.palette) return;
+    (HAIR[hairStyleFor(def)] || HAIR.short)(holder, def.palette);
+  }
+
   var HAIR = {
     spiky: function (g, pal) {
       var hs = mat(pal.hair, 'hair');
@@ -114,6 +129,23 @@ LG.Models = (function () {
   var HAIR_STYLE = ['spiky', 'cap', 'mohawk', 'short', 'afro', 'curly', 'ponytail', 'buzz'];
 
   function buildCharacter(def) {
+    // skinned rig (Phase 2) is the shipped default — the procedural body
+    // stays as the fallback for tests, older browsers and any rig build
+    // failure. Roster palettes are required: js/living.js asks this
+    // function for a plain crowd figure with {team} only and treats the
+    // return as an Object3D, which has always thrown to its own try/catch;
+    // that path must keep behaving exactly as before.
+    if (def && def.palette && LG.Rig && LG.Rig.enabled && LG.Rig.enabled()) {
+      try {
+        var rigged = LG.Rig.build(def);
+        if (rigged && rigged.group && rigged.limbs) return rigged;
+      } catch (e) {
+        if (window.console && console.warn) {
+          console.warn('[Rig] build failed, using procedural body:', e && e.message);
+        }
+      }
+    }
+
     var pal = def.palette;
     var g = new THREE.Group();
     var body = new THREE.Group();
@@ -192,17 +224,11 @@ LG.Models = (function () {
     head.castShadow = true;
     body.add(head);
 
-    // hair style — pick by roster index or explicit
-    var hsIdx = def.hairStyle;
-    if (hsIdx == null) {
-      for (var k = 0; k < LG.Roster.length; k++) if (LG.Roster[k].id === def.id) hsIdx = k;
-      if (hsIdx == null) hsIdx = 0;
-    }
-    var style = (HAIR_STYLE[hsIdx] || 'short');
+    // hair style — picked from the roster the same way the rig picks it
     var hairHolder = new THREE.Group();
     hairHolder.position.y = 1.32 * tall;
     body.add(hairHolder);
-    (HAIR[style] || HAIR.short)(hairHolder, pal);
+    attachHair(hairHolder, def);
 
     g.add(body);
     g.traverse(function (o) { if (o.isMesh) o.castShadow = true; });
@@ -517,6 +543,8 @@ var bw = w / 5, bh = h / 7;
   return {
     buildCharacter: buildCharacter,
     animateChar: animateChar,
+    mat: mat,
+    attachHair: attachHair,
     buildBall: buildBall,
     buildGoal: buildGoal,
     bar: bar,

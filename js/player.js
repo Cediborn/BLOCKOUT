@@ -157,7 +157,16 @@ LG.Player.prototype.update = function (dt) {
   this.phase += dt * (2.2 + sp * 0.55);
   var speedFrac = Math.min(1, Math.sqrt(sp) / this.maxSpeed);
 
-  LG.Models.animateChar(this.model, speedFrac > 0.08, this.phase, speedFrac, this.kickAnim);
+  // a skinned rig drives itself from its own clock (Match passes dt=0 in
+  // KICKOFF/GOAL/END) and only reads gameplay as signals; if the mixer
+  // ever fails we drop to the classic limb maths, which also works on
+  // the rig because limbs/body are bones
+  if (this.model.anim) {
+    if (this.model.anim.update(dt, this) === false) this.model.anim = null;
+  }
+  if (!this.model.anim) {
+    LG.Models.animateChar(this.model, speedFrac > 0.08, this.phase, speedFrac, this.kickAnim);
+  }
 
   this.model.group.position.set(this.x, this.y, this.z);
   this.model.group.rotation.y = this.facing;
