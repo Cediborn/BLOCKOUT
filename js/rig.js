@@ -642,6 +642,16 @@ LG.Rig = (function () {
     supported: hasSkins,
     build: build,
     setLogging: setLogging,
-    log: log
+    log: log,
+    // READ-ONLY view of the animation data this module authors: the
+    // skeleton layout (parent chain + bind offsets) and the clip pose
+    // tables. The imported GLB footballer (js/realplayer.js) retargets
+    // these exact poses onto its own 48-bone skeleton, so both bodies
+    // play the same BLOCKOUT animation instead of two hand-copied sets
+    // drifting apart. Returns fresh layout rows every call; the defs
+    // object is shared — treat it as read-only.
+    sourceData: function () {
+      return { layout: layout({ t: 1, w: 1 }), defs: CLIP_DEFS };
+    }
   };
 })();

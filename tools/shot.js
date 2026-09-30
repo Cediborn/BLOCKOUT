@@ -31,6 +31,19 @@
 //   node tools/shot.js --rigprobe --settle 90000
 //                                           sample live-match rig state while
 //                                           the game runs (state/clip/bone readout)
+//   node tools/shot.js --glb0              same match with the Phase-1 GLB
+//                                           test player forced back to the
+//                                           procedural body (A/B compare)
+//   node tools/shot.js --rigprobe --closeup --settle 25000
+//                                           live match filmed close on the
+//                                           human (= the GLB test player)
+//   node tools/shot.js --glbtest --glbpose idle
+//   node tools/shot.js --glbtest --glbpose run:0.3
+//   node tools/shot.js --glbtest --glbpose kick:1
+//   node tools/shot.js --glbtest --glbpose scan
+//           Phase 2: one imported GLB player, close 3/4 view pinned to a
+//           RETARGETED clip (idle|jog|run|sprint|stop|kick, or a scan of
+//           every clip) — logs box/grounding/limbs/clip table
 // ============================================================
 var fs = require('fs');
 var path = require('path');
@@ -61,6 +74,10 @@ var RIG = !!args.includes('--rig');
 var NORIG = !!args.includes('--norig');
 var RIGTEST = !!args.includes('--rigtest');
 var RIGPROBE = !!args.includes('--rigprobe');
+var GLBTEST = !!args.includes('--glbtest');
+var GLBPOSE = arg('glbpose', 'idle');
+var GLB0 = !!args.includes('--glb0');
+var CLOSEUP = !!args.includes('--closeup');
 var FINDZ = arg('findz', '');
 var HIDE = arg('hide', '');
 
@@ -244,7 +261,7 @@ async function attempt(n, maxTries, url) {
       if (m.method === 'Runtime.consoleAPICalled') {
         var txt = (m.params.args || []).map(argValue).join(' ');
         log('[console] ' + txt);
-        if (/^STAGE:/.test(txt) || /^STEP/.test(txt) || /^SCENE|^RAY|^SWEEP|^TEX|^FIND|^HIDE|^CAM|^HITS/.test(txt)) {
+        if (/^STAGE:/.test(txt) || /^STEP/.test(txt) || /^\[?(GLB|RIG)|^RIGTEST|^RIGPROBE/.test(txt) || /^SCENE|^RAY|^SWEEP|^TEX|^FIND|^HIDE|^CAM|^HITS/.test(txt)) {
           console.log(txt);
           var st = /^STAGE:(.*)$/.exec(txt);
           if (st) stages.push(st[1]);
@@ -337,6 +354,10 @@ server.listen(0, '127.0.0.1', async function () {
     (NORIG ? '&rig=0' : '') +
     (RIGTEST ? '&rigtest=1' : '') +
     (RIGPROBE ? '&rigprobe=1' : '') +
+    (GLBTEST ? '&glbtest=1' : '') +
+    (GLBTEST ? '&glbpose=' + encodeURIComponent(GLBPOSE) : '') +
+    (GLB0 ? '&glb=0' : '') +
+    (CLOSEUP ? '&closeup=1' : '') +
     (FINDZ ? '&findz=' + encodeURIComponent(FINDZ) : '') +
     (HIDE ? '&hide=' + encodeURIComponent(HIDE) : '') +
     '&budget=' + BUDGET;

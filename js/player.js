@@ -22,7 +22,19 @@ LG.Player = function (def, team, idx) {
   this.radius = 0.42 * wide * S;
   this.height = 1.62 * ((def.body && def.body.tall) || 1) * S;
 
-  this.model = LG.Models.buildCharacter(def);
+  // PHASE 1 TEST MODEL — exactly one player (home slot 0) wears the
+  // imported GLB footballer once it has loaded, and only while the skinned
+  // rig is enabled (a rigged body belongs to the rigged build). Everybody
+  // else keeps the BLOCKOUT procedural body, and so does this slot whenever
+  // the GLB is missing/late, so the shipped look can never regress.
+  var useGlb = false;
+  try {
+    useGlb = !!(LG.RealPlayer && LG.Rig && LG.Rig.enabled && LG.Rig.enabled());
+  } catch (e) { useGlb = false; }
+  this.model = (useGlb && team === 0 && idx === 0)
+    ? (LG.RealPlayer.buildForTest(def) || LG.Models.buildCharacter(def))
+    : LG.Models.buildCharacter(def);
+  this.glbModel = !!(this.model && this.model.glb);
   this.model.group.scale.set(S, S, S);
   this.x = 0; this.z = 0;
   this.y = 0;               // for buffs / effects lifts

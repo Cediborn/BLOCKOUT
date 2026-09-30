@@ -76,65 +76,281 @@
     }, 1600);
   }
 
+  // Wrap LG.Models.animateChar so the log can prove which bodies still
+  // go through the limb maths. The Phase-2 GLB controller must never land
+  // here: c.glb stays 0 for the whole run.
+  function watchAnimateChar(LG) {
+    var c = { glb: 0, proc: 0, orig: LG.Models.animateChar };
+    LG.Models.animateChar = function () {
+      var m = arguments[0];
+      if (m && (m.glb || m.glbShim)) c.glb++; else c.proc++;
+      return c.orig.apply(this, arguments);
+    };
+    return c;
+  }
+
   // TEMPORARY live-match rig probe: answers "is the rig the thing being
   // drawn, and does the state machine actually leave idle?" by sampling
-  // the real squads every 500ms for as long as the driver waits.
+  // TEMPORARY live-match rig probe: drives the human through
+  // idle -> jog -> run -> sprint -> kick -> stop -> idle -> turn and
+  // records which controller states the GLB body actually reported.
   function rigProbe() {
     var LG = f.contentWindow.LG;
-    // count how often the legacy limb-maths path runs (fallback detector)
-    var legacyCalls = 0;
-    var origAnimate = LG.Models.animateChar;
-    LG.Models.animateChar = function () { legacyCalls++; return origAnimate.apply(this, arguments); };
-    var n = 0, seenRun = 0, seenKick = 0, maxLeg = 0, firstRun = null;
-    var forcedKick = false, kickSeen = false;
+    var watcher = watchAnimateChar(LG);
 
-    function sample() {
-      n++;
-      var rig = 0, proc = 0, noAnim = 0, fails = 0, runN = 0, mixerT = 0, moving = 0, maxMove = 0;
-      var minW = 1;
+    // ?closeup=1 — ride the game's own camera close to the human (the
+    // Phase-1 test player) so the final frame shows THAT body in play
+    if (q.closeup) {
+      var dbg = LG.debug;
+      if (dbg && dbg.renderer) {
+        var r2 = dbg.renderer, origRender = r2.render, gp = null;
+        r2.render = function (sc, cm) {
+          if (!gp && LG.Match && LG.Match.home) {
+            for (var i = 0; i < LG.Match.home.length; i++) {
+              if (LG.Match.home[i] && LG.Match.home[i].glbModel) { gp = LG.Match.home[i]; break; }
+            }
+          }
+          if (cm && gp && typeof gp.x === 'number') {
+            cm.position.set(gp.x + 2.6, 1.8, gp.z + 3.0);
+            cm.lookAt(gp.x, 1.0, gp.z);
+            cm.updateMatrixWorld(true);
+          }
+          return origRender.call(r2, sc, cm);
+        };
+        console.log('RIGPROBE closeup camera armed');
+      }
+    }
+
+    // ---- the Phase-2 GLB test player (home slot 0) ----
+    function glbPlayer() {
       var teams = [LG.Match && LG.Match.home, LG.Match && LG.Match.away];
       for (var t = 0; t < 2; t++) {
         var arr = teams[t] || [];
         for (var i = 0; i < arr.length; i++) {
           var p = arr[i];
-          if (!p || !p.model) continue;
-          var m = p.model;
-          if (m.skinned) rig++; else proc++;
-          var sp = Math.sqrt((p.vx || 0) * (p.vx || 0) + (p.vz || 0) * (p.vz || 0));
-          if (sp > 0.4) moving++;
-          if (sp > maxMove) maxMove = sp;
-          var leg = Math.abs(Number((m.limbs && m.limbs.legR && m.limbs.legR.rotation.x) || 0));
-          if (leg > maxLeg) maxLeg = leg;
-          if (!m.anim) { noAnim++; continue; }
-          var st = m.anim.state();
-          fails += st.fails;
-          if (typeof st.weight === 'number' && st.weight < minW) minW = st.weight;
-          if (st.cur === 'run') { runN++; seenRun++; if (!firstRun) firstRun = n; }
-          if (st.cur === 'kick') { seenKick++; kickSeen = true; }
-          // one forced strike on a live runner, so the one-shot kick path is
-          // exercised in a real match instead of only in rigtest
-          if (!forcedKick && st.cur === 'run' && LG.Match && LG.Match.state === 'PLAY') {
-            forcedKick = true;
-            p.kickAnim = 1;
-            console.log('RIGPROBE kickforced n=' + n);
-          }
-          if (st.time > mixerT) mixerT = st.time;
+          if (p && p.model && p.model.glb) return p;
         }
       }
-      console.log('RIGPROBE n=' + n +
-        ' match=' + (LG.Match && LG.Match.state) + '/' + (LG.Match ? LG.Match.clock : '-') +
-        ' rig=' + rig + ' proc=' + proc + ' noAnim=' + noAnim +
-        ' moving=' + moving + ' spd=' + maxMove.toFixed(1) +
-        ' state.run=' + runN + ' state.kick=' + seenKick +
-        ' maxLeg=' + maxLeg.toFixed(2) + ' mixerT=' + mixerT.toFixed(2) +
-        ' w=' + minW.toFixed(2) +
-        ' fails=' + fails + ' legacyAnimateChar=' + legacyCalls);
-      if (n < 120) setTimeout(sample, 500);
-      else console.log('RIGPROBE DONE firstRunAtSample=' + firstRun +
-        ' totalRunSamples=' + seenRun + ' totalKickSamples=' + seenKick +
-        ' kickObserved=' + kickSeen + ' kickForced=' + forcedKick);
+      return null;
     }
-    setTimeout(sample, 1000);
+
+    // joystick geometry, measured live so the same numbers work at any
+    // window size (input.js: fullR = clamp(halfW * 0.58, 34, 84))
+    function joyGeom() {
+      var d = f.contentDocument;
+      var zone = d.getElementById('joystick-zone');
+      if (!zone) return null;
+      var r = zone.getBoundingClientRect();
+      var T = LG.Config.touch || {};
+      var dead = T.stickDeadZone != null ? T.stickDeadZone : 7;
+      var frac = T.stickFullTilt != null ? T.stickFullTilt : 0.58;
+      var fullR = Math.max(T.stickFullMin || 34, Math.min(T.stickFullMax || 84, (r.width / 2) * frac));
+      return { zone: zone, cx: r.left + r.width / 2, cy: r.top + r.height / 2, dead: dead, fullR: fullR };
+    }
+
+    // input.js eases the stick with m*(1.16-0.16m); invert it so a step
+    // can ask for an exact stick magnitude (= fraction of top speed)
+    function rawOf(E) {
+      E = Math.max(0, Math.min(1, Number(E) || 0));
+      var disc = 1.16 * 1.16 - 0.64 * E;
+      return (1.16 - Math.sqrt(Math.max(0, disc))) / 0.32;
+    }
+
+    // drive(E, ux, uy): E = stick magnitude 0..1, (ux,uy) = direction.
+    // E = 0 releases the stick (player coasts down to a stop).
+    function drive(E, ux, uy) {
+      try {
+        var w = f.contentWindow, g = joyGeom();
+        if (!g) { console.log('RIGPROBE drive: no zone'); return false; }
+        if (!E) {
+          if (joyOn) {
+            g.zone.dispatchEvent(new w.PointerEvent('pointerup', {
+              pointerId: 11, bubbles: true, cancelable: true, isPrimary: true, clientX: g.cx, clientY: g.cy
+            }));
+          }
+          joyOn = false;
+          console.log('RIGPROBE joy release');
+          return true;
+        }
+        var dist = g.dead + rawOf(E) * (g.fullR - g.dead);
+        if (!joyOn) {
+          g.zone.dispatchEvent(new w.PointerEvent('pointerdown', {
+            pointerId: 11, bubbles: true, cancelable: true, isPrimary: true, clientX: g.cx, clientY: g.cy
+          }));
+          joyOn = true;
+          console.log('RIGPROBE joy press E=' + E + ' dir=' + ux + ',' + uy +
+            ' px=' + dist.toFixed(1) + ' fullR=' + g.fullR.toFixed(1));
+        }
+        g.zone.dispatchEvent(new w.PointerEvent('pointermove', {
+          pointerId: 11, bubbles: true, cancelable: true, clientX: g.cx + ux * dist, clientY: g.cy + uy * dist
+        }));
+        return true;
+      } catch (e) { console.log('RIGPROBE drive err ' + e.message); return false; }
+    }
+
+    // sprint through the game's own SPRINT button (input.js bindButtons)
+    function sprint(on) {
+      try {
+        var w = f.contentWindow, b = f.contentDocument.getElementById('btn-sprint');
+        if (!b) { console.log('RIGPROBE sprint: no button'); return false; }
+        b.dispatchEvent(new w.PointerEvent(on ? 'pointerdown' : 'pointerup', {
+          pointerId: 12, bubbles: true, cancelable: true, isPrimary: true, clientX: 0, clientY: 0
+        }));
+        console.log('RIGPROBE sprint ' + (on ? 'on' : 'off'));
+        return true;
+      } catch (e) { console.log('RIGPROBE sprint err ' + e.message); return false; }
+    }
+
+    function forceKick() {
+      var p = glbPlayer();
+      if (!p) { console.log('RIGPROBE kick: no glb player'); return false; }
+      p.kickAnim = 1;
+      kickForced++;
+      console.log('RIGPROBE glbKick forced #' + kickForced);
+      return true;
+    }
+
+    // ---- state-driven script: each step acts once, then waits for the
+    // controller to report the state it is supposed to reach ----
+    function is(name) { return function (st) { return !!st && st.cur === name; }; }
+    function wrapPi(a) {
+      while (a > Math.PI) a -= Math.PI * 2;
+      while (a < -Math.PI) a += Math.PI * 2;
+      return a;
+    }
+
+    var steps = [
+      { name: 'idle0', wait: is('idle') },
+      { name: 'jog', act: function () { drive(0.40, 1, 0); }, wait: is('jog') },
+      { name: 'run', act: function () { drive(0.75, 1, 0); }, wait: is('run') },
+      { name: 'sprint', act: function () { sprint(true); }, wait: is('sprint') },
+      { name: 'runBack', act: function () { sprint(false); }, wait: is('run') },
+      { name: 'kick', act: function () { forceKick(); }, wait: is('kick') },
+      { name: 'stop', act: function () { drive(0); }, wait: is('stop') },
+      { name: 'idle1', wait: is('idle') },
+      { name: 'turn', act: function () { drive(0.75, 0, 1); }, wait: is('run') },
+      { name: 'turn2', act: function () { drive(0.75, 0, -1); },
+        wait: function () { return stepTurn > 0.5; } },
+      { name: 'stop2', act: function () { drive(0); }, wait: is('stop') },
+      { name: 'idle2', wait: is('idle') }
+    ];
+
+    var STEP_TIMEOUT = 40, MAX_TICKS = 250, TICK_MS = 200;
+    var tickN = 0, si = -1, stepTicks = 0, stepTurn = 0, lastFacing = null;
+    var playAt = 0, doneScript = false, doneTick = 0;
+    var joyOn = false, kickForced = 0, glbFails = 0, glbInfo = null;
+    var glbSeen = {}, glbOrder = [], lastGlbState = '', maxTurn = 0;
+    var timeouts = [];
+
+    function enterStep() {
+      si++;
+      stepTicks = 0;
+      stepTurn = 0;
+      var s = steps[si];
+      if (!s) return;
+      console.log('RIGPROBE step[' + si + '/' + (steps.length - 1) + '] ' + s.name);
+      if (s.act) { try { s.act(); } catch (e) { console.log('RIGPROBE step act err ' + e.message); } }
+    }
+
+    function counts() {
+      return Object.keys(glbSeen).map(function (k) { return k + ':' + glbSeen[k]; }).join(' ');
+    }
+
+    function logLine() {
+      var p = glbPlayer();
+      var st = p && p.model.anim ? p.model.anim.state() : null;
+      var ri = LG.debug && LG.debug.renderer && LG.debug.renderer.info;
+      console.log('RIGPROBE n=' + tickN +
+        ' match=' + (LG.Match && LG.Match.state) + '/' + (LG.Match ? LG.Match.clock : '-') +
+        ' step=' + (steps[si] ? steps[si].name : '-') +
+        ' glb=' + (p ? 1 : 0) + (st ? '/' + st.cur + '@' + st.time.toFixed(1) +
+          ' sp=' + (st.spd || 0) + ' w=' + (st.weight || 0).toFixed(2) +
+          ' kick=' + (st.kick || 0).toFixed(2) : '/-') +
+        ' joy=' + (joyOn ? 1 : 0) + ' turn=' + maxTurn.toFixed(2) +
+        ' states={' + counts() + '}' +
+        ' glbAnimateChar=' + watcher.glb + ' animateChar=' + watcher.proc +
+        ' fails=' + glbFails +
+        (ri && ri.render ? ' calls=' + ri.render.calls + ' rtris=' + ri.render.triangles : ''));
+    }
+
+    function finish() {
+      var p = glbPlayer();
+      var st = p && p.model.anim ? p.model.anim.state() : null;
+      console.log('RIGPROBE DONE ticks=' + tickN +
+        ' playAt=' + playAt + ' scriptDone=' + (doneScript ? 1 : 0) +
+        ' stepsDone=' + si + '/' + steps.length +
+        ' states={' + counts() + '}' +
+        ' order=' + glbOrder.join('>') +
+        ' turnMax=' + maxTurn.toFixed(2) +
+        ' kickForced=' + kickForced +
+        ' glbAnimateChar=' + watcher.glb +
+        ' animateCharProc=' + watcher.proc +
+        ' fails=' + glbFails +
+        ' timeouts=' + (timeouts.length ? timeouts.join(',') : 'none'));
+      if (st) {
+        console.log('RIGPROBE glbinfo ' + JSON.stringify({
+          cur: st.cur, clips: st.clips, durs: st.durs, bob: st.bob, mapped: st.mapped,
+          retarget: st.retarget, shim: st.shim, bias: st.bias,
+          kickClip: st.kickClip, kickSpan: st.kickSpan, kickLen: st.kickLen,
+          ground: st.ground, lift: st.lift, fails: st.fails, lastError: st.lastError
+        }));
+      } else {
+        console.log('RIGPROBE glbinfo NONE');
+      }
+      console.log('RIGPROBE PROBE=' + (watcher.glb === 0 && glbFails === 0 && doneScript ? 'PASS' : 'CHECK'));
+    }
+
+    function tick() {
+      tickN++;
+      var inPlay = !!(LG.Match && LG.Match.state === 'PLAY');
+      var p = glbPlayer();
+      var st = p && p.model.anim ? p.model.anim.state() : null;
+      if (st) {
+        glbSeen[st.cur] = (glbSeen[st.cur] || 0) + 1;
+        if (st.cur !== lastGlbState) {
+          glbOrder.push(st.cur);
+          lastGlbState = st.cur;
+          console.log('RIGPROBE glbstate ' + st.cur + ' t=' + st.time.toFixed(2) +
+            ' sp=' + (st.spd || 0) + ' step=' + (steps[si] ? steps[si].name : '-'));
+        }
+        if (st.fails) glbFails = st.fails;
+        if (!glbInfo) glbInfo = st;
+        var fc = (p && typeof p.facing === 'number') ? p.facing : null;
+        if (fc != null) {
+          if (lastFacing != null) {
+            var d = Math.abs(wrapPi(fc - lastFacing));
+            stepTurn += d;
+            if (d > maxTurn) maxTurn = d;
+          }
+          lastFacing = fc;
+        }
+      }
+      if (inPlay && !playAt) { playAt = tickN; console.log('RIGPROBE playAt tick=' + tickN); enterStep(); }
+      if (playAt && !doneScript) {
+        if (!p && tickN > playAt + 15) {
+          console.log('RIGPROBE NO GLB PLAYER — probe cannot run');
+          doneScript = true; doneTick = tickN;
+        } else {
+          stepTicks++;
+          var s = steps[si];
+          if (s) {
+            var ok = false;
+            try { ok = s.wait(st); } catch (e) { ok = false; }
+            if (!ok && stepTicks > STEP_TIMEOUT) {
+              timeouts.push(s.name);
+              console.log('RIGPROBE TIMEOUT step ' + s.name + ' (cur=' + (st ? st.cur : 'none') + ')');
+            }
+            if (ok || stepTicks > STEP_TIMEOUT) enterStep();
+          } else { doneScript = true; doneTick = tickN; }
+        }
+      }
+      if (tickN % 3 === 0) logLine();
+      if (si >= steps.length && !doneScript) { doneScript = true; doneTick = tickN; }
+      if (doneScript && tickN >= doneTick + 8) { finish(); return; }
+      if (tickN >= MAX_TICKS) { finish(); return; }
+      setTimeout(tick, TICK_MS);
+    }
+    setTimeout(tick, TICK_MS);
   }
 
   // ?rigtest=1 — drop the match flow entirely and line four characters up
@@ -215,6 +431,194 @@
     setTimeout(function () { stage('done'); }, 900);
   }
 
+  // ?glbtest=1 — Phase 2: one imported GLB footballer, close three-quarter
+  // view, pinned to a retargeted clip (?glbpose=idle|jog|run|sprint|stop|kick
+  // [ :t ]) so scale, grounding, facing, shadows and the pose can be judged
+  // up close. ?glbpose=scan walks every clip instead.
+  function fmtBox(b) {
+    if (!b || !isFinite(b.min.y)) return 'none';
+    var f = function (n) { return n.toFixed(3); };
+    return '[' + b.min.toArray().map(f).join(',') + ']..[' + b.max.toArray().map(f).join(',') + ']' +
+      ' h=' + (b.max.y - b.min.y).toFixed(3) + ' minY=' + f(b.min.y);
+  }
+
+  function glbTest() {
+    var w = f.contentWindow, LG = w.LG;
+    if (LG.RealPlayer && LG.RealPlayer.setLogging) LG.RealPlayer.setLogging(true);
+    var watcher = watchAnimateChar(LG);
+    var d = f.contentDocument;
+    ['menu-overlay', 'loading-overlay'].forEach(function (id) {
+      try { d.getElementById(id).classList.add('hidden'); } catch (e) {}
+    });
+    var dbg = LG.debug;
+    if (!dbg || !dbg.scene) { console.log('GLBTEST:no-scene'); stage('done'); return; }
+    if (!LG.RealPlayer) { console.log('GLBTEST:no-module'); stage('done'); return; }
+
+    var parts = String(q.glbpose || 'idle').split(':');
+    var poseName = parts[0] || 'idle';
+    var dfltT = { kick: 1.0, stop: 0.31 }[poseName];
+    if (dfltT == null) dfltT = 0.25;
+    var poseT = parts.length > 1 ? Number(parts[1]) : dfltT;
+
+    var t0 = w.performance.now(), tries = 0;
+    (function go() {
+      if (!LG.RealPlayer.ready()) {
+        if (++tries > 100 || w.performance.now() - t0 > 15000) {
+          console.log('GLBTEST:load-timeout status=' + JSON.stringify(LG.RealPlayer.status()));
+          stage('done'); return;
+        }
+        setTimeout(go, 150); return;
+      }
+      var def = LG.Roster[0];
+      var m;
+      try { m = LG.RealPlayer.build(def); }
+      catch (e) { console.log('GLBTEST:build-ERR ' + e.message); stage('done'); return; }
+      if (!m) { console.log('GLBTEST:build-failed status=' + JSON.stringify(LG.RealPlayer.status())); stage('done'); return; }
+
+      m.group.scale.set(1.35, 1.35, 1.35);   // exactly what player.js applies
+      m.group.position.set(0, 0, 0);
+      m.group.rotation.y = 0;                 // face +Z
+      dbg.scene.add(m.group);
+
+      var THREEx = w.THREE;
+      function wp(re) {
+        var hit = null;
+        m.group.traverse(function (o) { if (!hit && o.isBone && re.test(o.name)) hit = o; });
+        return hit;
+      }
+      var rest = {};
+      ['footR', 'footL', 'handR', 'handL'].forEach(function (k) {
+        var re = { footR: /^FootR/i, footL: /^FootL/i, handR: /^HandR/i, handL: /^HandL/i }[k];
+        var b = wp(re);
+        if (b) { rest[k] = b.getWorldPosition(new THREEx.Vector3()); }
+      });
+
+      m.anim.pose(poseName, poseT);
+
+      var bindBox = new THREEx.Box3().setFromObject(m.group);
+      var st0 = m.anim.state();
+      console.log('GLBTEST model=glb pose=' + poseName + ':' + poseT +
+        ' status=' + JSON.stringify(LG.RealPlayer.status()) +
+        ' state=' + JSON.stringify(st0));
+      // Box3.setFromObject ignores skinning (bind-pose geometry only) — the
+      // skinned box below is what actually gets drawn
+      console.log('GLBTEST skinnedBox(local)=' + fmtBox(LG.RealPlayer.box(false)) +
+        ' skinnedBox(world)=' + fmtBox(LG.RealPlayer.box(true)) +
+        ' bindBox=' + fmtBox(bindBox));
+      var ri = dbg.renderer && dbg.renderer.info;
+      if (ri && ri.render) {
+        console.log('GLBTEST renderer calls=' + ri.render.calls + ' tris=' + ri.render.triangles +
+          ' geometries=' + ri.memory.geometries + ' textures=' + ri.memory.textures);
+      }
+      console.log('GLBTEST limbs=' + ['legL', 'legR', 'armL', 'armR'].map(function (k) {
+        return k + (m.limbs[k] ? '=' + m.limbs[k].name : '?MISSING');
+      }).join(' ') +
+        ' rest=' + Object.keys(rest).map(function (k) {
+          return k + '[' + rest[k].toArray().map(function (n) { return n.toFixed(2); }).join(',') + ']';
+        }).join(' '));
+
+      var cam = dbg.camera;
+      function pin() {
+        cam.position.set(2.4, 1.5, 2.8);
+        cam.lookAt(0, 1.0, 0);
+        if (Math.abs(cam.fov - 45) > 0.01) { cam.fov = 45; cam.updateProjectionMatrix(); }
+        cam.updateMatrixWorld(true);
+      }
+      try {
+        var r = dbg.renderer, orig = r.render;
+        r.render = function (sc, cm) { pin(); return orig.call(r, sc, cm); };
+      } catch (e) { console.log('GLBTEST:renderwrap ' + e.message); }
+
+      // ?glbpose=scan — walk every retargeted clip frame by frame and print
+      // what the skeleton actually does (feet/hands travel + thigh swing),
+      // so each cycle can be judged without guessing from one frame
+      if (poseName === 'scan') {
+        var tracks = ['footR', 'footL', 'toesR', 'toesL', 'handR', 'handL', 'head', 'hips'];
+        var reOf = {
+          footR: /^FootR/i, footL: /^FootL/i, handR: /^HandR/i, handL: /^HandL/i,
+          toesR: /^ToesR/i, toesL: /^ToesL/i,
+          head: /^Head_0?10|^Head/i, hips: /^Hips/i,
+          legL: /^LegL/i, legR: /^LegR/i, calfL: /^CalfL/i, calfR: /^CalfR/i
+        };
+        var scanBones = {};
+        Object.keys(reOf).forEach(function (k) {
+          m.group.traverse(function (o) { if (!scanBones[k] && o.isBone && reOf[k].test(o.name)) scanBones[k] = o; });
+        });
+        var st0s = m.anim.state();
+        var names = String(st0s.clips || '').split(',').filter(Boolean);
+        console.log('GLBTEST scan clips=' + names.join(',') +
+          ' durs=' + JSON.stringify(st0s.durs) +
+          ' bob=' + st0s.bob + ' mapped=' + st0s.mapped +
+          ' retarget=' + st0s.retarget + ' shim=' + st0s.shim +
+          ' bias=' + JSON.stringify(st0s.bias) +
+          ' kick=' + st0s.kickClip + ' span=' + st0s.kickSpan + ' len=' + st0s.kickLen +
+          ' bones=' + Object.keys(scanBones).map(function (k) { return k + (scanBones[k] ? '=' + scanBones[k].name : '?'); }).join(' '));
+        names.forEach(function (nm) {
+          var dur = (st0s.durs && st0s.durs[nm]) || 0.5;
+          var span = 0, minY = 1e9, maxSwing = 0;
+          var step = Math.max(0.02, dur / 24);
+          for (var t = 0; t <= dur + 1e-6; t += step) {
+            if (!m.anim.pose(nm, t)) break;
+            m.group.updateMatrixWorld(true);
+            var stp = m.anim.state();
+            var row = 'GLBSCAN ' + nm + ' t=' + t.toFixed(2);
+            tracks.forEach(function (k) {
+              if (!scanBones[k]) return;
+              var p = scanBones[k].getWorldPosition(new THREEx.Vector3());
+              row += ' ' + k + '=[' + p.x.toFixed(2) + ',' + p.y.toFixed(2) + ',' + p.z.toFixed(2) + ']';
+              if (k.indexOf('foot') === 0 || k.indexOf('toes') === 0) { if (p.y < minY) minY = p.y; }
+            });
+            if (scanBones.legL) {
+              row += ' legLx=' + scanBones.legL.rotation.x.toFixed(2) +
+                ' legRx=' + (scanBones.legR ? scanBones.legR.rotation.x.toFixed(2) : '?') +
+                ' calfLx=' + (scanBones.calfL ? scanBones.calfL.rotation.x.toFixed(2) : '?');
+              var sw = Math.abs(scanBones.legL.rotation.x - scanBones.legR.rotation.x);
+              if (sw > maxSwing) maxSwing = sw;
+            }
+            row += ' lift=' + (stp.lift || 0).toFixed(3) + ' rest=' + (stp.restFoot || 0).toFixed(3) +
+              ' bobY=' + stp.bobY;
+            console.log(row);
+            span = t;
+          }
+          console.log('GLBSCAN ' + nm + ' span=' + span.toFixed(2) + ' dur=' + dur.toFixed(2) +
+            ' minFootY=' + (isFinite(minY) ? minY.toFixed(3) : '?') +
+            ' thighSwing=' + maxSwing.toFixed(2));
+        });
+        console.log('GLBTEST animateChar glb=' + watcher.glb + ' proc=' + watcher.proc);
+        stage('done');
+        return;
+      }
+
+      var FR = 0, TT = w.performance.now();
+      (function frame() {
+        FR++;
+        pin();
+      // default kick pose = the frame the boot swings through the ball
+      if (parts.length < 2 && poseName === 'kick') {
+        var ks = m.anim.state().kickStrike;
+        if (ks > 0) poseT = ks;
+      }
+
+      m.anim.pose(poseName, poseT);
+        w.requestAnimationFrame(frame);
+      })();
+
+      setTimeout(function () {
+        var moved = Object.keys(rest).map(function (k) {
+          var re = { footR: /^FootR/i, footL: /^FootL/i, handR: /^HandR/i, handL: /^HandL/i }[k];
+          var bone = wp(re);
+          var now = bone ? bone.getWorldPosition(new THREEx.Vector3()) : rest[k];
+          return k + 'd=[' + now.clone().sub(rest[k]).toArray().map(function (n) { return n.toFixed(3); }).join(',') + ']';
+        }).join(' ');
+        console.log('GLBTEST frames=' + FR + ' elapsed=' + Math.round(w.performance.now() - TT) +
+          ' vis=' + w.document.visibilityState + ' pvis=' + document.visibilityState +
+          ' animateChar glb=' + watcher.glb + ' proc=' + watcher.proc +
+          ' state=' + JSON.stringify(m.anim.state()) + ' ' + moved);
+        stage('done');
+      }, 900);
+    })();
+  }
+
   function flow() {
     if (busy) return;
     busy = true;
@@ -233,9 +637,22 @@
     // harness-only: turn on the one-shot [RIG] creation/state logs so the
     // .log file proves which body ran. ?riglog=0 silences them.
     try { if (LG.Rig && LG.Rig.setLogging) LG.Rig.setLogging(q.riglog !== '0'); } catch (e) {}
+    try { if (LG.RealPlayer && LG.RealPlayer.setLogging) LG.RealPlayer.setLogging(q.riglog !== '0'); } catch (e) {}
+    // ?glb=0 forces the Phase-1 test player back to the procedural body,
+    // so an A/B run can prove what the GLB player adds (and that the
+    // fallback path still works)
+    if (q.glb === '0') {
+      try {
+        if (LG.RealPlayer && LG.RealPlayer.setEnabled) LG.RealPlayer.setEnabled(false);
+        console.log('GLB disabled by ?glb=0');
+      } catch (e) {}
+    } else if (LG.RealPlayer && LG.RealPlayer.status) {
+      console.log('GLB status=' + JSON.stringify(LG.RealPlayer.status()));
+    }
 
     if (state === 'menu') { stage('menu'); return; }
     if (q.rigtest) { rigTest(); return; }
+    if (q.glbtest) { glbTest(); return; }
 
     wait(function () { return LG.Courts && LG.Courts.probeAll; }, function () {
       LG.Courts.probeAll(function () {

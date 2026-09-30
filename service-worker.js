@@ -36,6 +36,7 @@ var ASSETS = [
   './js/courts.js',
   './js/models.js',
   './js/rig.js',
+  './js/realplayer.js',
   './js/ball.js',
   './js/player.js',
   './js/arena.js',
@@ -50,6 +51,8 @@ var ASSETS = [
   './js/main.js',
   './js/living.js',
   './lib/three.min.js',
+  './lib/GLTFLoader.js',
+  './3d/soap_soccer_player.glb',
   './icons/icon-192.svg',
   './icons/icon-512.svg'
 ];
