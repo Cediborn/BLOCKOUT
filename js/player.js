@@ -162,7 +162,14 @@ LG.Player.prototype.update = function (dt) {
   // ever fails we drop to the classic limb maths, which also works on
   // the rig because limbs/body are bones
   if (this.model.anim) {
-    if (this.model.anim.update(dt, this) === false) this.model.anim = null;
+    if (this.model.anim.update(dt, this) === false) {
+      var why = 'repeated mixer errors';
+      try { why = this.model.anim.state().lastError || why; } catch (e) { }
+      if (window.console && console.warn) {
+        console.warn('[RIG] FALLBACK animateChar triggered: ' + why);
+      }
+      this.model.anim = null;
+    }
   }
   if (!this.model.anim) {
     LG.Models.animateChar(this.model, speedFrac > 0.08, this.phase, speedFrac, this.kickAnim);

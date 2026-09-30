@@ -141,7 +141,17 @@ LG.Models = (function () {
         if (rigged && rigged.group && rigged.limbs) return rigged;
       } catch (e) {
         if (window.console && console.warn) {
-          console.warn('[Rig] build failed, using procedural body:', e && e.message);
+          console.warn('[RIG] FALLBACK animateChar triggered: build failed: ' +
+            ((e && e.message) || e));
+        }
+      }
+    } else if (def && def.palette && LG.Rig && LG.Rig.supported &&
+      LG.Config && LG.Config.player && LG.Config.player.rig && !LG.Rig.supported()) {
+      // rig requested but this three.js build cannot skin — say so once
+      if (!buildCharacter.warned) {
+        buildCharacter.warned = 1;
+        if (window.console && console.warn) {
+          console.warn('[RIG] FALLBACK animateChar triggered: no skinning support in this three.js build');
         }
       }
     }

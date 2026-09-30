@@ -76,6 +76,67 @@
     }, 1600);
   }
 
+  // TEMPORARY live-match rig probe: answers "is the rig the thing being
+  // drawn, and does the state machine actually leave idle?" by sampling
+  // the real squads every 500ms for as long as the driver waits.
+  function rigProbe() {
+    var LG = f.contentWindow.LG;
+    // count how often the legacy limb-maths path runs (fallback detector)
+    var legacyCalls = 0;
+    var origAnimate = LG.Models.animateChar;
+    LG.Models.animateChar = function () { legacyCalls++; return origAnimate.apply(this, arguments); };
+    var n = 0, seenRun = 0, seenKick = 0, maxLeg = 0, firstRun = null;
+    var forcedKick = false, kickSeen = false;
+
+    function sample() {
+      n++;
+      var rig = 0, proc = 0, noAnim = 0, fails = 0, runN = 0, mixerT = 0, moving = 0, maxMove = 0;
+      var minW = 1;
+      var teams = [LG.Match && LG.Match.home, LG.Match && LG.Match.away];
+      for (var t = 0; t < 2; t++) {
+        var arr = teams[t] || [];
+        for (var i = 0; i < arr.length; i++) {
+          var p = arr[i];
+          if (!p || !p.model) continue;
+          var m = p.model;
+          if (m.skinned) rig++; else proc++;
+          var sp = Math.sqrt((p.vx || 0) * (p.vx || 0) + (p.vz || 0) * (p.vz || 0));
+          if (sp > 0.4) moving++;
+          if (sp > maxMove) maxMove = sp;
+          var leg = Math.abs(Number((m.limbs && m.limbs.legR && m.limbs.legR.rotation.x) || 0));
+          if (leg > maxLeg) maxLeg = leg;
+          if (!m.anim) { noAnim++; continue; }
+          var st = m.anim.state();
+          fails += st.fails;
+          if (typeof st.weight === 'number' && st.weight < minW) minW = st.weight;
+          if (st.cur === 'run') { runN++; seenRun++; if (!firstRun) firstRun = n; }
+          if (st.cur === 'kick') { seenKick++; kickSeen = true; }
+          // one forced strike on a live runner, so the one-shot kick path is
+          // exercised in a real match instead of only in rigtest
+          if (!forcedKick && st.cur === 'run' && LG.Match && LG.Match.state === 'PLAY') {
+            forcedKick = true;
+            p.kickAnim = 1;
+            console.log('RIGPROBE kickforced n=' + n);
+          }
+          if (st.time > mixerT) mixerT = st.time;
+        }
+      }
+      console.log('RIGPROBE n=' + n +
+        ' match=' + (LG.Match && LG.Match.state) + '/' + (LG.Match ? LG.Match.clock : '-') +
+        ' rig=' + rig + ' proc=' + proc + ' noAnim=' + noAnim +
+        ' moving=' + moving + ' spd=' + maxMove.toFixed(1) +
+        ' state.run=' + runN + ' state.kick=' + seenKick +
+        ' maxLeg=' + maxLeg.toFixed(2) + ' mixerT=' + mixerT.toFixed(2) +
+        ' w=' + minW.toFixed(2) +
+        ' fails=' + fails + ' legacyAnimateChar=' + legacyCalls);
+      if (n < 120) setTimeout(sample, 500);
+      else console.log('RIGPROBE DONE firstRunAtSample=' + firstRun +
+        ' totalRunSamples=' + seenRun + ' totalKickSamples=' + seenKick +
+        ' kickObserved=' + kickSeen + ' kickForced=' + forcedKick);
+    }
+    setTimeout(sample, 1000);
+  }
+
   // ?rigtest=1 — drop the match flow entirely and line four characters up
   // for a close side view, so the player body itself (legs, boots, arms,
   // proportions) can be judged instead of a top-down match frame.
@@ -169,6 +230,9 @@
     }
     console.log('RIG enabled=' + ((LG.Rig && LG.Rig.enabled) ? LG.Rig.enabled() : 'no-rig-module') +
       ' cfg=' + LG.Config.player.rig);
+    // harness-only: turn on the one-shot [RIG] creation/state logs so the
+    // .log file proves which body ran. ?riglog=0 silences them.
+    try { if (LG.Rig && LG.Rig.setLogging) LG.Rig.setLogging(q.riglog !== '0'); } catch (e) {}
 
     if (state === 'menu') { stage('menu'); return; }
     if (q.rigtest) { rigTest(); return; }
@@ -213,7 +277,10 @@
                 setTimeout(function () {
                   stage('match');
                   if (q.rigtest) { /* rigtest returns earlier */ }
-                  else if (!q.ray && !q.sweep && !q.tex && !q.findz && !q.hide) diagMatch();
+                  else if (!q.ray && !q.sweep && !q.tex && !q.findz && !q.hide) {
+                    diagMatch();
+                    if (q.rigprobe) rigProbe();
+                  }
                   if (q.ray || q.sweep || q.tex || q.findz || q.hide) startProbes();
                   else stage('done');
                 }, 900);

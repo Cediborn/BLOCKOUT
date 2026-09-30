@@ -25,8 +25,12 @@
 //   node tools/shot.js --hide asphalt,slab         hide ground-plane layers
 //   node tools/shot.js --view portrait
 //   node tools/shot.js --rig               match with the skinned player rig on
+//   node tools/shot.js --norig             same match with rig=0 (procedural body)
 //   node tools/shot.js --rigtest           close side view of 4 pinned poses
 //                                           (idle / run / run mirror / kick)
+//   node tools/shot.js --rigprobe --settle 90000
+//                                           sample live-match rig state while
+//                                           the game runs (state/clip/bone readout)
 // ============================================================
 var fs = require('fs');
 var path = require('path');
@@ -54,7 +58,9 @@ var SWEEP = !!args.includes('--sweep');
 var TEX = !!args.includes('--tex');
 var NOSHADOW = !!args.includes('--noshadow');
 var RIG = !!args.includes('--rig');
+var NORIG = !!args.includes('--norig');
 var RIGTEST = !!args.includes('--rigtest');
+var RIGPROBE = !!args.includes('--rigprobe');
 var FINDZ = arg('findz', '');
 var HIDE = arg('hide', '');
 
@@ -328,7 +334,9 @@ server.listen(0, '127.0.0.1', async function () {
     (TEX ? '&tex=1' : '') +
     (NOSHADOW ? '&noshadow=1' : '') +
     (RIG ? '&rig=1' : '') +
+    (NORIG ? '&rig=0' : '') +
     (RIGTEST ? '&rigtest=1' : '') +
+    (RIGPROBE ? '&rigprobe=1' : '') +
     (FINDZ ? '&findz=' + encodeURIComponent(FINDZ) : '') +
     (HIDE ? '&hide=' + encodeURIComponent(HIDE) : '') +
     '&budget=' + BUDGET;

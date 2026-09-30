@@ -66,6 +66,15 @@ LG.Rig = (function () {
     return !!cfg.rig && hasSkins();
   }
 
+  // one-shot diagnostics: silent unless the harness turns on ?riglog=1
+  var silent = true;
+  function log() {
+    if (!silent && window.console && console.log) {
+      console.log.apply(console, arguments);
+    }
+  }
+  function setLogging(on) { silent = !on; }
+
   // ------------------------------------------------------------
   // helpers
   // ------------------------------------------------------------
@@ -346,27 +355,37 @@ LG.Rig = (function () {
     actions.kick.clampWhenFinished = true;
 
     var cur = null, kickT = 0, wasKick = false, last = 0, fails = 0;
+    var lastError = '', logged = {};
 
     function play(name, fade) {
       var a = actions[name];
       if (!a) return;
+      var prev = (cur && cur !== name) ? actions[cur] : null;
       a.enabled = true;
       a.reset();
       a.play();
-      if (fade > 0) { a.setEffectiveWeight(0); a.fadeIn(fade); }
-      else a.setEffectiveWeight(1);
-      if (cur && cur !== name && actions[cur]) {
-        if (fade > 0) actions[cur].fadeOut(fade);
-        else actions[cur].setEffectiveWeight(0);
+      // three multiplies the fade curve into action.weight, so the BASE
+      // weight has to stay 1. setEffectiveWeight(0) before fadeIn() pinned
+      // it at zero forever: the ramp then produced 0 x 1 = 0, no bones were
+      // ever written after the first hand-off and the pose froze (players
+      // glided around with no run cycle). fadeIn() supplies the 0 -> 1 ramp.
+      a.setEffectiveWeight(1);
+      if (fade > 0) a.fadeIn(fade);
+      if (prev) {
+        if (fade > 0 && prev.enabled) prev.fadeOut(fade);
+        else prev.setEffectiveWeight(0);
       }
       cur = name;
+      if (!logged[name]) {
+        logged[name] = 1;
+        log('[RIG] action started:', name);
+      }
     }
 
     function onFail(e) {
       fails++;
-      if (fails === 1 && window.console && console.warn) {
-        console.warn('[Rig] animation update failed:', e && e.message);
-      }
+      lastError = (e && e.message) || String(e);
+      if (fails === 1) log('[RIG] animation update error:', lastError);
       if (fails > 3) return false;   // player.js falls back to animateChar
       return true;
     }
@@ -397,8 +416,12 @@ LG.Rig = (function () {
     return {
       // diagnostics for the harness
       state: function () {
+        var a = cur ? actions[cur] : null;
         return {
-          cur: cur, fails: fails, time: mixer.time, kick: kickT
+          cur: cur, fails: fails, time: mixer.time, kick: kickT,
+          weight: a ? a.getEffectiveWeight() : 0,
+          base: a ? a.weight : 0,
+          lastError: lastError
         };
       },
       // pin one clip at an exact time — frame-rate independent, so the
@@ -607,12 +630,18 @@ LG.Rig = (function () {
       restPos: restPos
     };
     model.anim = controller(model);
+    log('[RIG] player created', def.id || '?',
+      'bones=' + bones.length, 'parts=' + groups.length,
+      'skinned=' + (model.skinned === true));
+    log('[RIG] model attached', def.id || '?', 'nodes=' + group.children.length);
     return model;
   }
 
   return {
     enabled: enabled,
     supported: hasSkins,
-    build: build
+    build: build,
+    setLogging: setLogging,
+    log: log
   };
 })();
