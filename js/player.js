@@ -22,16 +22,25 @@ LG.Player = function (def, team, idx) {
   this.radius = 0.42 * wide * S;
   this.height = 1.62 * ((def.body && def.body.tall) || 1) * S;
 
-  // PHASE 1 TEST MODEL — exactly one player (home slot 0) wears the
-  // imported GLB footballer once it has loaded, and only while the skinned
-  // rig is enabled (a rigged body belongs to the rigged build). Everybody
-  // else keeps the BLOCKOUT procedural body, and so does this slot whenever
-  // the GLB is missing/late, so the shipped look can never regress.
-  var useGlb = false;
+  // PHASE 3A — the imported GLB footballer is rolled out to the field.
+  // Scope = LG.Config.player.glbScope:
+  //   0 = procedural bodies only
+  //   1 = home slot 0 only (the old single test slot)
+  //   2 = every outfield player (both teams), keepers procedural
+  //   3 = every player, keepers included
+  // Whenever the GLB is missing/late that slot falls back to the BLOCKOUT
+  // procedural body, so the shipped look can never regress.
+  var useGlb = false, scope = 1, isKeeper = !!(def.body && def.body.gloves);
   try {
     useGlb = !!(LG.RealPlayer && LG.Rig && LG.Rig.enabled && LG.Rig.enabled());
+    if (LG.Config && LG.Config.player && LG.Config.player.glbScope != null) {
+      scope = LG.Config.player.glbScope;
+    }
   } catch (e) { useGlb = false; }
-  this.model = (useGlb && team === 0 && idx === 0)
+  var glbSlot = scope <= 0 ? false
+    : scope === 1 ? (team === 0 && idx === 0)
+      : (isKeeper ? scope >= 3 : scope >= 2);
+  this.model = (useGlb && glbSlot)
     ? (LG.RealPlayer.buildForTest(def) || LG.Models.buildCharacter(def))
     : LG.Models.buildCharacter(def);
   this.glbModel = !!(this.model && this.model.glb);

@@ -54,6 +54,16 @@ var LG = window.LG = window.LG || {};
 LG.RealPlayer = (function () {
   var SRC = '3d/soap_soccer_player.glb';
 
+  // PHASE 3A — visible size. The imported footballer is a realistic build
+  // (narrow torso, small head, long legs) against the chunky BLOCKOUT
+  // bodies, so at the nominal 1.62 height it read visibly smaller on the
+  // pitch even though its head-top already matched. One UNIFORM factor —
+  // measured live: the mean head-top of the other seven players in a match
+  // is ~2.51 world vs this model's 2.23 — puts its head, shoulders and
+  // torso onto theirs without touching proportions or gameplay (collision
+  // radius and player.height still come from LG.Player.visualScale).
+  var VISUAL = 1.12;
+
   var src = null;            // { scene, clips, box, tris, meshes, bones, height }
   var phase = 'idle';        // 'idle' -> 'loading' -> 'ready' | 'error'
   var errMsg = '';
@@ -103,11 +113,28 @@ LG.RealPlayer = (function () {
   function accept(g) {
     var scene = g.scene;
     if (!scene) { phase = 'error'; errMsg = 'no scene in glb'; warn('[GLB] FALLBACK: ' + errMsg); return; }
+    // bones are siblings of the meshes: refresh the whole tree once, so the
+    // per-part skinned boxes below measure real body positions
+    scene.updateMatrixWorld(true);
 
-    var tris = 0, meshes = 0, bones = 0, seen = {};
+    var tris = 0, meshes = 0, bones = 0, seen = {}, parts = [];
     scene.traverse(function (o) {
       if (o.isMesh) {
         meshes++;
+        // part/material names are what the kit tint keys off, so they go in
+        // the load log — one glance at the console proves the tint target
+        parts.push(o.name + ':' + (o.material && o.material.name || '?') +
+          '(' + (o.material && o.material.color ? '#' + o.material.color.getHexString() : '?') +
+          (o.material && o.material.map ? '+map' : '') + ')');
+        // where does this part actually sit on the body? the skinned y-range
+        // is what tells shirt from shorts from helmet for the kit tint
+        try {
+          var pb = skinnedBox(o, true);
+          if (pb && isFinite(pb.min.y)) {
+            parts[parts.length - 1] += '[' + pb.min.y.toFixed(2) + '..' + pb.max.y.toFixed(2) +
+              ' x' + pb.min.x.toFixed(2) + '..' + pb.max.x.toFixed(2) + ']';
+          }
+        } catch (e) {}
         // same contract as the procedural body, plus self-receiving so the
         // fence / night floodlights can land on the player
         o.castShadow = true;
@@ -127,6 +154,104 @@ LG.RealPlayer = (function () {
       }
     });
 
+    // --- kit-tint survey: which material is shirt / shorts / helmet, and
+    // where the jersey panel has to stop so the hands and head are skipped.
+    // Names come from the asset itself (pt-BR material names).
+    // NOTE: the bones live beside the meshes, not under them — the scene
+    // root refresh at the top of accept() is what makes these numbers real.
+    try {
+      var mbox = {};
+      scene.traverse(function (o) {
+        if (!o.isMesh || !o.material) return;
+        var nm = o.material.name || '?';
+        (mbox[nm] = mbox[nm] || []).push({ o: o, b: skinnedBox(o, true) });
+      });
+      var skinL = mbox['Begue'] && mbox['Begue'][0];
+      var redL = mbox['Vermelho'] || [];
+      var shortsL = null, helmL = null;
+      for (var ri = 0; ri < redL.length; ri++) {
+        if (!redL[ri].b) continue;
+        if (!shortsL || redL[ri].b.max.y < shortsL.b.max.y) shortsL = redL[ri];
+        if (!helmL || redL[ri].b.max.y > helmL.b.max.y) helmL = redL[ri];
+      }
+      if (skinL && skinL.b) {
+        // silhouette profile of the skin/beige mesh: per 0.1 y-slice how far
+        // the surface reaches in x. That is the map the jersey split reads —
+        // it shows where the torso ends and the arms / hands begin.
+        // geometry is authored in cm; the mesh node is identity and the
+        // 0.01 lives in the skin bind, so model units come from
+        // boneTransform at bind pose + matrixWorld (same as skinnedBox)
+        var spos = skinL.o.geometry.attributes.position;
+        var mw = skinL.o.matrixWorld, gv = new THREE.Vector3();
+        var prof = [];
+        for (var s = 0; s < 15; s++) prof.push({ n: 0, mx: 0, out: 0 });
+        for (var si = 0; si < spos.count; si++) {
+          gv.fromBufferAttribute(spos, si);
+          if (skinL.o.boneTransform) skinL.o.boneTransform(si, gv);
+          gv.applyMatrix4(mw);
+          var sl = Math.floor(gv.y / 0.1);
+          if (sl < 0 || sl >= 15) continue;
+          var ax = Math.abs(gv.x);
+          var e = prof[sl];
+          e.n++;
+          if (ax > e.mx) e.mx = ax;
+          if (ax > 0.25) e.out++;
+        }
+        if (!skinL.o.geometry.boundingBox) skinL.o.geometry.computeBoundingBox();
+        log('[GLB] kit survey: skin mesh y=' + skinL.b.min.y.toFixed(2) + '..' + skinL.b.max.y.toFixed(2) +
+          ' x=' + skinL.b.min.x.toFixed(2) + '..' + skinL.b.max.x.toFixed(2) +
+          ' geomY=[' + (skinL.o.geometry.boundingBox ? skinL.o.geometry.boundingBox.min.y.toFixed(2) + ',' +
+            skinL.o.geometry.boundingBox.max.y.toFixed(2) : '?') + ']');
+        log('[GLB] kit profile (y: verts, max|x|, |x|>0.25): ' +
+          prof.map(function (e, i) {
+            return (i * 0.1).toFixed(1) + ':' + e.n + '/' + e.mx.toFixed(2) + '/' + e.out;
+          }).join(' '));
+        // where exactly do the arms leave the torso? bucket |x| for the
+        // chest band only — the gap between torso and arm is the tint cut
+        var buckets = {};
+        for (si = 0; si < spos.count; si++) {
+          gv.fromBufferAttribute(spos, si);
+          if (skinL.o.boneTransform) skinL.o.boneTransform(si, gv);
+          gv.applyMatrix4(mw);
+          if (gv.y < 0.60 || gv.y > 1.12) continue;
+          var b2 = (Math.floor(Math.abs(gv.x) / 0.02) * 0.02).toFixed(2);
+          buckets[b2] = (buckets[b2] || 0) + 1;
+        }
+        log('[GLB] kit torso-band |x| buckets(0.02): ' +
+          Object.keys(buckets).sort(function (a, b) { return Number(a) - Number(b); })
+            .map(function (k) { return k + ':' + buckets[k]; }).join(' '));
+        if (shortsL && shortsL.b && helmL && helmL.b) {
+          log('[GLB] kit survey: shorts y=' + shortsL.b.min.y.toFixed(2) + '..' + shortsL.b.max.y.toFixed(2) +
+            ' helm y=' + helmL.b.min.y.toFixed(2) + '..' + helmL.b.max.y.toFixed(2));
+        }
+
+        // --- mark the meshes the kit tint owns, then cut the beige mesh's
+        // torso out as a jersey panel (see splitShirt)
+        var pi, branco = (mbox['Branco'] || [])[0];
+        var preto = mbox['Preto'] || [], gloveL = null;
+        for (pi = 0; pi < preto.length; pi++) {
+          if (!preto[pi].b) continue;
+          if (!gloveL || preto[pi].b.min.y < gloveL.b.min.y) gloveL = preto[pi];
+        }
+        if (shortsL && shortsL.o) shortsL.o.userData.kit = 'shorts';
+        if (helmL && helmL.o) helmL.o.userData.kit = 'helmet';
+        if (branco && branco.o) branco.o.userData.kit = 'socks';
+        if (gloveL && gloveL.o) gloveL.o.userData.kit = 'gloves';
+        var splitOk = skinL.o ? splitShirt(skinL.o) : false;
+        if (skinL.o && splitOk) {
+          skinL.o.userData.kit = 'shirt';
+          // material index 0 = jersey panel, 1 = skin (both render as the
+          // skin colour until tintKit clones index 0 per player)
+          if (!Array.isArray(skinL.o.material)) skinL.o.material = [skinL.o.material, skinL.o.material];
+        }
+        log('[GLB] kit parts: ' + ['shirt', 'shorts', 'helmet', 'socks', 'gloves'].map(function (key) {
+          var hit = '';
+          scene.traverse(function (o) { if (!hit && o.userData && o.userData.kit === key) hit = o.name; });
+          return key + '=' + (hit || '-');
+        }).join(' ') + (splitOk ? '' : ' (no jersey split)'));
+      }
+    } catch (e) { warn('[GLB] kit survey failed: ' + ((e && e.message) || e)); }
+
     var clips = g.animations || [];
     src = {
       scene: scene, clips: clips, box: null, tris: Math.round(tris),
@@ -145,7 +270,8 @@ LG.RealPlayer = (function () {
     var ms = Math.round(((window.performance && performance.now) ? performance.now() : Date.now()) - loadT0);
     log('[GLB] loaded ' + SRC + ' in ' + ms + 'ms: meshes=' + meshes + ' tris=' + Math.round(tris) +
       ' bones=' + bones + ' height=' + src.height.toFixed(3) + ' groundY=' + src.groundY.toFixed(3) +
-      ' clips=' + (clips.length ? clips.map(function (c) { return c.name; }).join(',') : 'none'));
+      ' clips=' + (clips.length ? clips.map(function (c) { return c.name; }).join(',') : 'none') +
+      ' parts=[' + parts.join(' ') + ']');
   }
 
   // true skinned extents: every vertex pushed through the real bone
@@ -172,11 +298,114 @@ LG.RealPlayer = (function () {
   function ready() { return enabled && phase === 'ready' && !!src; }
   function setEnabled(on) { enabled = !!on; }
   function status() {
-    return { phase: phase, error: errMsg, ready: ready(), enabled: enabled, src: SRC };
+    return { phase: phase, error: errMsg, ready: ready(), enabled: enabled, src: SRC, visual: VISUAL };
   }
 
   function box(worldSpace) {
     return ready() ? skinnedBox(src.scene, worldSpace) : null;
+  }
+
+  // ------------------------------------------------------------
+  // PHASE 3A — jersey panel split + per-player instances
+  // ------------------------------------------------------------
+  // The asset ships one beige "skin" mesh that also draws the chest, so
+  // there is no jersey to recolour. Cut that mesh in two by material
+  // group: a torso panel (measured from the model: waist -> shoulder
+  // line, inside the arm line) and the rest. Vertex attributes are left
+  // untouched, only the index buffer + groups change, so skinning keeps
+  // working. Call once, on the master, at load.
+  var SHIRT_Y = [0.60, 1.10], SHIRT_X = 0.20;
+  function splitShirt(mesh) {
+    try {
+      var geo = mesh.geometry;
+      if (!geo || !geo.attributes || !geo.attributes.position) return false;
+      if (geo.groups && geo.groups.length > 1) return true;   // already split
+      var pos = geo.attributes.position, idx = geo.index;
+      var n = idx ? idx.count / 3 : pos.count / 3;
+      var mw = mesh.matrixWorld, v = new THREE.Vector3();
+      var shirt = [], rest = [], t, a, b, c, cx, cy;
+      for (t = 0; t < n; t++) {
+        a = idx ? idx.getX(t * 3) : t * 3;
+        b = idx ? idx.getX(t * 3 + 1) : t * 3 + 1;
+        c = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
+        cx = 0; cy = 0;
+        for (var q = 0; q < 3; q++) {
+          v.fromBufferAttribute(pos, q === 0 ? a : q === 1 ? b : c);
+          if (mesh.boneTransform) mesh.boneTransform(q === 0 ? a : q === 1 ? b : c, v);
+          v.applyMatrix4(mw);
+          cx += v.x; cy += v.y;
+        }
+        cx /= 3; cy /= 3;
+        if (cy >= SHIRT_Y[0] && cy <= SHIRT_Y[1] && Math.abs(cx) <= SHIRT_X) shirt.push(a, b, c);
+        else rest.push(a, b, c);
+      }
+      if (!shirt.length || !rest.length) return false;
+      geo.setIndex(shirt.concat(rest));
+      geo.clearGroups();
+      geo.addGroup(0, shirt.length, 0);          // 0 = jersey panel
+      geo.addGroup(shirt.length, rest.length, 1); // 1 = skin (face/arms/hands/feet)
+      return true;
+    } catch (e) {
+      warn('[GLB] shirt split failed: ' + ((e && e.message) || e));
+      return false;
+    }
+  }
+
+  // one GLB = one skeleton: clone it per player (SkeletonUtils.clone
+  // algorithm, core three r147 ships no copy of it) so every player gets
+  // its own bone hierarchy + skeleton while geometry stays shared.
+  function cloneRig(scene) {
+    var clone = scene.clone(true);
+    var cloneOf = {}, origOf = {};          // original uuid -> clone, clone uuid -> original
+    (function map(a, b) {
+      cloneOf[a.uuid] = b;
+      origOf[b.uuid] = a;
+      for (var i = 0; i < a.children.length; i++) map(a.children[i], b.children[i]);
+    })(scene, clone);
+    clone.traverse(function (node) {
+      var orig = origOf[node.uuid];
+      if (!node.isSkinnedMesh || !orig || !orig.skeleton) return;
+      // the copied skeleton still points at the MASTER bones: rebuild it
+      // on this clone's own bones (same order -> skinIndex stays valid)
+      node.skeleton = orig.skeleton.clone();
+      node.skeleton.bones = orig.skeleton.bones.map(function (bo) {
+        return cloneOf[bo.uuid] || bo;
+      });
+      node.bindMatrix.copy(orig.bindMatrix);
+      node.bind(node.skeleton, node.bindMatrix);
+      node.frustumCulled = false;
+    });
+    return clone;
+  }
+
+  // per-player kit colours: materials are shared across clones, so only
+  // the parts that get a team colour are cloned per instance.
+  function tintKit(scene, def) {
+    var pal = (def && def.palette) || {};
+    var want = {
+      shirt: pal.shirt, helmet: pal.shirt,
+      shorts: pal.pants, socks: pal.shoe,
+      gloves: def && def.body && def.body.gloves
+    };
+    scene.traverse(function (o) {
+      var kit = o.userData && o.userData.kit;
+      if (!kit || !o.material) return;
+      var col = want[kit];
+      if (col == null) return;
+      try {
+        if (kit === 'shirt' && Array.isArray(o.material)) {
+          // clones share the master's array object — replace it, then tint
+          // index 0 (the jersey group); index 1 keeps the shared skin
+          var arr = o.material.slice();
+          arr[0] = arr[0].clone();
+          arr[0].color = new THREE.Color(col);
+          o.material = arr;
+        } else {
+          o.material = (Array.isArray(o.material) ? o.material[0] : o.material).clone();
+          o.material.color = new THREE.Color(col);
+        }
+      } catch (e) { warn('[GLB] kit tint failed for ' + kit + ': ' + ((e && e.message) || e)); }
+    });
   }
 
   // ------------------------------------------------------------
@@ -566,12 +795,12 @@ LG.RealPlayer = (function () {
     }
   }
 
-  function findStrike(kick) {
-    var mixer = new THREE.AnimationMixer(src.scene);
+  function findStrike(kick, scene) {
+    var mixer = new THREE.AnimationMixer(scene);
     var act = mixer.clipAction(kick.clip);
     act.play();
     var pts = [];
-    src.scene.traverse(function (o) {
+    scene.traverse(function (o) {
       if (o.isBone && /^(Foot|Toes)/i.test(o.name)) pts.push(o);
     });
     if (!pts.length) { mixer.stopAllAction(); return 0; }
@@ -579,7 +808,7 @@ LG.RealPlayer = (function () {
     var step = 0.02;
     for (var t = 0; t <= kick.span + 1e-6; t += step) {
       mixer.setTime(t);
-      src.scene.updateMatrixWorld(true);
+      scene.updateMatrixWorld(true);
       var mz = -Infinity;
       for (var i = 0; i < pts.length; i++) {
         pts[i].getWorldPosition(v);
@@ -602,7 +831,7 @@ LG.RealPlayer = (function () {
   function buildBank(model) {
     var sd = sourceData();
     if (!sd) throw new Error('no BLOCKOUT source data (LG.Rig.sourceData)');
-    var tgt = resolveTarget(src.scene);
+    var tgt = resolveTarget(model.scene);
     if (!tgt) throw new Error('source data unavailable');
     if (tgt.map.length < 10) throw new Error('target skeleton incomplete (mapped=' + tgt.map.length + ')');
 
@@ -636,13 +865,13 @@ LG.RealPlayer = (function () {
       var nm = names[i];
       var def = variantDef(nm, sd.defs);
       if (!def) throw new Error('missing source clip for ' + nm);
-      var keys = bakeVariant(def, tgt, src.scene, bob, bobRest, k);
+      var keys = bakeVariant(def, tgt, model.scene, bob, bobRest, k);
 
       // grounding: how far the lowest boot dips under its rest height
       // anywhere in this clip (static, so the cycle never penetrates)
       var min = Infinity;
       for (var j = 0; j < keys.length; j++) {
-        applyKey(tgt, src.scene, keys[j], bob);
+        applyKey(tgt, model.scene, keys[j], bob);
         var m = measureFeet(model);
         if (m < min) min = m;
       }
@@ -670,8 +899,8 @@ LG.RealPlayer = (function () {
       // where does the boot swing through the ball? gameplay kicks the
       // ball on the very frame the window opens, so the clip is started
       // just before that frame instead of at its wind-up.
-      var snap = snapshotSkeleton(src.scene);
-      try { kick.strike = findStrike(kick); } catch (e) { kick.strike = 0; }
+      var snap = snapshotSkeleton(model.scene);
+      try { kick.strike = findStrike(kick, model.scene); } catch (e) { kick.strike = 0; }
       applySnapshot(snap);
       var ts = kick.span / KICK_LEN;
       kick.start = Math.max(0, kick.strike - KICK_LEAD * ts);
@@ -948,14 +1177,15 @@ LG.RealPlayer = (function () {
   }
 
   // ------------------------------------------------------------
-  // build — one model instance (shared across matches on purpose:
-  // there is only ever ONE test player, and re-parenting moves it out
-  // of the previous match's group)
+  // build — one model instance per player. The loaded GLB master
+  // (`src.scene`) is never reparented: every player gets its own
+  // skeleton-safe clone, so bones/mixers never fight while the
+  // geometry (and its jersey split) stays shared.
   // ------------------------------------------------------------
   function build(def) {
     if (!ready()) return null;
     try {
-      var scene = src.scene;
+      var scene = cloneRig(src.scene);
 
       var group = new THREE.Group();     // player.js sets scale/pos/rotation.y
       var body = new THREE.Group();      // holder
@@ -963,6 +1193,7 @@ LG.RealPlayer = (function () {
       group.add(body);
       body.add(anchor);
       anchor.add(scene);
+      tintKit(scene, def);
 
       var limbs = {
         legL: findBone(scene, /^LegL/i),
@@ -985,22 +1216,24 @@ LG.RealPlayer = (function () {
       }
 
       // match the BLOCKOUT player height (player.js markers/heights are
-      // built from 1.62 * body.tall, not from this model)
-      var want = 1.62 * (def && def.body && def.body.tall ? def.body.tall : 1);
+      // built from 1.62 * body.tall, not from this model), scaled by the
+      // Phase-3A uniform visible-size factor
+      var want = 1.62 * (def && def.body && def.body.tall ? def.body.tall : 1) * VISUAL;
       var k = src.height > 0 ? want / src.height : 1;
       anchor.scale.set(k, k, k);
       group.updateMatrixWorld(true);
 
       var m = {
-        group: group, body: body, anchor: anchor,
+        group: group, body: body, anchor: anchor, scene: scene,
         limbs: limbs, feet: feet, footPts: footPts,
         height: src.height,
         skinned: true,
         glb: true
       };
       m.anim = controller(m);
-      log('[GLB] test player built: tris=' + src.tris + ' bones=' + src.bones +
+      log('[GLB] player built: tris=' + src.tris + ' bones=' + src.bones +
         ' modelHeight=' + src.height.toFixed(3) + ' scaledBy=' + k.toFixed(3) +
+        ' kit=' + (def && def.palette ? '#' + (def.palette.shirt >>> 0).toString(16) : '?') +
         ' clips=' + (m.anim.state().clips || '?') +
         ' mapped=' + m.anim.state().mapped +
         ' limbs=' + ['legL', 'legR', 'armL', 'armR'].map(function (key) {

@@ -44,6 +44,19 @@
 //           Phase 2: one imported GLB player, close 3/4 view pinned to a
 //           RETARGETED clip (idle|jog|run|sprint|stop|kick, or a scan of
 //           every clip) — logs box/grounding/limbs/clip table
+//   node tools/shot.js --scale --settle 4000
+//           Phase 3A: measure every player's real rendered size in a live
+//           match (skinned box + head/shoulder/foot markers, draw calls)
+//           and park the GLB player next to a procedural one for a
+//           side-by-side capture
+//   node tools/shot.js --scale --gscale 1.12 --out a.png
+//           same, with a trial uniform size factor on the GLB body only
+//   node tools/shot.js --scale --parts --out parts.png
+//           dye each GLB material a flat colour: one shot names the meshes
+//   node tools/shot.js --scale --bands --closeup --out bands.png
+//           rainbow bands by bind-pose height: maps y-range -> body part
+//   node tools/shot.js --scale --hidemat Begue --out under.png
+//           hide one GLB material: shows what the layer underneath is
 // ============================================================
 var fs = require('fs');
 var path = require('path');
@@ -78,6 +91,14 @@ var GLBTEST = !!args.includes('--glbtest');
 var GLBPOSE = arg('glbpose', 'idle');
 var GLB0 = !!args.includes('--glb0');
 var CLOSEUP = !!args.includes('--closeup');
+var SCALE = !!args.includes('--scale');
+var GSCALE = arg('gscale', '');
+var GLBSCOPE = arg('glbscope', '');
+var PAIRZ = arg('pairz', '');
+var GKPAIR = !!args.includes('--gk');
+var PARTS = !!args.includes('--parts');
+var BANDS = !!args.includes('--bands');
+var HIDEMAT = arg('hidemat', '');
 var FINDZ = arg('findz', '');
 var HIDE = arg('hide', '');
 
@@ -261,7 +282,7 @@ async function attempt(n, maxTries, url) {
       if (m.method === 'Runtime.consoleAPICalled') {
         var txt = (m.params.args || []).map(argValue).join(' ');
         log('[console] ' + txt);
-        if (/^STAGE:/.test(txt) || /^STEP/.test(txt) || /^\[?(GLB|RIG)|^RIGTEST|^RIGPROBE/.test(txt) || /^SCENE|^RAY|^SWEEP|^TEX|^FIND|^HIDE|^CAM|^HITS/.test(txt)) {
+        if (/^STAGE:/.test(txt) || /^STEP/.test(txt) || /^\[?(GLB|RIG)|^RIGTEST|^RIGPROBE|^SCALE|^PARTS|^BANDS|^HIDEMAT/.test(txt) || /^SCENE|^RAY|^SWEEP|^TEX|^FIND|^HIDE|^CAM|^HITS/.test(txt)) {
           console.log(txt);
           var st = /^STAGE:(.*)$/.exec(txt);
           if (st) stages.push(st[1]);
@@ -358,6 +379,14 @@ server.listen(0, '127.0.0.1', async function () {
     (GLBTEST ? '&glbpose=' + encodeURIComponent(GLBPOSE) : '') +
     (GLB0 ? '&glb=0' : '') +
     (CLOSEUP ? '&closeup=1' : '') +
+    (SCALE ? '&scale=1' : '') +
+    (GSCALE ? '&gscale=' + encodeURIComponent(GSCALE) : '') +
+    (GLBSCOPE !== '' ? '&glbscope=' + encodeURIComponent(GLBSCOPE) : '') +
+    (PAIRZ !== '' ? '&pairz=' + encodeURIComponent(PAIRZ) : '') +
+    (GKPAIR ? '&gk=1' : '') +
+    (PARTS ? '&parts=1' : '') +
+    (BANDS ? '&bands=1' : '') +
+    (HIDEMAT ? '&hidemat=' + encodeURIComponent(HIDEMAT) : '') +
     (FINDZ ? '&findz=' + encodeURIComponent(FINDZ) : '') +
     (HIDE ? '&hide=' + encodeURIComponent(HIDE) : '') +
     '&budget=' + BUDGET;

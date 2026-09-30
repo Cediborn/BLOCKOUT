@@ -38,6 +38,12 @@ LG.Config = {
     rig: 1,             // 1 = skinned humanoid rig (AnimationMixer) as the shipped
                         // default player system; 0 falls back to limb maths.
                         // Try it with index.html?rig=0 to compare.
+    glbScope: 3,        // who wears the imported GLB footballer (Phase 3A):
+                        // 0 = nobody (procedural bodies), 1 = home slot 0 only,
+                        // 2 = every outfield player, 3 = everybody incl. keepers
+                        // (shipped default). Every slot falls back to the
+                        // procedural body when the GLB is unavailable.
+                        // Try index.html?glbscope=0 to compare the fallback.
   },
 
   // ------------------------------------------------------------
