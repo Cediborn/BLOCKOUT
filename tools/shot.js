@@ -285,7 +285,7 @@ async function attempt(n, maxTries, url) {
       if (m.method === 'Runtime.consoleAPICalled') {
         var txt = (m.params.args || []).map(argValue).join(' ');
         log('[console] ' + txt);
-        if (/^STAGE:/.test(txt) || /^STEP/.test(txt) || /^\[?(GLB|RIG)|^\[START\]|^MATCHDIAG|^GOALFORCE|^GOALSNAP|^CROWD|^RIGTEST|^RIGPROBE|^SCALE|^PARTS|^BANDS|^HIDEMAT/.test(txt) || /^SCENE|^RAY|^SWEEP|^TEX|^FIND|^HIDE|^CAM|^HITS/.test(txt)) {
+        if (/^STAGE:/.test(txt) || /^STEP/.test(txt) || /^\[?(GLB|RIG)|^\[START\]|^\[CROWD\]|^MATCHDIAG|^GOALFORCE|^GOALSNAP|^CROWDEVT|^CROWD|^RIGTEST|^RIGPROBE|^SCALE|^PARTS|^BANDS|^HIDEMAT/.test(txt) || /^SCENE|^RAY|^SWEEP|^TEX|^FIND|^HIDE|^CAM|^HITS/.test(txt)) {
           console.log(txt);
           var st = /^STAGE:(.*)$/.exec(txt);
           if (st) stages.push(st[1]);

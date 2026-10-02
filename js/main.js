@@ -76,7 +76,10 @@
     // Day/Night atmosphere lives in LG.Lighting (owns the key lights). The
     // arena environment is untouched by it — only its lighting is rebalanced.
     LG.Lighting.build(scene, renderer);
+    var tArena = performance.now();
     arenaObj = LG.Arena.build(scene);
+    // startup profiling: environment build cost (includes the instanced crowd)
+    console.log('[START] arena build ' + (performance.now() - tArena).toFixed(1) + 'ms');
     if (LG.Living) LG.Living.build({ scene: scene }, arenaObj);
     LG.Particles.init(scene);
     // gather the environment's own lights/emissive signs/sky now that it exists
@@ -129,6 +132,15 @@
     ['goal', 'pass', 'shoot', 'tackleWin', 'keeperSave', 'perfectPass'].forEach(function (ev) {
       LG.eventBus.on(ev, function () { refreshModeChip(); });
     });
+    // crowd audio: a real effort swells the stand (the weak poke at power 0.4
+    // does not).  crowdSwell is deterministic, so this never touches the
+    // seed-pinned gameplay stream.
+    if (LG.Audio && LG.Audio.crowdSwell) {
+      LG.eventBus.on('shoot', function (ev) {
+        if (ev && typeof ev.power === 'number' && ev.power < 0.5) return;
+        LG.Audio.crowdSwell(0.4 + (ev && ev.power ? ev.power : 0.6) * 0.5);
+      });
+    }
     showMenu(true);
     syncMusic();
 

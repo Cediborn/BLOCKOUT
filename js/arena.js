@@ -11,9 +11,6 @@ LG.Arena = (function () {
   var anims = [];
   var surfaceGroup = null;   // the pitch slab + lines + logo, rebuilt on court change
   var goalGroup = null;      // cosmetic 3D goal frame/net (built once; see goals())
-  var cheerT = 0;            // goal-reaction window (event-driven, not per-specator)
-  var cheerDur = 2.8;
-  var boundGoal = false;
 
   function skyGradient(c, w, h, stops) {
     var grd = c.createLinearGradient(0, 0, 0, h);
@@ -413,8 +410,11 @@ LG.Arena = (function () {
   }
 
   // ---------------- bleachers + spectators ----------------
+  // The concrete tiers stay here; every spectator body is a placement handed
+  // to LG.Crowd (one instanced draw per body part for the whole section).
   function bleacher(zSign) {
     var g = new THREE.Group();
+    g.name = 'bleacher' + (zSign > 0 ? '+1' : '-1');
     var stepM = new THREE.MeshStandardMaterial({ color: 0x333a47, roughness: 0.9 });
     var steps = 3;
     for (var i = 0; i < steps; i++) {
@@ -423,16 +423,27 @@ LG.Arena = (function () {
       step.receiveShadow = true;
       g.add(step);
     }
+    // seats sit in jittered clusters (gaps read as aisles) instead of one
+    // even row; front two rows sit on the step, back row stands.  z is the
+    // usable band of each step (in front of the riser above) so nobody is
+    // swallowed by the concrete.
+    var section = zSign > 0 ? 'home' : 'away';
+    var clusters = [{ x: -3.5, n: 3 }, { x: 0, n: 4 }, { x: 3.5, n: 3 }];
     for (var row = 0; row < steps; row++) {
-      var n = 5;
-      for (var i = 0; i < n; i++) {
-        var sx = -C.goalWidth * 0.9 + i * (C.goalWidth * 1.8) / (n - 1);
-        for (var j = 0; j < 2; j++) {
-          var sp = LG.Models.spectator(row * 2 + i + j);
-          sp.position.set(sx + (j - 0.5) * 0.5, 0.15 + row * 0.66, zSign * (C.length / 2 + 3.2 + row * 0.55));
-          var a = { g: sp, t: Math.random() * 6, amp: 0.02 + Math.random() * 0.02 };
-          anims.push(a);
-          g.add(sp);
+      var stepTop = 0.8 + row * 0.66;
+      var zAbs = C.length / 2 + 2.6 + row * 0.55 - 0.42;
+      var z = zSign * zAbs;
+      var stand = row === steps - 1;
+      for (var ci = 0; ci < clusters.length; ci++) {
+        for (var i2 = 0; i2 < clusters[ci].n; i2++) {
+          LG.Crowd.put({
+            x: clusters[ci].x + (i2 - (clusters[ci].n - 1) / 2) * 0.66,
+            y: stepTop + (stand ? LG.Crowd.hipFeet : 0.05),
+            z: z,
+            yaw: zSign > 0 ? Math.PI : 0,
+            sit: !stand,
+            section: section,
+          });
         }
       }
     }
@@ -441,14 +452,20 @@ LG.Arena = (function () {
 
   function sideSpectators(xSign) {
     var g = new THREE.Group();
-    var n = 4;
-    for (var i = 0; i < n; i++) {
-      var sp = LG.Models.spectator(i);
-      sp.position.set(xSign * (C.width / 2 + 1.2), 0.1, -C.length * 0.28 + i * 4.2);
-      sp.rotation.y = xSign > 0 ? -Math.PI / 2 : Math.PI / 2;
-      var a = { g: sp, t: Math.random() * 6, amp: 0.03 + Math.random() * 0.02 };
-      anims.push(a);
-      g.add(sp);
+    g.name = 'sideSpect' + (xSign > 0 ? '+1' : '-1');
+    var yaw = xSign > 0 ? -Math.PI / 2 : Math.PI / 2;
+    var bases = [-7.5, 4.5];
+    for (var b = 0; b < bases.length; b++) {
+      for (var i = 0; i < 3; i++) {
+        LG.Crowd.put({
+          x: xSign * (C.width / 2 + 1.2),
+          y: 0 + LG.Crowd.hipFeet,
+          z: bases[b] + i * 0.8,
+          yaw: yaw,
+          sit: false,
+          section: 'side',
+        });
+      }
     }
     return g;
   }
@@ -1142,53 +1159,39 @@ LG.Arena = (function () {
   // Uses the existing spectator model with simple idle animations.
   function perimeterSpectators() {
     var g = new THREE.Group();
+    g.name = 'perimeterSpect';
     var halfW = C.width / 2 + 1.5;
     var halfL = C.length / 2 + 1.5;
-
-    // spectator positions around the court — groups on the long sides,
-    // sparser on the ends (behind the goals where bleachers already are)
     var spots = [];
 
-    // south side (z = +halfL + a bit) — denser pack, two depth rows
-    for (var i = 0; i < 12; i++) {
-      var x = -halfW + 2 + i * ((halfW * 2 - 4) / 11);
-      var row = i % 2;
-      spots.push({ x: x, z: halfL + 1.1 + row * 0.9 + Math.random() * 0.5, rot: Math.PI });
-    }
-    // north side (z = -halfL - a bit)
-    for (var i = 0; i < 12; i++) {
-      var x = -halfW + 2 + i * ((halfW * 2 - 4) / 11);
-      var row = i % 2;
-      spots.push({ x: x, z: -(halfL + 1.1 + row * 0.9 + Math.random() * 0.5), rot: 0 });
-    }
-    // east side (x = +halfW + a bit)
-    for (var i = 0; i < 8; i++) {
-      var z = -halfL + 5 + i * ((halfL * 2 - 10) / 7);
-      spots.push({ x: halfW + 1.1 + Math.random() * 1.1, z: z, rot: -Math.PI / 2 });
-    }
-    // west side (x = -halfW - a bit)
-    for (var i = 0; i < 8; i++) {
-      var z = -halfL + 5 + i * ((halfL * 2 - 10) / 7);
-      spots.push({ x: -(halfW + 1.1 + Math.random() * 1.1), z: z, rot: Math.PI / 2 });
-    }
-
-    for (var i = 0; i < spots.length; i++) {
-      var s = spots[i];
-      var spec = LG.Models.spectator(i);
-      if (!spec) continue;
-      spec.position.set(s.x, 0, s.z);
-      spec.rotation.y = s.rot + (Math.random() - 0.5) * 0.3;
-      spec.scale.setScalar(0.92 + Math.random() * 0.18);
-      g.add(spec);
-
-      // idle animation — staggered phase so the block never bobs in lockstep
-      var phase = Math.random() * 10;
-      var animKind = Math.random();
-      if (animKind < 0.35) {
-        anims.push({ g: spec, t: phase, amp: 0.04, cheer: true });
-      } else {
-        anims.push({ g: spec, t: phase, amp: 0.02, bob: true });
+    // Both ends: clusters flanking the bleacher block (|x| beyond its edge),
+    // two depth rows so the pack reads as a loose group, not a picket line.
+    var ends = [{ x: -10, n: 4 }, { x: -7.3, n: 3 }, { x: 7.3, n: 3 }, { x: 10, n: 4 }];
+    for (var e = 0; e < ends.length; e++) {
+      for (var i = 0; i < ends[e].n; i++) {
+        var ex = ends[e].x + (i - (ends[e].n - 1) / 2) * 0.8;
+        var ez = halfL + 1.1 + (i % 2) * 0.85;
+        spots.push({ x: ex, z: ez, yaw: Math.PI, section: 'home' });       // south end
+        spots.push({ x: ex, z: -ez, yaw: 0, section: 'away' });            // north end
       }
+    }
+    // Long sides: three clusters each, alternating depth
+    var sides = [{ z: -9, n: 4 }, { z: -2, n: 3 }, { z: 5, n: 3 }];
+    for (var s = 0; s < sides.length; s++) {
+      for (var j = 0; j < sides[s].n; j++) {
+        var sz = sides[s].z + (j - (sides[s].n - 1) / 2) * 0.8;
+        var sx = halfW + 1.1 + (j % 2) * 0.85;
+        spots.push({ x: sx, z: sz, yaw: -Math.PI / 2, section: 'side' });  // east
+        spots.push({ x: -sx, z: sz, yaw: Math.PI / 2, section: 'side' });  // west
+      }
+    }
+
+    for (var k = 0; k < spots.length; k++) {
+      var sp = spots[k];
+      LG.Crowd.put({
+        x: sp.x, y: LG.Crowd.hipFeet, z: sp.z,
+        yaw: sp.yaw, sit: false, section: sp.section,
+      });
     }
     return g;
   }
@@ -1217,6 +1220,7 @@ LG.Arena = (function () {
   function build(scene) {
     root = new THREE.Group();
     anims.length = 0;
+    if (LG.Crowd) LG.Crowd.begin();   // fresh placement list (rebuild-safe)
 
     root.add(skyBox());
     root.add(ground());
@@ -1248,6 +1252,9 @@ LG.Arena = (function () {
     root.add(streetFurniture());
     root.add(perimeterSpectators());
 
+    // instanced crowd: all placements above become 6 InstancedMeshes
+    if (LG.Crowd) root.add(LG.Crowd.build());
+
     var halfW = C.width / 2, halfL = C.length / 2;
     var gw = C.goalWidth / 2;
 
@@ -1259,11 +1266,8 @@ LG.Arena = (function () {
 
     scene.add(root);
 
-    // one goal listener for the whole crowd — event-driven, no per-spectator bus
-    if (!boundGoal && LG.eventBus && LG.eventBus.on) {
-      LG.eventBus.on('goal', function () { cheerT = cheerDur; });
-      boundGoal = true;
-    }
+    // goal/shot reactions are bound once inside LG.Crowd.bind() (called from
+    // LG.Crowd.build()) — event-driven, no per-spectator listeners here
 
     var posts = [];
     posts.push({ x: -gw, z: -halfL }, { x: gw, z: -halfL }, { x: -gw, z: halfL }, { x: gw, z: halfL });
@@ -1281,42 +1285,21 @@ LG.Arena = (function () {
         applyGoalVisibility();
       },
       update: function (dt) {
-        // low-frequency staggered crowd — one pass, no per-spectator listeners
-        cheerT = Math.max(0, cheerT - dt);
-        var boost = cheerT > 0 ? (cheerT / cheerDur) : 0;
+        // instanced crowd animates itself (12 phase groups); `anims` now
+        // only carries the slow tree sway
+        if (LG.Crowd) LG.Crowd.update(dt);
         for (var i = 0; i < anims.length; i++) {
           var a = anims[i];
           a.t += dt;
           if (a.sway) {
             a.g.rotation.z = Math.sin(a.t * 0.7) * a.amp * 2;
             a.g.rotation.x = Math.cos(a.t * 0.5) * a.amp;
-          } else if (a.cheer) {
-            // spectator arm-raise: periodic raise-and-lower (staggered phase)
-            var v = Math.sin(a.t * 1.8) * 0.5 + 0.5;
-            a.g.position.y = v * (0.08 + boost * 0.12);
-            raiseArms(a.g, v * (0.4 + boost * 1.4));
-          } else if (a.bob) {
-            // spectator idle sway + goal-reaction hop
-            a.g.rotation.y += Math.sin(a.t * 1.2) * 0.0003;
-            a.g.position.y = Math.sin(a.t * 1.5) * 0.015 + boost * (Math.sin(a.t * 9) * 0.04 + 0.04);
-            if (boost > 0) raiseArms(a.g, boost * 1.6);
           } else {
             a.g.position.y += Math.sin(a.t * 6) * a.amp * 0.1;
           }
         }
       },
     };
-  }
-
-  // lift both arm pivots on a spectator model (cheap — two rotations)
-  function raiseArms(g, amount) {
-    var u = g && g.userData;
-    if (!u || !u.armL || !u.armR) return;
-    var target = -amount * 1.1;
-    u.armL.rotation.x += (target - u.armL.rotation.x) * 0.2;
-    u.armR.rotation.x += (target - u.armR.rotation.x) * 0.2;
-    u.armL.rotation.z = amount > 0.2 ? -0.3 : 0;
-    u.armR.rotation.z = amount > 0.2 ? 0.3 : 0;
   }
 
   return { build: build };

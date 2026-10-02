@@ -86,40 +86,78 @@
     return 'state=' + m.state + ' ' + out.join(' | ');
   }
 
-  // ?crowd=1 — DIAGNOSIS ONLY: how much of the frame does the stands crowd
-  // cost? Hide the arena's spectator groups (bleachers, side seats, perimeter
-  // railing), let a frame render, and compare renderer.info. Nothing about the
-  // crowd itself is changed — it is restored right after the sample.
+  // ?crowd=1 — DIAGNOSIS ONLY: cost of the stands crowd. Hides every crowd
+  // group (bleachers, side seats, perimeter railing, instanced crowd), samples
+  // renderer.info + scene mesh count + average frame time both ways, then
+  // restores visibility. Nothing about the crowd itself is changed.
   function crowdProbe() {
     var LGw = f.contentWindow, LG = LGw.LG;
     var dbg = LG && LG.debug;
-    var r = dbg && dbg.renderer, arena = dbg && dbg.arena;
+    var r = dbg && dbg.renderer, arena = dbg && dbg.arena, scene = dbg && dbg.scene;
     if (!r || !arena) { console.log('CROWD no renderer/arena ref'); stage('done'); return; }
-    // arena.root child order — see ARENA_CH in the ray probe
-    var HIDE = [4, 5, 6, 7, 18];   // bleacher-1/+1, sideSpect+1/-1, perimeterSpect
+    var NAMED = ['bleacher-1', 'bleacher+1', 'sideSpect+1', 'sideSpect-1', 'perimeterSpect', 'crowd'];
+    var IDX = [4, 5, 6, 7, 18];   // fallback if the arena groups carry no name
     function settle(cb) {
       requestAnimationFrame(function () {
         requestAnimationFrame(function () { setTimeout(cb, 60); });
       });
     }
+    // CPU+GPU cost of a frame: render N times back-to-back and gl.finish() so
+    // the number reflects draw-call/submission cost, not rAF throttling.
+    function bench(n) {
+      var sc = dbg.scene, cam = dbg.camera;
+      if (!sc || !cam) return -1;
+      var gl = r.getContext();
+      for (var i = 0; i < n; i++) r.render(sc, cam);
+      if (gl && gl.finish) gl.finish();
+      return 0;
+    }
+    function sceneStats() {
+      var m = 0, t = 0, vis = 0;
+      if (scene) scene.traverse(function (o) {
+        if (o.isMesh) { m++; if (o.visible) vis++; }
+        if (o.isInstancedMesh) t += 1;
+      });
+      // per-arena-child mesh counts — tells which block a scene delta came from
+      var kids = [];
+      if (arena && arena.children) arena.children.forEach(function (c, i) {
+        var n = 0;
+        c.traverse(function (o) { if (o.isMesh) n++; });
+        kids.push((c.name || ('ch' + i)) + ':' + n);
+      });
+      return { meshes: m, visibleMeshes: vis, arena: kids.join(' ') };
+    }
     settle(function () {
       var withC = r.info.render.calls, withT = r.info.render.triangles;
+      var st = sceneStats();
+      var t0 = performance.now(); bench(12);
+      var withMs = (performance.now() - t0) / 12;
       var groups = [], i;
-      for (i = 0; i < HIDE.length; i++) if (arena.children[HIDE[i]]) groups.push(arena.children[HIDE[i]]);
-      var meshes = 0, bodies = 0;
+      for (i = 0; i < NAMED.length; i++) {
+        var g = arena.children.find(function (c) { return c.name === NAMED[i]; });
+        if (!g && arena.children[IDX[i]]) g = arena.children[IDX[i]];
+        if (g) groups.push(g);
+      }
+      var crowdMeshes = 0, crowdInst = 0;
       groups.forEach(function (g) {
         g.visible = false;
         g.traverse(function (o) {
-          if (o.isMesh) meshes++;
-          if (o.isMesh && o.parent && o.parent.type === 'Group' && o.parent.parent === g) bodies++;
+          if (o.isMesh) crowdMeshes++;
+          if (o.isInstancedMesh) crowdInst++;
         });
       });
       settle(function () {
         var noC = r.info.render.calls, noT = r.info.render.triangles;
-        console.log('CROWD stands groups=' + groups.length + ' meshes=' + meshes +
+        var t1 = performance.now(); bench(12);
+        var noMs = (performance.now() - t1) / 12;
+        console.log('CROWD groups=' + groups.length + ' meshes=' + crowdMeshes +
+          ' instanced=' + crowdInst + ' sceneMeshes=' + st.meshes +
           ' calls with=' + withC + ' without=' + noC + ' saved=' + (withC - noC) +
           ' (' + (withC ? Math.round(100 * (withC - noC) / withC) : 0) + '%)' +
-          ' tris with=' + withT + ' without=' + noT);
+          ' tris with=' + withT + ' without=' + noT +
+          ' renderMs with=' + withMs.toFixed(2) + ' without=' + noMs.toFixed(2) +
+          ' textures=' + r.info.memory.textures + ' geometries=' + r.info.memory.geometries +
+          '\nCROWD arena[' + st.arena + ']');
         groups.forEach(function (g) { g.visible = true; });
         stage('done');
       });
@@ -139,8 +177,21 @@
   // done() is called once the state is GOAL so the screenshot lands there.
   function goalProbe(done) {
     var LGw = f.contentWindow, LG = LGw.LG;
+    if (LG) watchCrowdEvents(LG);
     var m = LG && LG.Match;
     if (!m) { console.log('GOALFORCE no match'); done(); return; }
+    // one real shot through the match's own path: proves the crowd's shoot
+    // listener (the forced goal below emits 'goal' but never 'shoot')
+    setTimeout(function () {
+      try {
+        var shooters = (m.away || []).concat(m.home || [])
+          .filter(function (pp) { return pp && !pp.isGoalkeeper; });
+        if (shooters[0] && m.shootDirect && m.enemyGoal) {
+          m.shootDirect(shooters[0], 0.9, m.enemyGoal(shooters[0].team), {});
+          console.log('GOALFORCE synthetic shot fired');
+        }
+      } catch (e) { console.log('GOALFORCE shoot err ' + e.message); }
+    }, 400);
     var placed = false, snapped = 0, beats = 0, sawGoal = false, finished = false;
     var lastCel = '';
     function vmax() {
@@ -175,7 +226,9 @@
         return;
       }
       snapped++;
-      console.log('GOALSNAP ' + snapped + ' ' + matchSnap());
+      var cs = LG.Crowd && LG.Crowd.stats;
+      console.log('GOALSNAP ' + snapped + ' ' + matchSnap() +
+        (cs ? ' crowd=cheer:' + (cs.cheer || 0).toFixed(2) + ' arm:' + (cs.arm0 || 0).toFixed(2) : ' crowd=-'));
       if (m.state === 'GOAL') sawGoal = true;
       var cel = LG.Celebration && LG.Celebration.current;
       if (cel && cel.type !== lastCel) { lastCel = cel.type; console.log('GOALFORCE celeb type=' + cel.type + ' dur=' + cel.dur.toFixed(2)); }
@@ -210,6 +263,23 @@
     return c;
   }
 
+  // Logs the crowd's own reaction-timer state when goal/shoot fire, so a
+  // probe run proves the crowd wired to the event bus (audio is gated by
+  // the AudioContext, which headless runs keep suspended).
+  function watchCrowdEvents(LG) {
+    if (!LG.eventBus || !LG.eventBus.on) return;
+    LG.eventBus.on('goal', function () {
+      var s = LG.Crowd && LG.Crowd.stats;
+      console.log('CROWDEVT goal cheer=' + (s ? s.cheer.toFixed(2) : '-'));
+    });
+    LG.eventBus.on('shoot', function (ev) {
+      var s = LG.Crowd && LG.Crowd.stats;
+      var p = ev && typeof ev.power === 'number' ? ev.power : -1;
+      console.log('CROWDEVT shoot power=' + p.toFixed(2) +
+        ' swell=' + (s ? s.swell.toFixed(2) : '-'));
+    });
+  }
+
   // TEMPORARY live-match rig probe: answers "is the rig the thing being
   // drawn, and does the state machine actually leave idle?" by sampling
   // TEMPORARY live-match rig probe: drives the human through
@@ -218,6 +288,7 @@
   function rigProbe() {
     var LG = f.contentWindow.LG;
     var watcher = watchAnimateChar(LG);
+    watchCrowdEvents(LG);
 
     // ?closeup=1 — ride the game's own camera close to the human (the
     // Phase-1 test player) so the final frame shows THAT body in play
@@ -1153,7 +1224,7 @@
   var ARENA_CH = ['sky', 'ground', 'surface', 'goals', 'bleacher-1', 'bleacher+1',
     'sideSpect+1', 'sideSpect-1', 'buildings', 'props', 'graffiti', 'crosswalks',
     'barriers', 'lamps', 'benches', 'trees', 'vehicles', 'streetFurniture',
-    'perimeterSpect', 'fenceH-1', 'fenceH+1', 'fenceV-1', 'fenceV+1'];
+    'perimeterSpect', 'crowd', 'fenceH-1', 'fenceH+1', 'fenceV-1', 'fenceV+1'];
 
   function topInfo(o) {
     var t = o, p = o;

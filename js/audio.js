@@ -144,6 +144,24 @@ LG.Audio = (function () {
     }
   }
 
+  // short crowd swell for a shot — pushes the ambience bed up and adds two
+  // band-passed noise bursts. Deliberately deterministic (no Math.random):
+  // this runs mid-match, on paths that must not perturb the seed-pinned
+  // gameplay stream.
+  function crowdSwell(intensity) {
+    if (!ctx || !crowdGain || !crowdActive) return;
+    var i = UI.clamp(intensity != null ? intensity : 0.5, 0, 1);
+    var t0 = ctx.currentTime;
+    var base = crowdDensity * 0.12 * volCrowd();
+    if (volCrowd() > 0.01) {
+      noiseHit(0.5, 0.04 + i * 0.06, 750 + i * 600, 0.02, 'bandpass');
+      noiseHit(0.7, 0.03 + i * 0.05, 1800 + i * 900, 0.06, 'bandpass');
+    }
+    crowdGain.gain.cancelScheduledValues(t0);
+    crowdGain.gain.setTargetAtTime(Math.min(base + 0.16 * i, 0.34), t0 + 0.02, 0.10);
+    crowdGain.gain.setTargetAtTime(base, t0 + 0.4, 0.32);
+  }
+
   // ---------- game sounds ----------
   var S = {
     // velocity-aware strike: a soft pass-control touch is a light tap, a
@@ -157,7 +175,7 @@ LG.Audio = (function () {
     pass: function () { thump(300, 0.07, 0.22); blip(620, 0.05, 'triangle', 0.1, 0, 400); },
     tackle: function () { noiseHit(0.16, 0.4, 300, 0, 'lowpass'); thump(90, 0.22, 0.5); },
     ballBounce: function (v) { var d = UI.clamp(v, 0, 1); thump(140, 0.06, 0.06 + d * 0.2); },
-    post: function () { thump(260, 0.28, 0.5); blip(420, 0.25, 'square', 0.18, 0, 300); },
+    post: function () { thump(260, 0.28, 0.5); blip(420, 0.25, 'square', 0.18, 0, 300); crowdSwell(0.75); },
     wall: function () { noiseHit(0.06, 0.1, 500); },
     goal: function (own) {
       blip(523, 0.12, 'square', 0.16); blip(659, 0.12, 'square', 0.16, 0.1);
@@ -204,6 +222,7 @@ LG.Audio = (function () {
     init: init, resume: resume, unlock: unlock, toggle: toggle,
     applyVolumes: applyVolumes,
     crowd: crowd, crowdStop: crowdStop, crowdCheer: crowdCheer,
+    crowdSwell: crowdSwell,
     sfx: S,
   };
 })();
