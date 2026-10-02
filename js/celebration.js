@@ -86,21 +86,13 @@ LG.Celebration = (function () {
     L.armR.rotation.z = 0.5;
   }
 
+  // Travel is disabled: there is no celebration locomotion clip, so moving a
+  // body only glides it under an idle/stop animation. Call sites keep their
+  // choreography (gather/return points) — only the translation is dropped.
   function nudgeToward(p, tx, tz, speed, dt) {
     if (!p) return;
-    var dx = tx - p.x, dz = tz - p.z;
-    var d = Math.sqrt(dx * dx + dz * dz);
-    if (d < 0.15) { p.vx *= 0.8; p.vz *= 0.8; return; }
-    var sp = Math.min(speed, d / Math.max(dt, 0.001));
-    // set want so the normal integrate path moves them (no physics rewrite)
-    p.want.x = (dx / d);
-    p.want.z = (dz / d);
-    p.vx = (dx / d) * Math.min(p.maxSpeed, sp);
-    p.vz = (dz / d) * Math.min(p.maxSpeed, sp);
-    p.x += p.vx * dt;
-    p.z += p.vz * dt;
-    p.facing = Math.atan2(p.vx, p.vz);
-    if (p.model && p.model.group) p.model.group.position.set(p.x, p.y || 0, p.z);
+    p.vx = 0;
+    p.vz = 0;
   }
 
   function resetPose(p) {
@@ -112,7 +104,8 @@ LG.Celebration = (function () {
   }
 
   // Advance the active celebration. Safe to call every frame during GOAL.
-  // match.players are frozen by updatePlayers(0); this only layers poses/moves.
+  // match.players are frozen by updatePlayers(0); this only layers poses —
+  // no celebration body travels (there is no locomotion clip to play).
   function update(match, dt) {
     if (!current || !match) return;
     current.t += dt;
@@ -131,14 +124,9 @@ LG.Celebration = (function () {
           armsUp(scorer, true);
           break;
         case 'slide':
-          // short knee-slide: drop body pitch + travel forward a touch
+          // knee-slide pose: body pitch + arms. No forward travel — there is
+          // no celebration locomotion clip to carry it.
           if (scorer.model && scorer.model.body) scorer.model.body.rotation.x = 0.45;
-          if (t < 1.2) {
-            var sdir = scorer.facing;
-            scorer.x += Math.sin(sdir) * 2.4 * dt;
-            scorer.z += Math.cos(sdir) * 2.4 * dt;
-            if (scorer.model && scorer.model.group) scorer.model.group.position.set(scorer.x, 0, scorer.z);
-          }
           armsUp(scorer, t < 1.8);
           break;
         case 'point':
@@ -204,15 +192,17 @@ LG.Celebration = (function () {
     for (i = 0; i < loseTeam.length; i++) {
       p = loseTeam[i];
       if (p.isGoalkeeper) {
-        // keeper who conceded: crouch then stand — no running off
+        // keeper who conceded: crouch then stand. No walk-back — there is no
+        // celebration locomotion clip, so translating the body would glide
+        // under an idle/stop animation.
         if (t < 1.4) {
           if (p.model && p.model.body) p.model.body.rotation.x = 0.35;
           armsDown(p);
         } else {
           if (p.model && p.model.body) p.model.body.rotation.x = 0;
-          // walk back toward own goal
-          var gkHome = match.myGoal(p.team);
-          nudgeToward(p, gkHome.x * 0.3, gkHome.z * 0.85, 2.0, dt);
+          armsDown(p);
+          p.vx = 0;
+          p.vz = 0;
         }
       } else {
         var mode = (p.idx + current.team) % 3;

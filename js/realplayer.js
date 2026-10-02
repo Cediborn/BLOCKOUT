@@ -828,14 +828,27 @@ LG.RealPlayer = (function () {
   // ------------------------------------------------------------
   // build the clip bank for one model instance
   // ------------------------------------------------------------
+  // The baked bank (per-clip local quaternions, grounding bias, the re-timed
+  // kick, the created AnimationClips) is pure data: same source clips, same
+  // skeleton layout, same scale -> same output. Clones only differ by which
+  // bone objects they own, so bake it once per anchor scale (1.226 outfield,
+  // 1.300 keeper) and hand every later player the cached clips. Clips address
+  // bones by NAME, so one AnimationClip drives every clone's mixer. Each
+  // instance still gets its own resolveTarget/bob/rest measurement below.
+  var bankCache = {};
+
   function buildBank(model) {
     var sd = sourceData();
     if (!sd) throw new Error('no BLOCKOUT source data (LG.Rig.sourceData)');
+    var tb0 = nowMs();
     var tgt = resolveTarget(model.scene);
     if (!tgt) throw new Error('source data unavailable');
     if (tgt.map.length < 10) throw new Error('target skeleton incomplete (mapped=' + tgt.map.length + ')');
+    var tb1 = nowMs();
 
     var k = model.anchor && model.anchor.scale.x ? model.anchor.scale.x : 1;
+    var cacheKey = k.toFixed(4);
+    var hit = bankCache[cacheKey];
 
     // body bob node = lowest common ancestor of the spine and leg
     // targets (MASTER_06 here): moving it translates the whole body.
@@ -858,6 +871,19 @@ LG.RealPlayer = (function () {
     restoreBind(tgt, bob, bobRest);
     var restFootY = measureFeet(model);
     if (!isFinite(restFootY)) restFootY = 0;
+
+    if (hit) {
+      // reuse the baked clips; only this instance's bone map was needed
+      var th = nowMs();
+      log('[GLB] bank ms: resolve=' + (tb1 - tb0).toFixed(1) +
+        ' bake=0.0(cached) kick=0.0(cached) bind=' + (th - tb1).toFixed(1) +
+        ' k=' + k.toFixed(3));
+      return {
+        tgt: tgt, clips: hit.clips, kick: hit.kick, restFootY: restFootY,
+        bias: hit.bias, bobName: hit.bobName, scaledBy: k,
+        clipNames: hit.clipNames
+      };
+    }
 
     var names = ['idle', 'jog', 'run', 'sprint', 'stop'];
     var clips = {}, baked = {}, bias = {};
@@ -892,6 +918,7 @@ LG.RealPlayer = (function () {
 
     restoreBind(tgt, bob, bobRest);
 
+    var tb2 = nowMs();
     var kick = null;
     try { kick = buildKickClip(); } catch (e) { kick = null; }
     if (!kick) warn('[GLB] no authored kick clip found in the asset');
@@ -905,10 +932,20 @@ LG.RealPlayer = (function () {
       var ts = kick.span / KICK_LEN;
       kick.start = Math.max(0, kick.strike - KICK_LEAD * ts);
     }
+    var tb3 = nowMs();
+    log('[GLB] bank ms: resolve=' + (tb1 - tb0).toFixed(1) +
+      ' bake=' + (tb2 - tb1).toFixed(1) + ' kick=' + (tb3 - tb2).toFixed(1) +
+      ' k=' + (model.anchor && model.anchor.scale.x ? model.anchor.scale.x.toFixed(3) : '?'));
+
+    var bobName = bob ? bob.name : null;
+    bankCache[cacheKey] = {
+      clips: clips, kick: kick, bias: bias, bobName: bobName,
+      clipNames: names.concat(kick ? ['kick'] : [])
+    };
 
     return {
       tgt: tgt, clips: clips, kick: kick, restFootY: restFootY,
-      bias: bias, bobName: bob ? bob.name : null, scaledBy: k,
+      bias: bias, bobName: bobName, scaledBy: k,
       clipNames: names.concat(kick ? ['kick'] : [])
     };
   }
@@ -1185,7 +1222,9 @@ LG.RealPlayer = (function () {
   function build(def) {
     if (!ready()) return null;
     try {
+      var w0 = nowMs();
       var scene = cloneRig(src.scene);
+      var w1 = nowMs();
 
       var group = new THREE.Group();     // player.js sets scale/pos/rotation.y
       var body = new THREE.Group();      // holder
@@ -1194,6 +1233,7 @@ LG.RealPlayer = (function () {
       body.add(anchor);
       anchor.add(scene);
       tintKit(scene, def);
+      var w2 = nowMs();
 
       var limbs = {
         legL: findBone(scene, /^LegL/i),
@@ -1231,6 +1271,10 @@ LG.RealPlayer = (function () {
         glb: true
       };
       m.anim = controller(m);
+      var w3 = nowMs();
+      log('[GLB] build ms: clone=' + (w1 - w0).toFixed(1) +
+        ' tint=' + (w2 - w1).toFixed(1) + ' bank+ctrl=' + (w3 - w2).toFixed(1) +
+        ' total=' + (w3 - w0).toFixed(1));
       log('[GLB] player built: tris=' + src.tris + ' bones=' + src.bones +
         ' modelHeight=' + src.height.toFixed(3) + ' scaledBy=' + k.toFixed(3) +
         ' kit=' + (def && def.palette ? '#' + (def.palette.shirt >>> 0).toString(16) : '?') +

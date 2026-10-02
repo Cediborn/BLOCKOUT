@@ -384,6 +384,14 @@ LG.MatchManager.prototype = {
     var i, p, pos;
     var homePos = [[0, 9], [-6, 13], [6, 13]];
     var awayPos = [[0, -9], [-6, -13], [6, -13]];
+    // nobody carries a facing into the restart: the spawn facing is random and
+    // the post-goal celebration leaves everyone aimed at +z (atan2 of a zero
+    // nudge), so line every outfielder up looking at the ball instead. The
+    // keepers already face the field (repositionGoalkeeper).
+    var faceBall = function (pl) {
+      pl.facing = Math.atan2(0 - pl.x, 0 - pl.z);
+      if (pl.model && pl.model.group) pl.model.group.rotation.y = pl.facing;
+    };
     for (i = 0; i < this.home.length; i++) {
       p = this.home[i];
       if (p.isGoalkeeper) { this.repositionGoalkeeper(p); continue; }
@@ -393,6 +401,7 @@ LG.MatchManager.prototype = {
       p.vx = p.vz = 0;
       p.stamina = 1;
       p.model.group.position.set(p.x, 0, p.z);
+      faceBall(p);
     }
     for (i = 0; i < this.away.length; i++) {
       p = this.away[i];
@@ -403,6 +412,7 @@ LG.MatchManager.prototype = {
       p.vx = p.vz = 0;
       p.stamina = 1;
       p.model.group.position.set(p.x, 0, p.z);
+      faceBall(p);
     }
     this.ball.reset(0, 0);
     this.possessionTeam = -1;
@@ -523,8 +533,17 @@ LG.MatchManager.prototype = {
   },
 
   // ------------------------------------------------------------
+  // KICKOFF/GOAL/END freeze gameplay by stepping with dt=0, but a velocity
+  // left over from the last live frame (or one a goal celebration just
+  // nudged) survives: the rig runs off its own clock, so it would keep
+  // running in place while the body stands still. Kill the velocity while
+  // THIS match is not in PLAY — positions don't move (celebration still
+  // integrates its own nudges after this), and the controller reads "not
+  // moving", so a frozen player settles into stop/idle. Scoped to the
+  // instance, so a second match elsewhere can't zero someone else's squad.
   updatePlayers: function (dt) {
     var i;
+    var frozen = this.state !== 'PLAY';
     // decide intents
     for (i = 0; i < this.all.length; i++) {
       var p = this.all[i];
@@ -532,7 +551,11 @@ LG.MatchManager.prototype = {
       else if (p.ai) { p.ai.update(dt); }
     }
     // integrate
-    for (i = 0; i < this.all.length; i++) this.all[i].update(dt);
+    for (i = 0; i < this.all.length; i++) {
+      var q = this.all[i];
+      if (frozen) { q.vx = 0; q.vz = 0; }
+      q.update(dt);
+    }
     this.resolvePlayerCollisions();
   },
 

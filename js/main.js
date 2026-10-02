@@ -1409,7 +1409,14 @@
   }
 
   // ---------------- match lifecycle ----------------
+  // one line of startup profiling: how long the match hand-off actually blocks
+  // for (rosters = the per-player body builds, the rest = scene/HUD/camera)
+  function nowMs() {
+    return (window.performance && performance.now) ? performance.now() : Date.now();
+  }
+
   function startMatch(playerId) {
+    var t0 = nowMs();
     selectedId = playerId;
     enterLandscape();
     // consume the selected atmosphere now (also re-collects + re-applies if a
@@ -1458,7 +1465,9 @@
     // built (model + collision body + height move together) — see LG.Config.player
     if (LG.Player) LG.Player.deviceScale = isMobile ? (LG.Config.player.mobileScale || 1) : 1;
 
+    var t1 = nowMs();
     match = new LG.MatchManager(matchOpts);
+    var t2 = nowMs();
     match.attachScene(scene, arenaObj);
     match.camera = camCtrl;
     match.selectActive();
@@ -1480,6 +1489,8 @@
     UIState = 'match';
     syncMusic();   // stop now, not on the next frame — the whistle and the menu
     lastNow = nowSec();
+    console.log('[START] match setup ' + (nowMs() - t0).toFixed(1) + 'ms (rosters ' +
+      (t2 - t1).toFixed(1) + 'ms, env+ui ' + (t1 - t0).toFixed(1) + 'ms)');
   }
 
   function clearMatchFromScene() {

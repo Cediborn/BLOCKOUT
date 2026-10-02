@@ -25,7 +25,12 @@
   var busy = false;
   var T0 = Date.now();
 
-  function stage(label) { try { f.contentWindow.__shotStage = label; } catch (e) {} console.log('STAGE:' + label); }
+  function stage(label) {
+    // shot.js polls window.__shotStage on THIS frame; keep the iframe copy too
+    try { window.__shotStage = label; } catch (e) {}
+    try { f.contentWindow.__shotStage = label; } catch (e) {}
+    console.log('STAGE:' + label);
+  }
 
   function wait(test, cb, tag) {
     var n = 0;
@@ -50,30 +55,146 @@
   // got, whether the mixer clock is advancing (real animation), the state
   // it is in, and the two y values that prove the figure is standing on
   // the deck (gameplay y and the node y the group is written with).
-  function diagMatch() {
-    var LG = f.contentWindow.LG;
-    function snap() {
-      var out = [];
-      var teams = [LG.Match && LG.Match.home, LG.Match && LG.Match.away];
-      for (var t = 0; t < teams.length; t++) {
-        var arr = teams[t] || [];
-        for (var i = 0; i < Math.min(arr.length, 3); i++) {
-          var p = arr[i], m = p && p.model;
-          if (!m) continue;
-          var st = m.anim ? m.anim.state() : null;
-          out.push((m.skinned ? 'rig' : 'proc') +
-            ' y=' + p.y + '/' + (m.group.position.y).toFixed(3) +
-            ' t=' + (st ? st.time.toFixed(2) : '-') +
-            ' s=' + (st ? st.cur : '-') +
-            ' legR=' + (m.limbs && m.limbs.legR ? Number(m.limbs.legR.rotation.x).toFixed(2) : '-'));
-        }
+  // One line per player, both squads: which body, the authored facing vs the
+  // rotation the group is actually drawn with, the gameplay velocity, and the
+  // controller state + mixer clock. Match state comes first. Used to prove the
+  // kickoff lines up looking at the ball and that nobody keeps running while
+  // the match is frozen after a goal.
+  function matchSnap() {
+    var LGw = f.contentWindow, LG = LGw && LGw.LG;
+    var m = LG && LG.Match;
+    if (!m) return 'state=? (no match)';
+    var out = [];
+    var teams = [m.home, m.away];
+    for (var t = 0; t < teams.length; t++) {
+      var arr = teams[t] || [];
+      for (var i = 0; i < arr.length; i++) {
+        var p = arr[i], md = p && p.model;
+        if (!p) continue;
+        var st = md && md.anim ? md.anim.state() : null;
+        var sp = Math.sqrt((p.vx || 0) * (p.vx || 0) + (p.vz || 0) * (p.vz || 0));
+        out.push((t ? 'A' : 'H') + i +
+          (md && md.skinned ? ' rig' : ' proc') +
+          ' y=' + p.y + '/' + (md ? md.group.position.y.toFixed(3) : '-') +
+          ' f=' + Number(p.facing).toFixed(2) +
+          ' r=' + Number(md && md.group ? md.group.rotation.y : 0).toFixed(2) +
+          ' v=' + sp.toFixed(2) +
+          ' t=' + (st ? Number(st.time).toFixed(2) : '-') +
+          ' s=' + (st ? st.cur : '-'));
       }
-      return out.join(' | ');
     }
-    try { console.log('MATCHDIAG A ' + snap()); } catch (e) { console.log('MATCHDIAG err ' + e.message); }
+    return 'state=' + m.state + ' ' + out.join(' | ');
+  }
+
+  // ?crowd=1 — DIAGNOSIS ONLY: how much of the frame does the stands crowd
+  // cost? Hide the arena's spectator groups (bleachers, side seats, perimeter
+  // railing), let a frame render, and compare renderer.info. Nothing about the
+  // crowd itself is changed — it is restored right after the sample.
+  function crowdProbe() {
+    var LGw = f.contentWindow, LG = LGw.LG;
+    var dbg = LG && LG.debug;
+    var r = dbg && dbg.renderer, arena = dbg && dbg.arena;
+    if (!r || !arena) { console.log('CROWD no renderer/arena ref'); stage('done'); return; }
+    // arena.root child order — see ARENA_CH in the ray probe
+    var HIDE = [4, 5, 6, 7, 18];   // bleacher-1/+1, sideSpect+1/-1, perimeterSpect
+    function settle(cb) {
+      requestAnimationFrame(function () {
+        requestAnimationFrame(function () { setTimeout(cb, 60); });
+      });
+    }
+    settle(function () {
+      var withC = r.info.render.calls, withT = r.info.render.triangles;
+      var groups = [], i;
+      for (i = 0; i < HIDE.length; i++) if (arena.children[HIDE[i]]) groups.push(arena.children[HIDE[i]]);
+      var meshes = 0, bodies = 0;
+      groups.forEach(function (g) {
+        g.visible = false;
+        g.traverse(function (o) {
+          if (o.isMesh) meshes++;
+          if (o.isMesh && o.parent && o.parent.type === 'Group' && o.parent.parent === g) bodies++;
+        });
+      });
+      settle(function () {
+        var noC = r.info.render.calls, noT = r.info.render.triangles;
+        console.log('CROWD stands groups=' + groups.length + ' meshes=' + meshes +
+          ' calls with=' + withC + ' without=' + noC + ' saved=' + (withC - noC) +
+          ' (' + (withC ? Math.round(100 * (withC - noC) / withC) : 0) + '%)' +
+          ' tris with=' + withT + ' without=' + noT);
+        groups.forEach(function (g) { g.visible = true; });
+        stage('done');
+      });
+    });
+  }
+
+  function diagMatch() {
+    try { console.log('MATCHDIAG A ' + matchSnap()); } catch (e) { console.log('MATCHDIAG err ' + e.message); }
     setTimeout(function () {
-      try { console.log('MATCHDIAG B ' + snap()); } catch (e) { console.log('MATCHDIAG err ' + e.message); }
+      try { console.log('MATCHDIAG B ' + matchSnap()); } catch (e) { console.log('MATCHDIAG err ' + e.message); }
     }, 1600);
+  }
+
+  // ?goal=1 — let the squads run, then park the ball in the away net so a
+  // real goal fires (same checkGoal path the game uses), and sample the
+  // whole GOAL window: frozen players must not keep running in place.
+  // done() is called once the state is GOAL so the screenshot lands there.
+  function goalProbe(done) {
+    var LGw = f.contentWindow, LG = LGw.LG;
+    var m = LG && LG.Match;
+    if (!m) { console.log('GOALFORCE no match'); done(); return; }
+    var placed = false, snapped = 0, beats = 0, sawGoal = false, finished = false;
+    var lastCel = '';
+    function vmax() {
+      var all = (m.home || []).concat(m.away || []), best = 0;
+      for (var i = 0; i < all.length; i++) {
+        var v = Math.sqrt(all[i].vx * all[i].vx + all[i].vz * all[i].vz);
+        if (v > best) best = v;
+      }
+      return best;
+    }
+    function finish(tag) {
+      if (finished) return;
+      finished = true;
+      console.log('GOALFORCE ' + tag);
+      done();
+    }
+    var iv = setInterval(function () {
+      var v = vmax();
+      if (!placed) {
+        if (beats++ < 60) console.log('GOALFORCE beat ' + beats + ' state=' + m.state + ' vmax=' + v.toFixed(2));
+        if (m.state !== 'PLAY' || v < 1.5) return;
+        var C = LG.Config.court, halfL = C.length / 2;
+        m.ball.x = 0; m.ball.y = 0.3; m.ball.z = -halfL - 0.55;
+        m.ball.vx = m.ball.vy = m.ball.vz = 0;
+        // credit a home outfielder: that net is the away goal, so team 0
+        // scores with a real scorer — the celebration paths that translate
+        // (gather nudges, slide travel) all get exercised
+        var kickers = (m.home || []).filter(function (pp) { return pp && !pp.isGoalkeeper; });
+        m.ball.lastKicker = kickers[0] || (m.home || [])[0] || null;
+        placed = true;
+        console.log('GOALFORCE placed in PLAY');
+        return;
+      }
+      snapped++;
+      console.log('GOALSNAP ' + snapped + ' ' + matchSnap());
+      if (m.state === 'GOAL') sawGoal = true;
+      var cel = LG.Celebration && LG.Celebration.current;
+      if (cel && cel.type !== lastCel) { lastCel = cel.type; console.log('GOALFORCE celeb type=' + cel.type + ' dur=' + cel.dur.toFixed(2)); }
+      if (cel && cel.scorer) {
+        console.log('GOALFORCE scorer x=' + cel.scorer.x.toFixed(2) + ' z=' + cel.scorer.z.toFixed(2) +
+          ' v=' + Math.sqrt(cel.scorer.vx * cel.scorer.vx + cel.scorer.vz * cel.scorer.vz).toFixed(2));
+      }
+      // capture only once the celebration has run AND real play is moving
+      // again — that single pass proves the freeze and the resumption
+      if (sawGoal && m.state === 'PLAY' && v > 1.5) {
+        clearInterval(iv);
+        finish('resumed in PLAY vmax=' + v.toFixed(2));
+        return;
+      }
+      if (snapped > 60) {
+        clearInterval(iv);
+        finish((sawGoal ? 'no PLAY after the goal' : 'never scored') + ' state=' + m.state);
+      }
+    }, 250);
   }
 
   // Wrap LG.Models.animateChar so the log can prove which bodies still
@@ -225,9 +346,11 @@
       { name: 'run', act: function () { drive(0.75, 1, 0); }, wait: is('run') },
       { name: 'sprint', act: function () { sprint(true); }, wait: is('sprint') },
       { name: 'runBack', act: function () { sprint(false); }, wait: is('run') },
-      { name: 'kick', act: function () { forceKick(); }, wait: is('kick') },
+      // controller zeroes peak/stopT when kick starts, so the stick release
+      // has to come off a run or 'stop' never arms
       { name: 'stop', act: function () { drive(0); }, wait: is('stop') },
       { name: 'idle1', wait: is('idle') },
+      { name: 'kick', act: function () { forceKick(); }, wait: is('kick') },
       { name: 'turn', act: function () { drive(0.75, 0, 1); }, wait: is('run') },
       { name: 'turn2', act: function () { drive(0.75, 0, -1); },
         wait: function () { return stepTurn > 0.5; } },
@@ -298,6 +421,7 @@
         console.log('RIGPROBE glbinfo NONE');
       }
       console.log('RIGPROBE PROBE=' + (watcher.glb === 0 && glbFails === 0 && doneScript ? 'PASS' : 'CHECK'));
+      stage('done');
     }
 
     function tick() {
@@ -703,14 +827,29 @@
         for (i = 0; i < players.length; i++) {
           var pm2 = players[i] && players[i].model;
           if (!pm2 || !pm2.glb) continue;
+          var pzi = players[i].z;
+          pm2.group.updateWorldMatrix(true, true);
           pm2.group.traverse(function (o) {
             if (!o.isMesh || !o.material) return;
             var c = HUES[hi % HUES.length];
-            o.material = o.material.clone();
-            o.material.color.setHex(c);
-            o.material.map = null;
-            o.material.needsUpdate = true;
-            console.log('PARTS ' + o.name + ' mat=' + (o.material.name || '?') + ' -> #' + c.toString(16));
+            // Phase 3A: the shirt mesh carries a material ARRAY (jersey|skin)
+            var wasArr = Array.isArray(o.material);
+            var src = wasArr ? o.material : [o.material];
+            var out = [];
+            for (var mi = 0; mi < src.length; mi++) {
+              var m2 = (src[mi] && src[mi].clone) ? src[mi].clone() : src[mi];
+              if (m2 && m2.color) m2.color.setHex(c);
+              if (m2) { m2.map = null; m2.needsUpdate = true; }
+              out.push(m2);
+            }
+            o.material = wasArr ? out : out[0];
+            var zc = '';
+            try {
+              var bb = new THREE.Box3().setFromObject(o);
+              if (!bb.isEmpty()) zc = ' zc=' + ((bb.min.z + bb.max.z) / 2 - pzi).toFixed(3);
+            } catch (e) {}
+            console.log('PARTS ' + o.name + ' mat=' + ((src[0] && src[0].name) || '?') +
+              ' -> #' + c.toString(16) + zc);
             hi++;
           });
         }
@@ -849,10 +988,11 @@
 
     function park() {
       try {
+        var fv = q.face != null && q.face !== '' ? Number(q.face) : 0;
         glb.x = midX - 0.62; glb.z = midZ; glb.vx = 0; glb.vz = 0;
-        glb.facing = 0; glb.want.x = 0; glb.want.z = 0;
+        glb.facing = fv; glb.want.x = 0; glb.want.z = 0;
         mate.x = midX + 0.62; mate.z = midZ; mate.vx = 0; mate.vz = 0;
-        mate.facing = 0; mate.want.x = 0; mate.want.z = 0;
+        mate.facing = fv; mate.want.x = 0; mate.want.z = 0;
       } catch (e) {}
     }
     park();
@@ -975,8 +1115,24 @@
                   if (q.rigtest) { /* rigtest returns earlier */ }
                   else if (!q.ray && !q.sweep && !q.tex && !q.findz && !q.hide) {
                     diagMatch();
-                    if (q.rigprobe) rigProbe();
+                    if (q.rigprobe) {
+                      // keep the stage off 'match' so the driver waits for the
+                      // probe's own terminal 'done' instead of capturing at the
+                      // first stable beat (finish() stages it)
+                      stage('rigprobe');
+                      rigProbe();
+                      return;
+                    }
                     if (q.scale) scaleProbe();
+                    if (q.crowd) { stage('crowdprobe'); crowdProbe(); return; }
+                    if (q.goal) {
+                      // keep the stage off 'match' so the driver doesn't
+                      // capture at the first stable beat — it must wait for
+                      // goalProbe to park us inside the GOAL window
+                      stage('goalprobe');
+                      goalProbe(function () { stage('done'); });
+                      return;
+                    }
                   }
                   if (q.ray || q.sweep || q.tex || q.findz || q.hide) startProbes();
                   else stage('done');

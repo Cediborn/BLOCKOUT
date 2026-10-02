@@ -96,6 +96,9 @@ var GSCALE = arg('gscale', '');
 var GLBSCOPE = arg('glbscope', '');
 var PAIRZ = arg('pairz', '');
 var GKPAIR = !!args.includes('--gk');
+var FACE = arg('face', '');
+var GOAL = !!args.includes('--goal');
+var CROWD = !!args.includes('--crowd');
 var PARTS = !!args.includes('--parts');
 var BANDS = !!args.includes('--bands');
 var HIDEMAT = arg('hidemat', '');
@@ -282,7 +285,7 @@ async function attempt(n, maxTries, url) {
       if (m.method === 'Runtime.consoleAPICalled') {
         var txt = (m.params.args || []).map(argValue).join(' ');
         log('[console] ' + txt);
-        if (/^STAGE:/.test(txt) || /^STEP/.test(txt) || /^\[?(GLB|RIG)|^RIGTEST|^RIGPROBE|^SCALE|^PARTS|^BANDS|^HIDEMAT/.test(txt) || /^SCENE|^RAY|^SWEEP|^TEX|^FIND|^HIDE|^CAM|^HITS/.test(txt)) {
+        if (/^STAGE:/.test(txt) || /^STEP/.test(txt) || /^\[?(GLB|RIG)|^\[START\]|^MATCHDIAG|^GOALFORCE|^GOALSNAP|^CROWD|^RIGTEST|^RIGPROBE|^SCALE|^PARTS|^BANDS|^HIDEMAT/.test(txt) || /^SCENE|^RAY|^SWEEP|^TEX|^FIND|^HIDE|^CAM|^HITS/.test(txt)) {
           console.log(txt);
           var st = /^STAGE:(.*)$/.exec(txt);
           if (st) stages.push(st[1]);
@@ -384,6 +387,9 @@ server.listen(0, '127.0.0.1', async function () {
     (GLBSCOPE !== '' ? '&glbscope=' + encodeURIComponent(GLBSCOPE) : '') +
     (PAIRZ !== '' ? '&pairz=' + encodeURIComponent(PAIRZ) : '') +
     (GKPAIR ? '&gk=1' : '') +
+    (FACE !== '' ? '&face=' + encodeURIComponent(FACE) : '') +
+    (GOAL ? '&goal=1' : '') +
+    (CROWD ? '&crowd=1' : '') +
     (PARTS ? '&parts=1' : '') +
     (BANDS ? '&bands=1' : '') +
     (HIDEMAT ? '&hidemat=' + encodeURIComponent(HIDEMAT) : '') +
