@@ -1,11 +1,16 @@
 // ============================================================
 // GOAL CINEMATIC — a one-shot camera feature over the GOAL freeze.
 //
-// Owns ONLY the camera while active: match.update still freezes the game,
-// Celebration still poses the limbs and crowd/audio still fire off the same
-// 'goal' event. The main loop swaps camCtrl.update for update() for the
-// duration (js/main.js), so every guard / failure path degrades to the
-// existing broadcast follow camera with no code left half-applied.
+// Owns the camera AND the scorer's presentation while active:
+// match.update still freezes the game (vx/vz zeroed by updatePlayers),
+// Celebration still poses the limbs and crowd/audio still fire off the
+// same 'goal' event. The scorer gets a scripted corner run + celebration
+// hold driven by direct position interpolation + anim.pose('run') pinning
+// — velocities are never written (only zeroed), so there is no gameplay
+// leak when PLAY resumes. Every guard / failure path degrades to the
+// broadcast follow camera + the untouched celebration (camera-only mode).
+// The main loop swaps camCtrl.update for update() for the duration
+// (js/main.js).
 //
 // The pose and follow maths mirror js/camera.js (keep in sync): handback
 // re-seeds camCtrl.followX/followZ with the simulated follow and hands back
@@ -24,10 +29,23 @@ LG.GoalCinematic = (function () {
   var HERO_DRIFT = 13.5;    // standoff distance from the scorer
   var HERO_SWAY = 1.6;      // gentle lateral sway across the hold
   var HERO_SWAY_HZ = 0.4;
+  // scorer presentation timeline (inside T): 0.10 camera, 0.25 run start,
+  // 0.25-1.15 run to the celebration corner, 1.15-2.05 celebration pose
+  // (run pin released -> controller fades to idle, celebration.js layers
+  // the limbs), 2.05-2.30 hold, 2.30 release in handback() before kickoff.
+  var RUN_START = 0.25;
+  var RUN_END = 1.15;
+  var CELEB_END = 2.05;
+  var END_CLEAR = 1.6;      // centre distance from any other player at the target
+  var PATH_CLEAR = 1.05;    // centre distance from any other player along the path
+  var MIN_RUN = 1.6;        // too short to bother moving
+  var MAX_RUN = 8;          // window is 0.9s: 8m ~= 8.9 m/s average, eased
+  var CORNER_PAD = 1.4;     // inset from the sidelines/goal line
 
   var bound = false, getMatch = null;
   var active = false, t = 0, w = 0, scorer = null, cam = null;
   var ours = null, fSim = null;
+  var scorerFx = null;      // planned run: {from,to,speed,runFace,clipDur,holdFace}
 
   function ease(x) { return LG.Util.easeInOut(LG.Util.clamp(x, 0, 1)); }
 
@@ -37,8 +55,12 @@ LG.GoalCinematic = (function () {
 
   // Hand the camera back to MatchCamera: seed the simulated follow and
   // return the adopted shake/pulse so camCtrl.update resumes seamlessly.
+  // Also releases the scorer: velocities zeroed (never nonzero during the
+  // freeze, belt and braces) and the scripted run dropped, so the player
+  // is fully back under normal gameplay control before PLAY resumes.
   function handback() {
     if (!active) return;
+    releaseScorer();
     if (cam && ours && fSim) {
       cam.followX = fSim.x;
       cam.followZ = fSim.z;
@@ -92,6 +114,8 @@ LG.GoalCinematic = (function () {
       t = 0;
       w = 0;
       active = true;
+      // Plan the corner run (null => camera-only mode, celebration intact)
+      scorerFx = planScorer(m, s);
       return true;
     } catch (e) {
       warn('start: ' + (e && e.message));
@@ -143,6 +167,11 @@ LG.GoalCinematic = (function () {
       }
       ours.zoomPulse = Math.max(0, ours.zoomPulse - dt * 0.5);
 
+      // scorer presentation BEFORE the pose blend so the hero shot frames
+      // the moving player in the same frame (camera already tracks
+      // scorer.x/z live — no camera-side hook needed)
+      presentScorer(dt);
+
       // blend weight: 0 = gameplay pose, 1 = hero pose
       if (t >= T) w = 0;
       else if (t < SWOOP) w = ease(t / SWOOP);
@@ -191,6 +220,165 @@ LG.GoalCinematic = (function () {
     } catch (e) {
       warn('abort: ' + (e && e.message));
       handback();
+    }
+  }
+
+  // ---- scorer presentation (3D.2) -------------------------------------
+
+  // Distance from point (px,pz) to segment a->b (used for path clearance).
+  function segDist(px, pz, ax, az, bx, bz) {
+    var dx = bx - ax, dz = bz - az;
+    var L2 = dx * dx + dz * dz;
+    var f = L2 < 1e-9 ? 0 : LG.Util.clamp(((px - ax) * dx + (pz - az) * dz) / L2, 0, 1);
+    var qx = ax + dx * f - px, qz = az + dz * f - pz;
+    return Math.sqrt(qx * qx + qz * qz);
+  }
+
+  // The run clip length of the scorer's own controller (GLB retarget bank
+  // or procedural rig). realplayer.state() exposes durs; the procedural
+  // rig does not, so recover the clip length from a pinned pose and put
+  // the player straight back on idle (one frame, self-heals in update).
+  function runClipDur(anim) {
+    var st = anim.state();
+    if (st && st.durs && st.durs.run > 0) return st.durs.run;
+    if (!anim.pose('run', 1e6)) return 0;
+    st = anim.state();
+    var dur = st && st.time > 0.05 ? st.time + 0.001 : 0;
+    anim.pose('idle', 0);
+    return dur > 0.05 ? dur : 0;
+  }
+
+  // Pick a celebration target: the nearest corner of the goal end we just
+  // scored on, aimed at but clamped to the distance the 0.9s window can
+  // cover, stepping back until the endpoint and path are clear. Any
+  // failure => null => camera-only (the spec'd failsafe: no target, no
+  // pose API, no movement).
+  function planScorer(m, s) {
+    try {
+      var anim = s.model && s.model.anim;
+      if (!anim || typeof anim.pose !== 'function' || typeof anim.state !== 'function') return null;
+      var clipDur = runClipDur(anim);
+      if (!clipDur) return null;
+      var C = LG.Config.court;
+      var halfW = C.width / 2, halfL = C.length / 2;
+      var g = typeof m.enemyGoal === 'function' ? m.enemyGoal(s.team) : null;
+      if (!g) return null;
+      var side = g.z >= 0 ? 1 : -1;
+      var cands = [
+        { x: -(halfW - CORNER_PAD), z: side * (halfL - CORNER_PAD) },
+        { x: (halfW - CORNER_PAD), z: side * (halfL - CORNER_PAD) },
+      ];
+      cands.sort(function (a, b) {
+        var da = (a.x - s.x) * (a.x - s.x) + (a.z - s.z) * (a.z - s.z);
+        var db = (b.x - s.x) * (b.x - s.x) + (b.z - s.z) * (b.z - s.z);
+        return da - db;
+      });
+      var all = m.all || [];
+      function clearAt(px, pz) {
+        for (var j = 0; j < all.length; j++) {
+          var o = all[j];
+          if (!o || o === s) continue;
+          var ox = o.x - px, oz = o.z - pz;
+          if (ox * ox + oz * oz < END_CLEAR * END_CLEAR) return false;
+          if (segDist(o.x, o.z, s.x, s.z, px, pz) < PATH_CLEAR) return false;
+        }
+        return true;
+      }
+      var pick = null;
+      for (var i = 0; i < cands.length && !pick; i++) {
+        var c = cands[i];
+        var dx0 = c.x - s.x, dz0 = c.z - s.z;
+        var cd = Math.sqrt(dx0 * dx0 + dz0 * dz0);
+        if (cd < MIN_RUN) continue;           // already at the corner
+        var dirx = dx0 / cd, dirz = dz0 / cd;
+        var tryDist = Math.min(cd, MAX_RUN);  // aim at the corner, stop short
+        var d = tryDist;
+        while (d >= MIN_RUN && !pick) {
+          var px = s.x + dirx * d, pz = s.z + dirz * d;
+          if (clearAt(px, pz)) pick = { x: px, z: pz };
+          d -= 0.5;
+        }
+        if (!pick && tryDist >= MIN_RUN && clearAt(s.x + dirx * MIN_RUN, s.z + dirz * MIN_RUN)) {
+          pick = { x: s.x + dirx * MIN_RUN, z: s.z + dirz * MIN_RUN };
+        }
+      }
+      if (!pick) return null;
+      var dx = pick.x - s.x, dz = pick.z - s.z;
+      var dist = Math.sqrt(dx * dx + dz * dz);
+      return {
+        fromX: s.x, fromZ: s.z, toX: pick.x, toZ: pick.z,
+        dist: dist,
+        speed: dist / (RUN_END - RUN_START),   // average run speed
+        runFace: Math.atan2(dx, dz),  // model faces +Z at rot 0
+        clipDur: clipDur,
+        holdFace: 0,
+        holdFaceSet: false,
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Keep the group in sync with the position/facing writes — kickoff does
+  // this in the same frame (js/match.js:428-436).
+  function syncScorer() {
+    if (!scorer.model || !scorer.model.group) return;
+    scorer.model.group.position.set(scorer.x, scorer.y || 0, scorer.z);
+    scorer.model.group.rotation.y = scorer.facing;
+  }
+
+  // Release the scripted run: zero velocities (never wrote nonzero anyway)
+  // and drop the plan. Called from handback() and the internal failsafe.
+  function releaseScorer() {
+    if (scorer) {
+      try { scorer.vx = 0; scorer.vz = 0; } catch (e) {}
+    }
+    scorerFx = null;
+  }
+
+  // Per-frame scorer control. Phases: hold position before RUN_START,
+  // ease to the corner across RUN_START-RUN_END with the run cycle pinned
+  // every frame (frame-rate independent: time derived from t, not
+  // accumulated), then pin the spot and own the facing through the
+  // celebration/hold until handback releases us. Any failure (pose API
+  // gone, model fell back) releases movement but keeps the camera.
+  function presentScorer(dt) {
+    var fx = scorerFx;
+    if (!fx || !scorer || !scorer.model || t < RUN_START) return;
+    try {
+      if (t < RUN_END) {
+        var u = (t - RUN_START) / (RUN_END - RUN_START);
+        // smoothstep: gentler accel than quad easeInOut (peak = 1.5x avg)
+        var e = u * u * (3 - 2 * u);
+        scorer.x = fx.fromX + (fx.toX - fx.fromX) * e;
+        scorer.z = fx.fromZ + (fx.toZ - fx.fromZ) * e;
+        scorer.facing = fx.runFace;
+        // neutralise celebration body pitch (e.g. 'slide') during the run;
+        // celebration.js re-applies it after us and we stop at RUN_END
+        if (scorer.model.body) scorer.model.body.rotation.x = 0;
+        // footfall cadence: 1.8 steps/s standing -> ~4.6 at a full sprint
+        var cyc = (1.8 + fx.speed * 0.35) / 2;   // cycles (2 steps) per second
+        var pt = ((t - RUN_START) * cyc * fx.clipDur) % fx.clipDur;
+        if (scorer.model.anim.pose('run', pt) === false) throw new Error('run pose unavailable');
+      } else {
+        if (!fx.holdFaceSet) {
+          // face the camera once, at the moment the run lands
+          fx.holdFaceSet = true;
+          var cp = cam && cam.camera && cam.camera.position;
+          fx.holdFace = cp ? Math.atan2(cp.x - scorer.x, cp.z - scorer.z) : fx.runFace;
+        }
+        // pin the celebration spot until release; own facing over
+        // celebration.js's point/signature facing writes (we run after it)
+        scorer.x = fx.toX;
+        scorer.z = fx.toZ;
+        scorer.facing = fx.holdFace;
+      }
+      scorer.vx = 0;
+      scorer.vz = 0;
+      syncScorer();
+    } catch (err) {
+      warn('scorer presentation off: ' + (err && err.message));
+      releaseScorer();
     }
   }
 

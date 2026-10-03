@@ -234,8 +234,10 @@
       var cel = LG.Celebration && LG.Celebration.current;
       if (cel && cel.type !== lastCel) { lastCel = cel.type; console.log('GOALFORCE celeb type=' + cel.type + ' dur=' + cel.dur.toFixed(2)); }
       if (cel && cel.scorer) {
+        var st = cel.scorer.model && cel.scorer.model.anim && cel.scorer.model.anim.state;
         console.log('GOALFORCE scorer x=' + cel.scorer.x.toFixed(2) + ' z=' + cel.scorer.z.toFixed(2) +
-          ' v=' + Math.sqrt(cel.scorer.vx * cel.scorer.vx + cel.scorer.vz * cel.scorer.vz).toFixed(2));
+          ' v=' + Math.sqrt(cel.scorer.vx * cel.scorer.vx + cel.scorer.vz * cel.scorer.vz).toFixed(2) +
+          ' face=' + cel.scorer.facing.toFixed(2) + ' anim=' + (st ? st().cur : '-'));
       }
       // goal cinematic: prove it started, ran a camera move and handed back
       var G = LG.GoalCinematic;
