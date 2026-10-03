@@ -9,7 +9,7 @@
 // every release — that is what makes installed clients pick the new files up.
 // ============================================================
 
-var CACHE_NAME = 'blackout-v6';
+var CACHE_NAME = 'blackout-v7';
 var ASSETS = [
   './',
   './index.html',
@@ -47,6 +47,8 @@ var ASSETS = [
   './js/lighting.js',
   './js/match.js',
   './js/celebration.js',
+  './js/goal-cinematic.js',
+  './js/crowd.js',
   './js/hud.js',
   './js/main.js',
   './js/living.js',

@@ -230,7 +230,7 @@ global.console.error = global.console.error;
 var SRC = ['js/config.js', 'js/difficulty.js', 'js/util.js', 'js/audio.js', 'js/challenges.js', 'js/progression.js', 'js/modes.js', 'js/tournament.js', 'js/settings.js',
   'js/menu-music.js',
   'js/input.js', 'js/particles.js', 'js/courts.js', 'js/models.js', 'js/crowd.js', 'js/rig.js', 'js/ball.js', 'js/player.js', 'js/arena.js', 'js/abilities.js',
-  'js/ai.js', 'js/keeper.js', 'js/camera.js', 'js/lighting.js', 'js/match.js', 'js/celebration.js', 'js/hud.js', 'js/main.js', 'js/living.js'];
+  'js/ai.js', 'js/keeper.js', 'js/camera.js', 'js/lighting.js', 'js/match.js', 'js/celebration.js', 'js/goal-cinematic.js', 'js/hud.js', 'js/main.js', 'js/living.js'];
 
 section('1. scripts parse + boot (as a phone)');
 var bootErr = null;

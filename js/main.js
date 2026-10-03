@@ -713,6 +713,10 @@
       if (mine) camCtrl.pulse(0.5);
     });
 
+    // goal celebration cinematic: takes the camera for the GOAL window only,
+    // bound after the HUD listener so its snapshot sees the goal pulse
+    if (LG.GoalCinematic) LG.GoalCinematic.bind(function () { return match; });
+
     bus.on('state', function (s) {
       if (s.state === 'KICKOFF') {
         LG.HUD.toast('KICKOFF', 900);
@@ -1879,7 +1883,13 @@
 
     if (UIState === 'match') {
       match.update(dt);
-      camCtrl.update(dt, match.active.x, match.active.z, match.ball.x, match.ball.z);
+      // camera: while the goal cinematic owns it, camCtrl.update must not
+      // run — it would overwrite the cinematic pose in the same frame
+      if (LG.GoalCinematic && LG.GoalCinematic.active()) {
+        LG.GoalCinematic.update(dt, match.active.x, match.active.z, match.ball.x, match.ball.z);
+      } else {
+        camCtrl.update(dt, match.active.x, match.active.z, match.ball.x, match.ball.z);
+      }
       LG.HUD.updateSpecial(match.active);
       LG.HUD.updateCoins();
       LG.HUD.aim(match.active.shotCharge > 0.15 && match.active.hasBall);

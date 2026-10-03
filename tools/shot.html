@@ -194,6 +194,7 @@
     }, 400);
     var placed = false, snapped = 0, beats = 0, sawGoal = false, finished = false;
     var lastCel = '';
+    var cinLast = false, cinSeen = false, cinFinished = false;
     function vmax() {
       var all = (m.home || []).concat(m.away || []), best = 0;
       for (var i = 0; i < all.length; i++) {
@@ -205,7 +206,7 @@
     function finish(tag) {
       if (finished) return;
       finished = true;
-      console.log('GOALFORCE ' + tag);
+      console.log('GOALFORCE ' + tag + ' cin=' + (!cinSeen ? 'never-started' : (cinFinished ? 'finished' : 'STUCK')));
       done();
     }
     var iv = setInterval(function () {
@@ -235,6 +236,25 @@
       if (cel && cel.scorer) {
         console.log('GOALFORCE scorer x=' + cel.scorer.x.toFixed(2) + ' z=' + cel.scorer.z.toFixed(2) +
           ' v=' + Math.sqrt(cel.scorer.vx * cel.scorer.vx + cel.scorer.vz * cel.scorer.vz).toFixed(2));
+      }
+      // goal cinematic: prove it started, ran a camera move and handed back
+      var G = LG.GoalCinematic;
+      if (G && G.state) {
+        var gs = G.state();
+        if (gs.active && !cinLast) { cinSeen = true; console.log('CINSTART t=' + gs.t.toFixed(2) + ' dur=' + gs.dur.toFixed(2)); }
+        if (gs.active) {
+          var cpos = m.camera && m.camera.camera && m.camera.camera.position;
+          console.log('CINSNAP ' + snapped + ' t=' + gs.t.toFixed(2) + ' w=' + gs.w.toFixed(2) +
+            (cpos ? ' cam=(' + cpos.x.toFixed(1) + ',' + cpos.y.toFixed(1) + ',' + cpos.z.toFixed(1) + ')' : ' cam=-'));
+        } else if (cinLast) {
+          var mc = m.camera;
+          cinFinished = true;
+          console.log('CINHAND follow=(' + (mc ? mc.followX.toFixed(2) : '-') + ',' + (mc ? mc.followZ.toFixed(2) : '-') +
+            ') pulse=' + (mc ? mc.zoomPulse.toFixed(2) : '-'));
+        }
+        cinLast = gs.active;
+      } else {
+        console.log('CINMISS module absent');
       }
       // capture only once the celebration has run AND real play is moving
       // again — that single pass proves the freeze and the resumption
