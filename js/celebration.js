@@ -178,7 +178,12 @@ LG.Celebration = (function () {
         armsDown(p);
         p.facing = scorer ? Math.atan2(scorer.x - p.x, scorer.z - p.z) : p.facing;
       } else {
-        armsUp(p, t > 0.25 && t < current.dur - 0.3);
+        // teammates vary (3D.3): arms-up / point at the scorer /
+        // hands-on-head — deterministic per (idx, team), no RNG
+        var mode = (p.idx + current.team) % 3;
+        if (mode === 1 && scorer) pointArm(p);
+        else if (mode === 2) handsOnHead(p);
+        else armsUp(p, t > 0.25 && t < current.dur - 0.3);
         // face the scorer / action
         if (scorer) p.facing += (Math.atan2(scorer.x - p.x, scorer.z - p.z) - p.facing) * 0.1;
       }

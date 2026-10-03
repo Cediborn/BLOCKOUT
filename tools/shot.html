@@ -195,6 +195,19 @@
     var placed = false, snapped = 0, beats = 0, sawGoal = false, finished = false;
     var lastCel = '';
     var cinLast = false, cinSeen = false, cinFinished = false;
+    var goalsDone = 0;
+    // count [CIN] warnings raised inside the iframe during the run
+    var cinWarns = [];
+    try {
+      var iwc = LGw.console, owarn = iwc.warn;
+      iwc.warn = function () {
+        try {
+          var msg = String(arguments[0] || '');
+          if (msg.indexOf('[CIN]') >= 0) cinWarns.push(msg);
+        } catch (e) {}
+        return owarn.apply(iwc, arguments);
+      };
+    } catch (e) {}
     function vmax() {
       var all = (m.home || []).concat(m.away || []), best = 0;
       for (var i = 0; i < all.length; i++) {
@@ -206,7 +219,8 @@
     function finish(tag) {
       if (finished) return;
       finished = true;
-      console.log('GOALFORCE ' + tag + ' cin=' + (!cinSeen ? 'never-started' : (cinFinished ? 'finished' : 'STUCK')));
+      console.log('GOALFORCE ' + tag + ' cin=' + (!cinSeen ? 'never-started' : (cinFinished ? 'finished' : 'STUCK')) +
+        ' cinwarn=' + cinWarns.length + (cinWarns.length ? ' [' + cinWarns.join(' | ') + ']' : ''));
       done();
     }
     var iv = setInterval(function () {
@@ -222,6 +236,18 @@
         // (gather nudges, slide travel) all get exercised
         var kickers = (m.home || []).filter(function (pp) { return pp && !pp.isGoalkeeper; });
         m.ball.lastKicker = kickers[0] || (m.home || [])[0] || null;
+        // stage a box attack: the credited striker plus two supporting
+        // mates near the net, so the 3D.3 reaction geometry (mates within
+        // reaction distance of the run target) is reachable — a striker
+        // credited from midfield can never pull his band in
+        function park(pp, x, z) {
+          if (!pp) return;
+          pp.x = x; pp.z = z; pp.vx = 0; pp.vz = 0;
+          pp.facing = Math.atan2(-x, -22.6 - z);
+        }
+        park(kickers[0], 0, -14);
+        park(kickers[1], -4, -13);
+        park(kickers[2], 2, -16);
         placed = true;
         console.log('GOALFORCE placed in PLAY');
         return;
@@ -229,7 +255,9 @@
       snapped++;
       var cs = LG.Crowd && LG.Crowd.stats;
       console.log('GOALSNAP ' + snapped + ' ' + matchSnap() +
-        (cs ? ' crowd=cheer:' + (cs.cheer || 0).toFixed(2) + ' arm:' + (cs.arm0 || 0).toFixed(2) : ' crowd=-'));
+        (cs ? ' crowd=cheer:' + (cs.cheer || 0).toFixed(2) + ' arm:' + (cs.arm0 || 0).toFixed(2) +
+          ' react:' + (cs.reactMin || 0).toFixed(2) + '..' + (cs.reactMax || 0).toFixed(2) +
+          ' primes:' + (cs.primes || 0) : ' crowd=-'));
       if (m.state === 'GOAL') sawGoal = true;
       var cel = LG.Celebration && LG.Celebration.current;
       if (cel && cel.type !== lastCel) { lastCel = cel.type; console.log('GOALFORCE celeb type=' + cel.type + ' dur=' + cel.dur.toFixed(2)); }
@@ -243,10 +271,23 @@
       var G = LG.GoalCinematic;
       if (G && G.state) {
         var gs = G.state();
-        if (gs.active && !cinLast) { cinSeen = true; console.log('CINSTART t=' + gs.t.toFixed(2) + ' dur=' + gs.dur.toFixed(2)); }
+        if (gs.active && !cinLast) {
+          cinSeen = true;
+          console.log('CINSTART t=' + gs.t.toFixed(2) + ' dur=' + gs.dur.toFixed(2) + ' mates=' + gs.mates);
+          try {
+            var hp = (m.home || []).map(function (pp) {
+              return '(' + pp.x.toFixed(1) + ',' + pp.z.toFixed(1) + ')';
+            }).join('');
+            console.log('GOALFORCE team home=' + hp + ' mates=' + gs.mates +
+              ' m0=' + (gs.matePos[0] ? '(' + gs.matePos[0].x.toFixed(1) + ',' + gs.matePos[0].z.toFixed(1) + ')' : '-'));
+          } catch (e) {}
+        }
         if (gs.active) {
           var cpos = m.camera && m.camera.camera && m.camera.camera.position;
           console.log('CINSNAP ' + snapped + ' t=' + gs.t.toFixed(2) + ' w=' + gs.w.toFixed(2) +
+            ' mates=' + gs.mates +
+            ' look=' + (gs.look ? '(' + gs.look.x.toFixed(2) + ',' + gs.look.z.toFixed(2) + ')' : '-') +
+            (gs.matePos && gs.matePos.length ? ' m0=(' + gs.matePos[0].x.toFixed(2) + ',' + gs.matePos[0].z.toFixed(2) + ')' : '') +
             (cpos ? ' cam=(' + cpos.x.toFixed(1) + ',' + cpos.y.toFixed(1) + ',' + cpos.z.toFixed(1) + ')' : ' cam=-'));
         } else if (cinLast) {
           var mc = m.camera;
@@ -259,15 +300,25 @@
         console.log('CINMISS module absent');
       }
       // capture only once the celebration has run AND real play is moving
-      // again — that single pass proves the freeze and the resumption
+      // again — the first pass proves freeze + resumption, the second pass
+      // proves the whole cinematic (selection, framing, crowd re-prime)
+      // runs again on a re-entry goal
       if (sawGoal && m.state === 'PLAY' && v > 1.5) {
-        clearInterval(iv);
-        finish('resumed in PLAY vmax=' + v.toFixed(2));
+        goalsDone++;
+        console.log('GOALFORCE resumed in PLAY goal#' + goalsDone + ' vmax=' + v.toFixed(2));
+        if (goalsDone >= 2) {
+          clearInterval(iv);
+          finish('resumed in PLAY x' + goalsDone + ' vmax=' + v.toFixed(2));
+          return;
+        }
+        placed = false; sawGoal = false;
+        cinLast = false; cinSeen = false; cinFinished = false; lastCel = '';
         return;
       }
-      if (snapped > 60) {
+      if (snapped > 170) {
         clearInterval(iv);
-        finish((sawGoal ? 'no PLAY after the goal' : 'never scored') + ' state=' + m.state);
+        finish((goalsDone ? 'second goal incomplete' : (sawGoal ? 'no PLAY after the goal' : 'never scored')) +
+          ' state=' + m.state + ' goals=' + goalsDone);
       }
     }, 250);
   }
@@ -292,7 +343,9 @@
     if (!LG.eventBus || !LG.eventBus.on) return;
     LG.eventBus.on('goal', function () {
       var s = LG.Crowd && LG.Crowd.stats;
-      console.log('CROWDEVT goal cheer=' + (s ? s.cheer.toFixed(2) : '-'));
+      console.log('CROWDEVT goal cheer=' + (s ? s.cheer.toFixed(2) : '-') +
+        (s ? ' react=' + (s.reactMin || 0).toFixed(2) + '..' + (s.reactMax || 0).toFixed(2) +
+          ' primes=' + (s.primes || 0) : ''));
     });
     LG.eventBus.on('shoot', function (ev) {
       var s = LG.Crowd && LG.Crowd.stats;

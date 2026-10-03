@@ -39,6 +39,9 @@ LG.Crowd = (function () {
   var bound = false;
   var t = 0, cheerT = 0, swellT = 0;
   var initMs = 0;
+  // goal-reaction field (3D.4): per-spectator amplitude/delay primed once
+  // per goal, read back by stats() for the probes
+  var _reactMin = 1, _reactMax = 1, _primes = 0;
 
   // private deterministic PRNG — layout must not touch Math.random
   var _s = 0x5EED03;
@@ -174,6 +177,8 @@ LG.Crowd = (function () {
       leanK: jit(0.8, 1.3),
       headK: jit(0.7, 1.4),
       armK: jit(0.9, 1.1),
+      reactK: 1,                                  // goal reaction amplitude
+      rDelay: SEC_DELAY[sec] + (g ? g.micro : 0), // stable per-spec delay
       aLegs: sit ? anchor(HIP, -1.0 + jit(-0.12, 0.12), 0, 0) : anchor(HIP, 0, 0, 0),
       aHip: anchor(HIP, 0, 0, 0),
       aTorso: anchor(WAIST, jit(-0.07, 0.09), 0, 0),
@@ -194,6 +199,7 @@ LG.Crowd = (function () {
   function build() {
     var t0 = now();
     _s = 0x5EED03;                 // deterministic layout every boot
+    _reactMin = 1; _reactMax = 1; _primes = 0;
     root = new THREE.Group();
     root.name = 'crowd';
     specs = [];
@@ -269,9 +275,40 @@ LG.Crowd = (function () {
   }
 
   // ---------------- events ----------------
+  // Prime the goal-reaction field (3D.4): amplitude falls off with distance
+  // from the scorer, the scoring section swells a touch, the conceding
+  // section stays flat (own goals: distance only). Delay keeps the section
+  // stagger plus a stable index-hash spread — decided ONCE here, never
+  // per frame, so each fan's reaction reads as one coherent rise-and-fall.
+  function primeReact(g) {
+    if (!g || !g.scorer || !specs.length) return;
+    try {
+      var sx = g.scorer.x, sz = g.scorer.z;
+      var scoringSec = (g.isOwnGoal || typeof g.team !== 'number') ? null
+        : (g.team === 0 ? 'home' : 'away');
+      var mn = 1e9, mx = -1e9;
+      for (var i = 0; i < specs.length; i++) {
+        var s = specs[i];
+        var dx = s.x - sx, dz = s.z - sz;
+        var k = LG.Util.clamp(1.18 - Math.sqrt(dx * dx + dz * dz) * 0.045, 0.38, 1.18);
+        if (scoringSec && s.sec === scoringSec) k = Math.min(1.25, k * 1.06);
+        else if (s.sec === 'side') k *= 0.9;
+        else if (scoringSec) k *= 0.55;
+        s.reactK = k;
+        s.rDelay = SEC_DELAY[s.sec] + (s.g ? s.g.micro : 0) +
+          (((i * 2654435761) >>> 12) & 0x1ff) / 512 * 0.3;
+        if (k < mn) mn = k;
+        if (k > mx) mx = k;
+      }
+      _reactMin = mn;
+      _reactMax = mx;
+      _primes++;
+    } catch (e) { /* uniform reaction is the fallback */ }
+  }
+
   function bind() {
     if (bound || !LG.eventBus || !LG.eventBus.on) return;
-    LG.eventBus.on('goal', function () { cheerT = CHEER_DUR; });
+    LG.eventBus.on('goal', function (g) { cheerT = CHEER_DUR; primeReact(g); });
     // shot reaction: only real efforts swell (the weak poke emits power 0.4)
     LG.eventBus.on('shoot', function (ev) {
       if (ev && typeof ev.power === 'number' && ev.power < 0.5) return;
@@ -299,36 +336,63 @@ LG.Crowd = (function () {
     // one curve per phase group — 12 evaluations instead of ~120 controllers
     for (i = 0; i < groups.length; i++) {
       g = groups[i];
-      var b = 0;
+      var gb = 0;
       if (cheerT > 0) {
         var e = elapsed - SEC_DELAY[g.sec] - g.micro;
-        if (e > 0) b = Math.min(1, e / 0.15) * Math.max(0, 1 - e / (CHEER_DUR - 0.6));
+        if (e > 0) gb = Math.min(1, e / 0.15) * Math.max(0, 1 - e / (CHEER_DUR - 0.6));
       }
+      var sb = 0;
       if (swellT > 0) {
         var es = swellE - g.micro * 0.8;
-        if (es > 0) b += 0.42 * Math.min(1, es / 0.12) *
+        if (es > 0) sb = 0.42 * Math.min(1, es / 0.12) *
           Math.max(0, 1 - es / (SWELL_DUR - 0.25));
       }
-      if (b > 1) b = 1;
-      g.b = b;
+      var b = gb + sb > 1 ? 1 : gb + sb;
+      g.gb = gb;                  // goal envelope (per-spec scaled in loop 2)
+      g.sb = sb;                  // shot swell (shared)
+      g.b = b;                    // legacy aggregate, kept for stats()
       var ph = g.ph, A = g.amp;
-      // idle: small bob, drifting arms, slow head/body shifts
-      var idleArm = -0.09 - 0.05 * Math.sin(t * 1.15 + ph * 1.3);
-      var cheerArm = -2.45 + 0.22 * Math.sin(t * 9 + ph);
+      // idle + cheer components, split so loop 2 can recombine per fan
+      // (bounce/lean/head/sway are linear in b; arm mixes through m)
+      g.idleArm = -0.09 - 0.05 * Math.sin(t * 1.15 + ph * 1.3);
+      g.cheerArm = -2.45 + 0.22 * Math.sin(t * 9 + ph);
       var m = Math.min(1, b * 1.25);
-      g.arm = idleArm * (1 - m) + cheerArm * m;
-      g.bounce = A * (0.011 * Math.sin(t * 1.5 + ph) +
-        b * 0.13 * Math.pow(Math.max(0, Math.sin(t * 7.5 + ph)), 0.7));
-      g.lean = A * (0.03 * Math.sin(t * 0.9 + ph) + b * 0.10 * Math.sin(t * 7 + ph));
-      g.head = A * (0.17 * Math.sin(t * 0.55 + ph * 1.7) + b * 0.12 * Math.sin(t * 6.5));
-      g.sway = A * (0.02 * Math.sin(t * 0.8 + ph) + b * 0.05 * Math.sin(t * 6.5 + ph));
+      g.arm = g.idleArm * (1 - m) + g.cheerArm * m;
+      g.bI = A * 0.011 * Math.sin(t * 1.5 + ph);
+      g.bC = A * 0.13 * Math.pow(Math.max(0, Math.sin(t * 7.5 + ph)), 0.7);
+      g.bounce = g.bI + b * g.bC;
+      g.lI = A * 0.03 * Math.sin(t * 0.9 + ph);
+      g.lC = A * 0.10 * Math.sin(t * 7 + ph);
+      g.lean = g.lI + b * g.lC;
+      g.hI = A * 0.17 * Math.sin(t * 0.55 + ph * 1.7);
+      g.hC = A * 0.12 * Math.sin(t * 6.5);
+      g.head = g.hI + b * g.hC;
+      g.sI = A * 0.02 * Math.sin(t * 0.8 + ph);
+      g.sC = A * 0.05 * Math.sin(t * 6.5 + ph);
+      g.sway = g.sI + b * g.sC;
     }
 
     var N = specs.length;
     for (i = 0; i < N; i++) {
       var s = specs[i], gg = s.g;
-      _P.set(s.x, s.baseY + gg.bounce * s.bobK, s.z);
-      _E.set(0, s.yaw + gg.sway * s.swayK, 0);
+      // per-fan goal envelope: own delay + primed amplitude (3D.4). Pre-goal
+      // this is exactly the group curve (reactK=1, rDelay=section+micro).
+      var pb = 0;
+      if (cheerT > 0) {
+        var pe = elapsed - s.rDelay;
+        if (pe > 0) pb = Math.min(1, pe / 0.15) * Math.max(0, 1 - pe / (CHEER_DUR - 0.6));
+      }
+      var b2 = pb * s.reactK + gg.sb;
+      if (b2 > 1) b2 = 1;
+      var m2 = Math.min(1, b2 * 1.25);
+      var arm = gg.idleArm * (1 - m2) + gg.cheerArm * m2;
+      var bounce = gg.bI + b2 * gg.bC;
+      var lean = gg.lI + b2 * gg.lC;
+      var head = gg.hI + b2 * gg.hC;
+      var sway = gg.sI + b2 * gg.sC;
+
+      _P.set(s.x, s.baseY + bounce * s.bobK, s.z);
+      _E.set(0, s.yaw + sway * s.swayK, 0);
       _Q.setFromEuler(_E);
       _S.setScalar(s.scale);
       _B.compose(_P, _Q, _S);
@@ -338,17 +402,17 @@ LG.Crowd = (function () {
       _T.multiplyMatrices(_B, s.aHip);
       parts.hip.setMatrixAt(i, _T);
 
-      _R.makeRotationX(gg.lean * s.leanK);
+      _R.makeRotationX(lean * s.leanK);
       _T.multiplyMatrices(_B, s.aTorso);
       _T.multiply(_R);
       parts.torso.setMatrixAt(i, _T);
 
-      _R.makeRotationY(gg.head * s.headK);
+      _R.makeRotationY(head * s.headK);
       _T.multiplyMatrices(_B, s.aHead);
       _T.multiply(_R);
       parts.head.setMatrixAt(i, _T);
 
-      _R.makeRotationX(gg.arm * s.armK);
+      _R.makeRotationX(arm * s.armK);
       _T.multiplyMatrices(_B, s.aArmL);
       _T.multiply(_R);
       parts.arm.setMatrixAt(i * 2, _T);
@@ -375,6 +439,7 @@ LG.Crowd = (function () {
       return {
         bodies: specs.length, initMs: initMs, groups: groups.length,
         cheer: cheerT, swell: swellT, arm0: groups.length ? groups[0].arm : 0,
+        reactMin: _reactMin, reactMax: _reactMax, primes: _primes,
       };
     },
   };

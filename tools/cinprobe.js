@@ -62,6 +62,35 @@ function makeScorer() {
   };
 }
 
+// parameterised player stub (mates / keepers / opponents / wall players)
+function makePlayer(x, z, opts) {
+  opts = opts || {};
+  var calls = { pose: 0, run: 0, sync: 0, failPose: false };
+  var p = {
+    x: x, z: z, y: 0, facing: 0, vx: 0, vz: 0,
+    team: opts.team == null ? 0 : opts.team,
+    idx: opts.idx == null ? 1 : opts.idx,
+    isGoalkeeper: !!opts.gk,
+    model: {
+      group: { position: { set: function () { calls.sync++; } }, rotation: { y: 0 } },
+      body: { rotation: { x: 0 } },
+      anim: {
+        pose: function (name) {
+          calls.pose++;
+          if (calls.failPose) return false;
+          if (name === 'run') calls.run++;
+          return true;
+        },
+        state: function () { return { cur: 'idle', durs: { run: 1.0 } }; },
+      },
+    },
+    _calls: calls,
+  };
+  if (opts.noAnim) { delete p.model.anim; }
+  if (opts.noModel) { delete p.model; }
+  return p;
+}
+
 // scorer with an anim controller stub — exercises the scripted corner run
 function makeCelebrity() {
   var calls = { pose: 0, run: 0, sync: 0, failPose: false };
@@ -327,6 +356,167 @@ var s5travel = Math.sqrt(s5.x * s5.x + (s5.z - 16) * (s5.z - 16));
 ok(Math.abs(s5travel - 8) < 1e-6, 'travels the full clamped window toward the corner (' + s5travel.toFixed(2) + 'm)');
 ok(s5.z > 16 + 2 && s5.x < 0, 'lands toward the +z left corner (x=' + s5.x.toFixed(2) + ' z=' + s5.z.toFixed(2) + ')');
 ok(s5.vx === 0 && s5.vz === 0, 'opposite direction releases with zero velocity');
+match._gside = -22.5;
+match.all = [];
+
+console.log('== teammate reactions (3D.3) + group framing (3D.5) ==');
+resetCam();
+match.state = 'GOAL';
+match._gside = -22.5;
+var sc = makeCelebrity(); sc.idx = 0;
+var m1 = makePlayer(-4, -12, { idx: 1 });
+var m2 = makePlayer(-8, -14, { idx: 2 });
+var gkP = makePlayer(-2, -15, { idx: 3, gk: true });
+var farP = makePlayer(20, 10, { idx: 4 });
+var oppP = makePlayer(-1, -18, { idx: 5, team: 1 });
+var startM1 = { x: m1.x, z: m1.z }, startM2 = { x: m2.x, z: m2.z };
+match.all = [sc, m1, m2, gkP, farP, oppP];
+bus.emit('goal', goalMsg(sc));
+var stT = LG.GoalCinematic.state();
+ok(stT.mates === 2, 'selects 2 mates, keeper/distant/opponent excluded (got ' + stT.mates + ')');
+ok(stT.matePos.length === 2, 'matePos exposes live mate positions');
+var tA = 0, frG = null, frL48 = null, frM42 = null, frE = null, allV = 0, fr = 0;
+while (LG.GoalCinematic.active() && fr < 400) {
+  LG.GoalCinematic.update(dt, match.active.x, match.active.z, match.ball.x, match.ball.z);
+  fr++; tA += dt;
+  var allP = match.all, mv = 0;
+  for (var q = 0; q < allP.length; q++) {
+    var vq = Math.sqrt(allP[q].vx * allP[q].vx + allP[q].vz * allP[q].vz);
+    if (vq > mv) mv = vq;
+  }
+  if (mv > allV) allV = mv;
+  var stq = LG.GoalCinematic.state();
+  if (fr === 42) frM42 = { x: m1.x, z: m1.z, run: m1._calls.run };
+  if (fr === 48) frL48 = { look: stq.look, w: stq.w, sx: sc.x, sz: sc.z };
+  if (fr === 95) { frM42.runEnd = m1._calls.run; }
+  if (fr === 102) frG = { look: stq.look, x: camF.position.x, mates: stq.matePos, t: tA };
+  if (fr === 120) frE = { x1: m1.x, z1: m1.z, x2: m2.x, z2: m2.z, run: m1._calls.run };
+}
+ok(!LG.GoalCinematic.active(), 'group cinematic finishes on its own');
+ok(allV === 0, 'NEVER nonzero velocity for any player, mates included (max=' + allV + ')');
+ok(fr >= 138 && fr <= 140, 'timeline kept with mates (' + fr + ' frames)');
+var movedM1 = Math.sqrt(Math.pow(m1.x - startM1.x, 2) + Math.pow(m1.z - startM1.z, 2));
+ok(movedM1 > 0.5 && frM42.run > 0, 'mate runs into frame with the run clip pinned (d=' + movedM1.toFixed(2) + 'm, runs=' + frM42.run + ')');
+ok(gkP.x === -2 && gkP.z === -15 && farP.x === 20 && farP.z === 10 && oppP.x === -1 && oppP.z === -18,
+  'keeper, distant mate and opponent never moved');
+// t = 0.80: full hero blend, group widen not started => look == scorer exactly
+ok(frL48 && frL48.w > 0.9, 'hero blend full at t=0.80 (w=' + (frL48 ? frL48.w.toFixed(3) : '-') + ')');
+ok(frL48 && Math.abs(frL48.look.x - frL48.sx) < 1e-6 && Math.abs(frL48.look.z - frL48.sz) < 1e-6,
+  'pre-group look is exactly the scorer (x=' + (frL48 ? frL48.look.x.toFixed(3) : '-') + ')');
+// t = 1.70: mates landed, look blended 60/40 scorer/mateCentre, +2.5m pullback
+var mx = 0, mz = 0;
+for (var q2 = 0; q2 < frG.mates.length; q2++) { mx += frG.mates[q2].x; mz += frG.mates[q2].z; }
+mx /= frG.mates.length; mz /= frG.mates.length;
+var expX = sc.x + (mx - sc.x) * 0.4, expZ = sc.z + (mz - sc.z) * 0.4;
+ok(Math.abs(frG.look.x - expX) < 1e-9 && Math.abs(frG.look.z - expZ) < 1e-9,
+  'group look = 0.6*scorer + 0.4*mateCentre (x=' + frG.look.x.toFixed(3) + ')');
+var expPx = expX + 13.5 + 2.5 - 0.3 * frG.t;
+ok(Math.abs(frG.x - expPx) < 1e-6, 'hero standoff pulled back +2.5m for the group (x=' + frG.x.toFixed(3) + ')');
+for (var q3 = 0; q3 < frG.mates.length; q3++) {
+  var band = Math.sqrt(Math.pow(frG.mates[q3].x - sc.x, 2) + Math.pow(frG.mates[q3].z - sc.z, 2));
+  ok(band >= 1.9 && band <= 3.5, 'mate slot in the celebration band (' + q3 + ': ' + band.toFixed(2) + 'm from scorer)');
+  ok(Math.abs(frG.mates[q3].x) <= LG.Config.court.width / 2 - 0.9 &&
+     Math.abs(frG.mates[q3].z) <= LG.Config.court.length / 2 - 0.9, 'mate slot inside the court (' + q3 + ')');
+}
+var faceExp = Math.atan2(sc.x - m1.x, sc.z - m1.z);
+ok(Math.abs(m1.facing - faceExp) < 1e-9, 'landed mate faces the scorer');
+ok(m1.x === frG.mates[0].x || m1.x === frG.mates[1].x, 'mate pinned on its slot');
+ok(Math.abs(m1.x - frE.x1) < 1e-12 && Math.abs(m1.z - frE.z1) < 1e-12 &&
+   Math.abs(m2.x - frE.x2) < 1e-12 && Math.abs(m2.z - frE.z2) < 1e-12,
+  'mates hold the exact slot through the celebration (no glide)');
+ok(frE.run === frM42.runEnd, 'mate run pin stops at TM_END (t=1.55)');
+ok(m1.vx === 0 && m1.vz === 0 && m2.vx === 0 && m2.vz === 0 && sc.vx === 0 && sc.vz === 0,
+  'release: everyone zero velocity');
+ok(LG.GoalCinematic.state().look === null, 'look ref cleared on handback');
+
+// re-entry: pull the band back out, second goal plans fresh mate runs
+sc.x = -6; sc.z = -16;
+m1.x = startM1.x; m1.z = startM1.z;
+m2.x = startM2.x; m2.z = startM2.z;
+match.all = [sc, m1, m2, gkP, farP, oppP];
+var runsBefore = m1._calls.run;
+bus.emit('goal', goalMsg(sc));
+ok(LG.GoalCinematic.state().mates === 2, 'second goal re-plans the mates');
+fr = 0;
+while (LG.GoalCinematic.active() && fr < 400) {
+  LG.GoalCinematic.update(dt, match.active.x, match.active.z, match.ball.x, match.ball.z);
+  fr++;
+}
+ok(m1._calls.run > runsBefore, 're-entry mates actually ran again (pose delta=' + (m1._calls.run - runsBefore) + ')');
+ok(m1.vx === 0 && m2.vx === 0 && sc.vx === 0, 're-entry releases with zero velocity');
+var dRe = Math.sqrt(Math.pow(m1.x - sc.x, 2) + Math.pow(m1.z - sc.z, 2));
+ok(dRe > 1.5, 're-entry mates landed away from the scorer (d=' + dRe.toFixed(2) + ')');
+
+// pose failure on a mate: that mate releases, the rest continues
+resetCam();
+sc.x = -6; sc.z = -16;
+m1.x = startM1.x; m1.z = startM1.z;
+m2.x = startM2.x; m2.z = startM2.z;
+m1._calls.failPose = true;
+match.all = [sc, m1, m2, gkP, farP, oppP];
+bus.emit('goal', goalMsg(sc));
+fr = 0;
+var scEndX = 0;
+while (LG.GoalCinematic.active() && fr < 400) {
+  LG.GoalCinematic.update(dt, match.active.x, match.active.z, match.ball.x, match.ball.z);
+  fr++;
+  scEndX = sc.x;
+}
+m1._calls.failPose = false;
+ok(!LG.GoalCinematic.active(), 'mate pose failure: cinematic still finishes');
+ok(Math.abs(scEndX - sc.x) < 1e-9 && Math.abs(sc.x - tx) < 1e-9, 'scorer still lands its corner target');
+ok(m1.vx === 0 && m1.vz === 0, 'failed mate released with zero velocity');
+
+// no animated scorer => camera-only, nobody runs (mates included)
+resetCam();
+var plainS = makeScorer();
+var m3 = makePlayer(-4, -12, { idx: 1 });
+match.all = [plainS, m3];
+bus.emit('goal', goalMsg(plainS));
+ok(LG.GoalCinematic.state().mates === 0, 'camera-only: no mates planned');
+fr = 0;
+while (LG.GoalCinematic.active() && fr < 400) {
+  LG.GoalCinematic.update(dt, match.active.x, match.active.z, match.ball.x, match.ball.z);
+  fr++;
+}
+ok(m3.x === -4 && m3.z === -12, 'camera-only: teammate never moved');
+
+// scorer-only framing: no group widen (+2.5) when no mates
+resetCam();
+var solo = makeCelebrity();
+match.all = [solo];
+bus.emit('goal', goalMsg(solo));
+fr = 0; tA = 0;
+var soloX = null, soloT = 0;
+while (LG.GoalCinematic.active() && fr < 400) {
+  LG.GoalCinematic.update(dt, match.active.x, match.active.z, match.ball.x, match.ball.z);
+  fr++; tA += dt;
+  if (fr === 102) { soloX = camF.position.x; soloT = tA; }
+}
+ok(soloX !== null, 'solo cinematic reached the group-frame timestamp');
+// solo: look == scorer (scX + 13.5 - 0.3t) — no +2.5 group pullback
+ok(Math.abs(soloX - (solo.x + 13.5 - 0.3 * soloT)) < 1e-6,
+  'scorer-only keeps the tight standoff, no group pullback (x=' + soloX.toFixed(3) + ')');
+
+// opposite direction (+z end): mates select and land too
+resetCam();
+match._gside = 22.5;
+var scB = makeCelebrity(); scB.idx = 0; scB.x = 0; scB.z = 16;
+var mB1 = makePlayer(0, 14, { idx: 1 });
+var mB2 = makePlayer(-3, 14, { idx: 2 });
+match.all = [scB, mB1, mB2];
+bus.emit('goal', goalMsg(scB));
+ok(LG.GoalCinematic.state().mates === 2, 'opposite direction: mates planned (got ' + LG.GoalCinematic.state().mates + ')');
+fr = 0;
+var bandB = 0;
+while (LG.GoalCinematic.active() && fr < 400) {
+  LG.GoalCinematic.update(dt, match.active.x, match.active.z, match.ball.x, match.ball.z);
+  fr++;
+  if (fr === 120) bandB = Math.sqrt(Math.pow(mB1.x - scB.x, 2) + Math.pow(mB1.z - scB.z, 2));
+}
+ok(fr >= 138 && fr <= 140, 'opposite direction: timeline kept (' + fr + ' frames)');
+ok(bandB >= 1.9 && bandB <= 3.5, 'opposite direction: mate landed in the band (' + bandB.toFixed(2) + 'm)');
+ok(scB.z > 16 + 2 && mB1.vx === 0 && mB2.vz === 0, 'opposite direction: scorer advanced, all released at zero');
 match._gside = -22.5;
 match.all = [];
 
