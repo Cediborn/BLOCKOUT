@@ -196,6 +196,7 @@
     var lastCel = '';
     var cinLast = false, cinSeen = false, cinFinished = false;
     var goalsDone = 0;
+    var cels = [];   // celebration variants seen across the run (3D.6)
     // count [CIN] warnings raised inside the iframe during the run
     var cinWarns = [];
     try {
@@ -220,7 +221,8 @@
       if (finished) return;
       finished = true;
       console.log('GOALFORCE ' + tag + ' cin=' + (!cinSeen ? 'never-started' : (cinFinished ? 'finished' : 'STUCK')) +
-        ' cinwarn=' + cinWarns.length + (cinWarns.length ? ' [' + cinWarns.join(' | ') + ']' : ''));
+        ' cinwarn=' + cinWarns.length + (cinWarns.length ? ' [' + cinWarns.join(' | ') + ']' : '') +
+        (cels.length ? ' cels=' + cels.join(',') : ''));
       done();
     }
     var iv = setInterval(function () {
@@ -260,7 +262,7 @@
           ' primes:' + (cs.primes || 0) : ' crowd=-'));
       if (m.state === 'GOAL') sawGoal = true;
       var cel = LG.Celebration && LG.Celebration.current;
-      if (cel && cel.type !== lastCel) { lastCel = cel.type; console.log('GOALFORCE celeb type=' + cel.type + ' dur=' + cel.dur.toFixed(2)); }
+      if (cel && cel.type !== lastCel) { lastCel = cel.type; cels.push(cel.type); console.log('GOALFORCE celeb type=' + cel.type + ' dur=' + cel.dur.toFixed(2)); }
       if (cel && cel.scorer) {
         var st = cel.scorer.model && cel.scorer.model.anim && cel.scorer.model.anim.state;
         console.log('GOALFORCE scorer x=' + cel.scorer.x.toFixed(2) + ' z=' + cel.scorer.z.toFixed(2) +
@@ -345,7 +347,7 @@
       var s = LG.Crowd && LG.Crowd.stats;
       console.log('CROWDEVT goal cheer=' + (s ? s.cheer.toFixed(2) : '-') +
         (s ? ' react=' + (s.reactMin || 0).toFixed(2) + '..' + (s.reactMax || 0).toFixed(2) +
-          ' primes=' + (s.primes || 0) : ''));
+          ' primes=' + (s.primes || 0) + ' cel=' + (s.cel || '-') : ''));
     });
     LG.eventBus.on('shoot', function (ev) {
       var s = LG.Crowd && LG.Crowd.stats;

@@ -7,6 +7,9 @@
 // same 'goal' event. The scorer gets a scripted corner run + celebration
 // hold; up to MAX_CELEBRATING_TEAMMATES nearby mates get a short run to
 // flanking slots (3D.3) so the group moment reads as a team celebration.
+// The celebration variant picked by celebration.js (3D.6) gently retargets
+// the hero framing (closer / lower / wider / point-at-target) and hands
+// 'point'/'signature' their facing — absent celebration => base maths.
 // Everything is direct position interpolation + anim.pose('run') pinning
 // — gameplay velocities are never written (only zeroed), so there is no
 // leak when PLAY resumes. Every guard / failure path degrades toward the
@@ -67,8 +70,17 @@ LG.GoalCinematic = (function () {
   var scorerFx = null;      // planned run: {from,to,speed,runFace,clipDur,holdFace}
   var tmFx = null;          // planned mate runs: [{p,from,to,start,end,...}]
   var lastLook = null;      // last lookAt target, for probes
+  var variant = null;       // celebration variant for this goal (3D.6), null = base
 
   function ease(x) { return LG.Util.easeInOut(LG.Util.clamp(x, 0, 1)); }
+
+  // celebration.js runs its start() BEFORE the goal event is emitted, so the
+  // chosen variant (and later its point target) is readable here. Missing
+  // celebration module (headless probes / sim) => null => exactly the
+  // 3D.1-3D.5 maths.
+  function celCurrent() {
+    return (LG.Celebration && LG.Celebration.current) || null;
+  }
 
   function warn(msg) {
     if (typeof console !== 'undefined' && console.warn) console.warn('[CIN] ' + msg);
@@ -92,7 +104,7 @@ LG.GoalCinematic = (function () {
     }
     active = false;
     scorer = null; cam = null; ours = null; fSim = null;
-    t = 0; w = 0; lastLook = null;
+    t = 0; w = 0; lastLook = null; variant = null;
   }
 
   // Idempotent: registers the bus hooks once (LG.Events has on/off/emit,
@@ -136,6 +148,12 @@ LG.GoalCinematic = (function () {
       t = 0;
       w = 0;
       active = true;
+      // 3D.6: capture the celebration variant chosen by match.checkGoal
+      // (Celebration.start ran before this event). Unknown/absent/own-goal
+      // => null => the untouched 3D.1-3D.5 framing.
+      variant = null;
+      var cel = celCurrent();
+      if (cel && !cel.own && cel.scorer === s && typeof cel.type === 'string') variant = cel.type;
       // Plan the corner run (null => camera-only mode, celebration intact)
       scorerFx = planScorer(m, s);
       // Plan up to TM_MAX teammate runs to flanking slots. Failures inside
@@ -218,37 +236,61 @@ LG.GoalCinematic = (function () {
         // group framing (3D.5): ease the look/standoff from the scorer to
         // the group centre once the mates are landing (GROUP_START..1.70),
         // blended by LOOK_MATE so the scorer stays the anchor.
+        // 3D.6: the celebration variant gently retargets that framing —
+        // solo variants sit closer, the knee-slide drops the hero angle,
+        // a huddle widens, 'point' frames the saluted player. All offsets
+        // are constants applied to the hero pose, so they ride the same
+        // w-blend as everything else: no snap, and a null variant is
+        // byte-identical to 3D.5.
+        var drift = HERO_DRIFT, heroH = HERO_H, lookY = 1.4;
+        var pull = GROUP_PULL, lookW = LOOK_MATE;
+        if (variant === 'arms' || variant === 'wide' || variant === 'signature') {
+          drift = HERO_DRIFT - 1.0;              // solo: tighter hero shot
+        } else if (variant === 'slide') {
+          drift = HERO_DRIFT - 0.6;
+          heroH = HERO_H - 1.5;                  // lower hero angle
+          lookY = 1.0;
+        } else if (variant === 'huddle' || variant === 'group') {
+          pull = GROUP_PULL * 1.35;              // wider group frame
+          lookW = LOOK_MATE * 1.3;
+        }
+        var pa = null;
+        if (variant === 'point') {
+          var celP = celCurrent();
+          pa = celP && celP.pointAt && !celP.own ? celP.pointAt : null;
+        }
         var scX = scorer.x, scZ = scorer.z;
         var gw = 0;
+        var mcx = 0, mcz = 0, mn = 0;
         if (tmFx && tmFx.length) {
-          var mcx = 0, mcz = 0, mn = 0;
           for (var gi = 0; gi < tmFx.length; gi++) {
             var q = tmFx[gi];
             if (q.dead) continue;
             mcx += q.p.x; mcz += q.p.z; mn++;
           }
-          if (mn) {
-            gw = ease((t - GROUP_START) / GROUP_DUR);
-            mcx /= mn; mcz /= mn;
-            scX += (mcx - scX) * (LOOK_MATE * gw);
-            scZ += (mcz - scZ) * (LOOK_MATE * gw);
-          }
+          if (mn) { mcx /= mn; mcz /= mn; }
         }
-        var widen = GROUP_PULL * gw;
+        if (pa) { mcx = pa.x; mcz = pa.z; mn = 1; }   // frame the salute target
+        if (mn) {
+          gw = ease((t - GROUP_START) / GROUP_DUR);
+          scX += (mcx - scX) * (lookW * gw);
+          scZ += (mcz - scZ) * (lookW * gw);
+        }
+        var widen = pull * gw;
         var hpx, hpz;
         if (land) {
-          hpx = scX + HERO_DRIFT + widen - 0.3 * t;
+          hpx = scX + drift + widen - 0.3 * t;
           hpz = scZ + Math.sin(t * HERO_SWAY_HZ) * HERO_SWAY;
         } else {
           hpx = scX + Math.sin(t * HERO_SWAY_HZ) * HERO_SWAY;
-          hpz = scZ + HERO_DRIFT + widen - 0.3 * t;
+          hpz = scZ + drift + widen - 0.3 * t;
         }
-        var hpy = HERO_H + HERO_RISE * t;
+        var hpy = heroH + HERO_RISE * t;
         px = LG.Util.lerp(gpx, hpx, w);
         py = LG.Util.lerp(gpy, hpy, w);
         pz = LG.Util.lerp(gpz, hpz, w);
         lx = LG.Util.lerp(glx, scX, w);
-        ly = LG.Util.lerp(gly, 1.4, w);
+        ly = LG.Util.lerp(gly, lookY, w);
         lz = LG.Util.lerp(glz, scZ, w);
         fov = LG.Util.lerp(gfov, C.fov - HERO_FOV, w);
       }
@@ -421,16 +463,25 @@ LG.GoalCinematic = (function () {
         if (scorer.model.anim.pose('run', pt) === false) throw new Error('run pose unavailable');
       } else {
         if (!fx.holdFaceSet) {
-          // face the camera once, at the moment the run lands
+          // face the camera once, at the moment the run lands — unless the
+          // variant salutes a teammate ('point'): face the saluted player
+          // instead so the arm reads from the hero camera's side
           fx.holdFaceSet = true;
           var cp = cam && cam.camera && cam.camera.position;
-          fx.holdFace = cp ? Math.atan2(cp.x - scorer.x, cp.z - scorer.z) : fx.runFace;
+          var hf = cp ? Math.atan2(cp.x - scorer.x, cp.z - scorer.z) : fx.runFace;
+          if (variant === 'point') {
+            var cel = celCurrent();
+            var pa = cel && cel.pointAt && !cel.own ? cel.pointAt : null;
+            if (pa) hf = Math.atan2(pa.x - scorer.x, pa.z - scorer.z);
+          }
+          fx.holdFace = hf;
         }
         // pin the celebration spot until release; own facing over
-        // celebration.js's point/signature facing writes (we run after it)
+        // celebration.js's facing writes (we run after it) — except
+        // 'signature', whose whole point is its spin: leave it alone
         scorer.x = fx.toX;
         scorer.z = fx.toZ;
-        scorer.facing = fx.holdFace;
+        if (variant !== 'signature') scorer.facing = fx.holdFace;
       }
       scorer.vx = 0;
       scorer.vz = 0;
@@ -620,6 +671,7 @@ LG.GoalCinematic = (function () {
       mates: tmFx ? tmFx.length : 0,
       matePos: mp,
       look: lastLook,
+      variant: variant,
     };
   }
 

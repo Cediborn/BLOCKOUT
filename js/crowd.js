@@ -42,6 +42,13 @@ LG.Crowd = (function () {
   // goal-reaction field (3D.4): per-spectator amplitude/delay primed once
   // per goal, read back by stats() for the probes
   var _reactMin = 1, _reactMax = 1, _primes = 0;
+  var _cel = null;         // celebration variant that primed the last goal
+  // 3D.6: celebration variant nudges the peak — group moments roar a touch
+  // more, an own-goal shrug barely moves. Subtle by design (max +12%).
+  var CEL_K = {
+    huddle: 1.12, group: 1.12, wide: 1.06, slide: 1.06,
+    signature: 1.04, point: 1.0, arms: 1.0, calm: 0.85,
+  };
 
   // private deterministic PRNG — layout must not touch Math.random
   var _s = 0x5EED03;
@@ -199,7 +206,7 @@ LG.Crowd = (function () {
   function build() {
     var t0 = now();
     _s = 0x5EED03;                 // deterministic layout every boot
-    _reactMin = 1; _reactMax = 1; _primes = 0;
+    _reactMin = 1; _reactMax = 1; _primes = 0; _cel = null;
     root = new THREE.Group();
     root.name = 'crowd';
     specs = [];
@@ -286,11 +293,16 @@ LG.Crowd = (function () {
       var sx = g.scorer.x, sz = g.scorer.z;
       var scoringSec = (g.isOwnGoal || typeof g.team !== 'number') ? null
         : (g.team === 0 ? 'home' : 'away');
+      // 3D.6: one shared intensity factor from the celebration variant —
+      // decided once, applied before the section multipliers below
+      var cel = LG.Celebration && LG.Celebration.current;
+      var vk = (cel && typeof CEL_K[cel.type] === 'number') ? CEL_K[cel.type] : 1;
+      _cel = cel && typeof cel.type === 'string' ? cel.type : null;
       var mn = 1e9, mx = -1e9;
       for (var i = 0; i < specs.length; i++) {
         var s = specs[i];
         var dx = s.x - sx, dz = s.z - sz;
-        var k = LG.Util.clamp(1.18 - Math.sqrt(dx * dx + dz * dz) * 0.045, 0.38, 1.18);
+        var k = LG.Util.clamp((1.18 - Math.sqrt(dx * dx + dz * dz) * 0.045) * vk, 0.38, 1.18);
         if (scoringSec && s.sec === scoringSec) k = Math.min(1.25, k * 1.06);
         else if (s.sec === 'side') k *= 0.9;
         else if (scoringSec) k *= 0.55;
@@ -439,7 +451,7 @@ LG.Crowd = (function () {
       return {
         bodies: specs.length, initMs: initMs, groups: groups.length,
         cheer: cheerT, swell: swellT, arm0: groups.length ? groups[0].arm : 0,
-        reactMin: _reactMin, reactMax: _reactMax, primes: _primes,
+        reactMin: _reactMin, reactMax: _reactMax, primes: _primes, cel: _cel,
       };
     },
   };

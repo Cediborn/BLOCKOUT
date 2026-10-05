@@ -538,6 +538,152 @@ var snapP = poseDelta(poseEndP, camF.position);
 ok(snapP < 1e-6, 'portrait handback == next broadcast frame (d=' + snapP.toExponential(2) + ')');
 LG.Settings.setView('landscape');
 
+console.log('== celebration variant hooks (3D.6) ==');
+// celebration.js is boot/browser-only — stub exactly the surface the
+// cinematic reads (current.{type,own,scorer,pointAt}) so every variant
+// path runs against the real camera maths. Removed again at the end.
+LG.Celebration = { current: null };
+resetCam();
+match.state = 'GOAL';
+bus.emit('goal', goalMsg(makeScorer()));
+ok(LG.GoalCinematic.state().variant === null, 'current=null => null variant (base maths)');
+frames = 0;
+while (LG.GoalCinematic.active() && frames < 400) {
+  LG.GoalCinematic.update(dt, match.active.x, match.active.z, match.ball.x, match.ball.z);
+  frames++;
+}
+
+// solo 'arms': closer hero framing (HERO_DRIFT - 1.0)
+resetCam();
+match.state = 'GOAL';
+var scA = makeCelebrity(); scA.idx = 0;
+LG.Celebration.current = { type: 'arms', own: false, scorer: scA, pointAt: null };
+bus.emit('goal', goalMsg(scA));
+ok(LG.GoalCinematic.state().variant === 'arms', 'variant surfaced in state()');
+fr = 0; var tV = 0, camXA = 0, tSA = 0;
+while (LG.GoalCinematic.active() && fr < 400) {
+  LG.GoalCinematic.update(dt, match.active.x, match.active.z, match.ball.x, match.ball.z);
+  fr++; tV += dt;
+  if (fr === 102) { camXA = camF.position.x; tSA = tV; }
+}
+ok(Math.abs(camXA - (scA.x + 12.5 - 0.3 * tSA)) < 1e-6,
+  'solo arms: tighter standoff 12.5m (x=' + camXA.toFixed(3) + ')');
+
+// arms still owns the scorer's facing after the run lands
+resetCam();
+match.state = 'GOAL';
+var scF = makeCelebrity(); scF.idx = 0;
+LG.Celebration.current = { type: 'arms', own: false, scorer: scF, pointAt: null };
+bus.emit('goal', goalMsg(scF));
+frames = 0;
+while (LG.GoalCinematic.active() && frames < 400 && LG.GoalCinematic.state().t < 1.3) {
+  LG.GoalCinematic.update(dt, match.active.x, match.active.z, match.ball.x, match.ball.z);
+  frames++;
+}
+ok(LG.GoalCinematic.active(), 'arms variant reached t=1.3 past the run');
+scF.facing = 1.2345;
+LG.GoalCinematic.update(dt, match.active.x, match.active.z, match.ball.x, match.ball.z);
+ok(Math.abs(scF.facing - 1.2345) > 1e-9, 'arms: cinematic forces the hold facing');
+while (LG.GoalCinematic.active() && frames < 400) {
+  LG.GoalCinematic.update(dt, match.active.x, match.active.z, match.ball.x, match.ball.z);
+  frames++;
+}
+
+// 'signature' spins on purpose: the cinematic must NOT overwrite facing
+resetCam();
+match.state = 'GOAL';
+var scS1 = makeCelebrity(); scS1.idx = 0;
+LG.Celebration.current = { type: 'signature', own: false, scorer: scS1, pointAt: null };
+bus.emit('goal', goalMsg(scS1));
+ok(LG.GoalCinematic.state().variant === 'signature', 'signature variant captured');
+frames = 0;
+while (LG.GoalCinematic.active() && frames < 400 && LG.GoalCinematic.state().t < 1.3) {
+  LG.GoalCinematic.update(dt, match.active.x, match.active.z, match.ball.x, match.ball.z);
+  frames++;
+}
+ok(LG.GoalCinematic.active(), 'signature variant reached t=1.3 past the run');
+scS1.facing = 1.2345;
+LG.GoalCinematic.update(dt, match.active.x, match.active.z, match.ball.x, match.ball.z);
+ok(Math.abs(scS1.facing - 1.2345) < 1e-9, 'signature: facing left to celebration.js');
+ok(scS1.vx === 0 && scS1.vz === 0, 'signature: still pinned with zero velocity');
+while (LG.GoalCinematic.active() && frames < 400) {
+  LG.GoalCinematic.update(dt, match.active.x, match.active.z, match.ball.x, match.ball.z);
+  frames++;
+}
+
+// 'slide': lower hero angle (HERO_H - 1.5)
+resetCam();
+match.state = 'GOAL';
+var scSL = makeCelebrity(); scSL.idx = 0;
+LG.Celebration.current = { type: 'slide', own: false, scorer: scSL, pointAt: null };
+bus.emit('goal', goalMsg(scSL));
+fr = 0; tV = 0; var camYV = 0, tSS = 0;
+while (LG.GoalCinematic.active() && fr < 400) {
+  LG.GoalCinematic.update(dt, match.active.x, match.active.z, match.ball.x, match.ball.z);
+  fr++; tV += dt;
+  if (fr === 102) { camYV = camF.position.y; tSS = tV; }
+}
+ok(Math.abs(camYV - (5.7 + 0.5 * tSS)) < 1e-6,
+  'slide: lower hero angle 5.7 + rise (y=' + camYV.toFixed(3) + ')');
+
+// 'point': look blends toward the saluted player, scorer faces them
+resetCam();
+match.state = 'GOAL';
+var scPT = makeCelebrity(); scPT.idx = 0;
+var tgtPT = makePlayer(-4, -12, { idx: 1 });
+LG.Celebration.current = { type: 'point', own: false, scorer: scPT, pointAt: { x: tgtPT.x, z: tgtPT.z } };
+bus.emit('goal', goalMsg(scPT));
+ok(LG.GoalCinematic.state().variant === 'point', 'point variant captured');
+fr = 0; var lookV = null;
+while (LG.GoalCinematic.active() && fr < 400) {
+  LG.GoalCinematic.update(dt, match.active.x, match.active.z, match.ball.x, match.ball.z);
+  fr++;
+  if (fr === 102) lookV = LG.GoalCinematic.state().look;
+}
+var expLX = scPT.x + (tgtPT.x - scPT.x) * 0.4;
+var expLZ = scPT.z + (tgtPT.z - scPT.z) * 0.4;
+ok(lookV && Math.abs(lookV.x - expLX) < 1e-9 && Math.abs(lookV.z - expLZ) < 1e-9,
+  'point: look = 60% scorer + 40% target (x=' + (lookV ? lookV.x.toFixed(3) : '-') + ')');
+var expFacePT = Math.atan2(tgtPT.x - scPT.x, tgtPT.z - scPT.z);
+ok(Math.abs(scPT.facing - expFacePT) < 0.01,
+  'point: scorer ends facing the saluted player (d=' +
+  Math.abs(scPT.facing - expFacePT).toFixed(4) + 'rad)');
+
+// 'huddle': wider group frame (LOOK_MATE*1.3, GROUP_PULL*1.35)
+resetCam();
+match.state = 'GOAL';
+var scH = makeCelebrity(); scH.idx = 0;
+var mH1 = makePlayer(-4, -12, { idx: 1 });
+var mH2 = makePlayer(-8, -14, { idx: 2 });
+match.all = [scH, mH1, mH2];
+LG.Celebration.current = { type: 'huddle', own: false, scorer: scH, pointAt: null };
+bus.emit('goal', goalMsg(scH));
+ok(LG.GoalCinematic.state().mates === 2, 'huddle: mates planned for the group frame');
+fr = 0; tV = 0; var camXH = 0, lookH = null, mpH = null, tH = 0;
+while (LG.GoalCinematic.active() && fr < 400) {
+  LG.GoalCinematic.update(dt, match.active.x, match.active.z, match.ball.x, match.ball.z);
+  fr++; tV += dt;
+  if (fr === 102) {
+    camXH = camF.position.x;
+    lookH = LG.GoalCinematic.state().look;
+    mpH = LG.GoalCinematic.state().matePos;   // live — handback would clear it
+    tH = tV;
+  }
+}
+var mcxH = 0, mczH = 0;
+for (var qi = 0; qi < mpH.length; qi++) { mcxH += mpH[qi].x; mczH += mpH[qi].z; }
+mcxH /= mpH.length; mczH /= mpH.length;
+var expLookH = scH.x + (mcxH - scH.x) * (0.4 * 1.3);
+ok(lookH && Math.abs(lookH.x - expLookH) < 1e-9,
+  'huddle: wider look blend 0.52 (x=' + (lookH ? lookH.x.toFixed(3) : '-') + ')');
+var expCamH = expLookH + 13.5 + 2.5 * 1.35 - 0.3 * tH;
+ok(Math.abs(camXH - expCamH) < 1e-6,
+  'huddle: wider pullback 3.375 (x=' + camXH.toFixed(3) + ')');
+match.all = [];
+
+ok(LG.GoalCinematic.state().variant === null, 'variant cleared on handback');
+delete LG.Celebration;   // restore the real probe baseline (module not loaded)
+
 console.log('');
 if (fail) {
   console.log('CINPROBE FAIL ' + fail + ' failed / ' + (pass + fail));
