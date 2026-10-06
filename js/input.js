@@ -8,8 +8,19 @@ LG.Input = (function () {
   var t = 0;
   var lastT = 0;
   var edges = {};       // {name: true if fired this frame}
+  var read = {};        // {name: true if pressed() already consumed this edge}
   var held = {};        // continuous held flags
   var queue = {};       // pending edge events from DOM events
+
+  // PHASE 4.4 — short press buffer. An ACTION press that nobody could read
+  // this frame (whistle, goal freeze, control-mode flip, state change) still
+  // lands if the game reads it within BUFFER seconds. One-shot: consumed by
+  // the first read, superseded by a newer press, dropped when it expires.
+  // Movement / sprint / pause stay edge-of-frame — buffering them would feel
+  // like input lag.
+  var BUFFER = 0.18;
+  var BUF_ACTION = { pass: 1, shoot: 1, tackle: 1, switch: 1, special: 1, rematch: 1 };
+  var buf = {};
 
   // joystick
   var joyActive = false, joyId = -1, joyOx = 0, joyOy = 0;
@@ -20,6 +31,11 @@ LG.Input = (function () {
   var enabled = false;  // gates gameplay input during menus/transitions
 
   var AXIS_DEAD = 0.06;   // residual axis dead zone (the stick already has a px one)
+
+  // How many PHYSICAL key codes are currently holding each logical action.
+  // W and SHIFT both mean SPRINT; A/I/SPACE/J all mean PASS. Releasing one
+  // of them must never cancel the others while a second key is still held.
+  var actCodes = {};
 
   function setBool(name, val) {
     if (val && !held[name]) { queue[name] = true; }
@@ -56,20 +72,25 @@ LG.Input = (function () {
     if (isTypingTarget(e)) return;
     var k = keyMap(e.code);
     if (!k) return;
-    if (!enabled) return; // menus/transitions: keys fall through to native behavior
+    // menus/transitions: keys fall through to native behavior (Tab, Space and
+    // the arrows keep driving focus/buttons on the results screen) — except
+    // REMATCH, which is read on the results screen and is harmless elsewhere
+    if (!enabled && k !== 'rematch') return;
     if (e.code === 'Tab' || e.code === 'Space' || k === 'up' || k === 'down' || k === 'left' || k === 'right') {
       e.preventDefault();
     }
     useKeyboard = true;
+    if (!keys[e.code]) { keys[e.code] = true; actCodes[k] = (actCodes[k] || 0) + 1; }
     setBool(k, true);
-    if (!keys[e.code]) { keys[e.code] = true; }
   }
   function onKeyUp(e) {
     if (isTypingTarget(e)) return;
     var k = keyMap(e.code);
     if (!k) return;
-    setBool(k, false);
-    keys[e.code] = false;
+    // only the LAST physical key of an action releases it — let go of SHIFT
+    // while W is still down and SPRINT keeps running (and vice versa)
+    if (keys[e.code]) { keys[e.code] = false; if (actCodes[k]) actCodes[k]--; }
+    if (!actCodes[k]) setBool(k, false);
   }
 
   function onBlur() {
@@ -196,16 +217,26 @@ LG.Input = (function () {
   // called each frame by the game loop
   function update(frameT) {
     t = frameT;
+    // an actionable press nobody READ last frame enters the short buffer.
+    // Skip: already consumed by pressed(), or still HELD (down() consumed it
+    // — e.g. a held SHOOT must not re-fire when finally released).
+    for (var k in edges) {
+      if (edges[k] && !read[k] && !held[k] && BUF_ACTION[k] && buf[k] === undefined) buf[k] = lastT;
+    }
     edges = {};
-    for (var k in queue) { if (queue[k]) { edges[k] = true; queue[k] = false; } }
+    read = {};
+    for (var k2 in queue) { if (queue[k2]) { edges[k2] = true; queue[k2] = false; } }
     lastT = t;
   }
 
   function reset() {
     for (var k in held) held[k] = false;
     for (var k in queue) queue[k] = false;
+    for (var k in buf) buf[k] = undefined;
+    for (var k in actCodes) actCodes[k] = 0;
     keys = {};
     edges = {};
+    read = {};
     useKeyboard = false;
     resetJoystick();
   }
@@ -219,7 +250,16 @@ LG.Input = (function () {
     if (!enabled) reset();
   }
 
-  function pressed(name) { return !!edges[name]; }
+  function pressed(name) {
+    if (edges[name]) { read[name] = true; buf[name] = undefined; return true; }
+    // buffered press from a frame where nobody could read it: one-shot
+    if (buf[name] !== undefined) {
+      var ok = (t - buf[name]) <= BUFFER;
+      buf[name] = undefined;
+      return ok;
+    }
+    return false;
+  }
   function down(name) { return !!held[name]; }
   function axisDead(v) { return Math.abs(v) < AXIS_DEAD ? 0 : v; }
 

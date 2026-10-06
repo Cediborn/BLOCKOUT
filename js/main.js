@@ -1886,9 +1886,19 @@
       // camera: while the goal cinematic owns it, camCtrl.update must not
       // run — it would overwrite the cinematic pose in the same frame
       if (LG.GoalCinematic && LG.GoalCinematic.active()) {
+        // frozen/celebration states have zero velocity, so this is the raw
+        // target — the cinematic stays bit-for-bit on its own maths
         LG.GoalCinematic.update(dt, match.active.x, match.active.z, match.ball.x, match.ball.z);
       } else {
-        camCtrl.update(dt, match.active.x, match.active.z, match.ball.x, match.ball.z);
+        // PHASE 4.5 — velocity LEAD for the follow camera (broadcast style):
+        // aim slightly ahead of the carrier so the action sits in frame
+        // instead of dragging at the edge. Outside the cinematic block, so
+        // goal-cinematic.js's mirrored follow maths needs no change. Frozen
+        // states hold velocity at zero, so there is nothing to lead on.
+        var act = match.active;
+        var leadX = act.x + U.clamp(act.vx * 0.24, -1.6, 1.6);
+        var leadZ = act.z + U.clamp(act.vz * 0.24, -1.6, 1.6);
+        camCtrl.update(dt, leadX, leadZ, match.ball.x, match.ball.z);
       }
       LG.HUD.updateSpecial(match.active);
       LG.HUD.updateCoins();
@@ -1907,6 +1917,8 @@
       arenaObj.update(dt);
       if (LG.Living) LG.Living.update(dt);
     } else {
+      // R on the results screen = rematch (the button does the same thing)
+      if (UIState === 'result' && LG.Input.pressed('rematch')) LG.eventBus.emit('rematchRequested');
       camera.position.set(0, 19, 24);
       camera.lookAt(0, 0, 0);
     }

@@ -9,7 +9,7 @@
 // every release — that is what makes installed clients pick the new files up.
 // ============================================================
 
-var CACHE_NAME = 'blackout-v10';
+var CACHE_NAME = 'blackout-v11';   // Phase 4 — gameplay-feel pass
 var ASSETS = [
   './',
   './index.html',

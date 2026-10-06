@@ -74,6 +74,9 @@ LG.Config = {
   physics: {
     gravity: -17,
     bounce: 0.6,            // ground bounce coefficient (low = rolls)
+    bounceSettle: 1.2,      // PHASE 4.2: impacts below this settle the ball flat
+                            // (kills the endless micro-hop) — bigger bounces, sounds
+                            // and dust are untouched
     airDrag: 0.994,
     groundDrag: 0.984,      // rolling friction per frame (0.984^60 ≈ 0.38) — a pass now
                             // rolls roughly as far as its speed in m/s, so a 15m pass still
@@ -89,10 +92,19 @@ LG.Config = {
     passSpeedPerM: 1.15,
     passSpeedBase: 2.6,
     passSpeedMin: 6.5,
+    // PHASE 4.2 — pass loft scales with distance: short passes skim low under
+    // a lunge, long balls carry height over a crowd. vy = dist * perM clamped.
+    passVyPerM: 0.13,
+    passVyMin: 0.7,
+    passVyMax: 2.2,
     dribbleRadius: 0.85,    // ball rides in front of the carrier
 
     playerAccel: 46,        // smooth: not twitchy, not sluggish
     stopBoost: 1.6,         // extra bite when the stick is released (crisp stops)
+    revBoost: 1.55,         // PHASE 4.1: extra accel bite when picking up from rest
+                            // or reversing direction (alignment blends it to 1.0)
+    turnRate: 13,           // PHASE 4.1: base facing turn rate — big reversals are
+                            // weighted down so the body swings through, not snaps
 
     sprintDrain: 0.2,       // stamina / second while sprinting (tactical, not punishing)
     sprintRecover: 0.24,    // stamina / second while not sprinting
@@ -128,6 +140,11 @@ LG.Config = {
     // while the keeper HOLDS the ball (post-save / distribution) every opponent
     // keeps this much clear air — the window where he is most vulnerable
     keeperProtectR: 3.4,
+    // PHASE 4.3 — anti-crowd bubbles used by AIBrain.separate(): mates keep
+    // this far apart, and non-chasers keep this far from the free ball, so a
+    // side holds its shape instead of collapsing into one scrum
+    spacingRadius: 2.5,
+    spacingBall: 3.0,
   },
 
   // ------------------------------------------------------------

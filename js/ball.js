@@ -81,11 +81,18 @@ LG.Ball.prototype = {
       this.y = this.r;
       if (this.vy < 0) {
         var impact = -this.vy;
-        this.vy *= -P.bounce;
-        if (impact > 4) {
-          LG.Audio.sfx.ballBounce(Math.min(1, impact / 14));
-          LG.Particles.dust(this.x, this.z, 2);
-          if (this.vy < 0.4) this.vy = 0;
+        // PHASE 4.2 — kill the bounce at the tail. Small impacts settle the
+        // ball flat instead of letting it micro-hop its way down the court;
+        // anything that would look/sound like a real bounce still gets one.
+        if (impact < (P.bounceSettle || 1.2)) {
+          this.vy = 0;
+        } else {
+          this.vy *= -P.bounce;
+          if (impact > 4) {
+            LG.Audio.sfx.ballBounce(Math.min(1, impact / 14));
+            LG.Particles.dust(this.x, this.z, 2);
+            if (this.vy < 0.4) this.vy = 0;
+          }
         }
       }
       // rolling friction

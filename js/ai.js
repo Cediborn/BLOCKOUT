@@ -126,6 +126,9 @@ LG.AIBrain.prototype = {
   // Pull `target` away from teammates (and a free ball) so the side keeps
   // spacing instead of collapsing. Only a shape target — never snaps the ball
   // chase: the designated chaser is exempt from the ball repulsion.
+  // PHASE 4.3 — wider bubbles, same gentle push: five players used to drift
+  // into one scrum around the carrier. (Wider radii tune cleanly; hardening
+  // the push strength on top of it overshot and killed the shot count.)
   separate: function (target, haveBall) {
     var me = this.p;
     var M = LG.Match;
@@ -133,23 +136,25 @@ LG.AIBrain.prototype = {
     var ax = target.x, az = target.z;
     var mates = M.teamPlayers(me.team);
     var i, m, dx, dz, d, f;
+    var mateR = (LG.Config.ai.spacingRadius || 2.2);
     for (i = 0; i < mates.length; i++) {
       m = mates[i];
       if (m === me) continue;
       dx = ax - m.x; dz = az - m.z;
       d = Math.sqrt(dx * dx + dz * dz);
-      if (d < 2.2 && d > 0.001) {
-        f = ((2.2 - d) / 2.2) * 1.7;
+      if (d < mateR && d > 0.001) {
+        f = ((mateR - d) / mateR) * 1.7;
         ax += (dx / d) * f;
         az += (dz / d) * f;
       }
     }
     if (!haveBall && !this.isClosestChaser()) {
       var b = M.ball;
+      var ballR = (LG.Config.ai.spacingBall || 2.6);
       dx = ax - b.x; dz = az - b.z;
       d = Math.sqrt(dx * dx + dz * dz);
-      if (d < 2.6 && d > 0.001) {
-        f = ((2.6 - d) / 2.6) * 2.2;
+      if (d < ballR && d > 0.001) {
+        f = ((ballR - d) / ballR) * 2.2;
         ax += (dx / d) * f;
         az += (dz / d) * f;
       }

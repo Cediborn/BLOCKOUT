@@ -120,18 +120,25 @@ LG.Player.prototype.update = function (dt) {
   var P = LG.Config.physics;
   var wantsSprint = this.want.sprint && this.active && this.active.type === 'WALL' ? false : this.want.sprint;
   var moving = Math.abs(this.want.x) + Math.abs(this.want.z) > 0.01;
+  // PHASE 4.1 — the roster stamina stat now means something: a high-stamina
+  // player burns the tank slower AND refills it faster. The absolute numbers
+  // stay gentle (no punishing exhaustion), the RATIO between players does the
+  // work. Pure multipliers on the config rates — no weird speed jumps.
+  var stStat = (this.stats && this.stats.stamina) || 6;
+  var drainMul = 1.25 - 0.05 * stStat;      // 10 -> 0.75x ... 3 -> 1.10x
+  var regenMul = 0.72 + 0.05 * stStat;      // 10 -> 1.22x ... 3 -> 0.87x
   // empty the tank and you jog until you have recovered a little — no flickering
   // between sprint and walk, and never a speed penalty below normal pace
   if (this._sprintLocked && this.stamina > 0.45) this._sprintLocked = false;
   var canSprint = this._sprintLocked ? false : this.stamina > 0.02;
   var sprinting = wantsSprint && moving && canSprint;
   if (sprinting) {
-    this.stamina = Math.max(0, this.stamina - dt * (P.sprintDrain || 0.2));
+    this.stamina = Math.max(0, this.stamina - dt * (P.sprintDrain || 0.2) * drainMul);
     if (this.stamina <= 0.02) this._sprintLocked = true;
   } else {
     // stamina comes back slower while you keep mashing SPRINT
     var regen = (wantsSprint && moving) ? 0.5 : 1;
-    this.stamina = Math.min(1, this.stamina + dt * (P.sprintRecover || 0.22) * regen);
+    this.stamina = Math.min(1, this.stamina + dt * (P.sprintRecover || 0.22) * regenMul * regen);
   }
   this.sprinting = sprinting;
 
@@ -141,9 +148,28 @@ LG.Player.prototype.update = function (dt) {
 
   if (this.immovable) { mv = 0; mz = 0; }
 
-  // acceleration toward desired: DIRECT input response, but released sticks
-  // brake harder so the player plants instead of gliding past the ball.
-  var accelRate = this.accel * (moving ? 1 : (P.stopBoost || 1.8));
+  // PHASE 4.1 — direction-aware acceleration. Continuing straight keeps the
+  // smooth baseline rate; PICKING UP from a standstill and REVERSING direction
+  // get a bite of extra rate (revBoost), so a direction change feels controlled
+  // and immediate instead of sliding through the old arc. Releasing the stick
+  // still brakes harder than anything (stopBoost) — plant, don't ice-skate.
+  var accelRate;
+  if (moving) {
+    var cs = Math.sqrt(this.vx * this.vx + this.vz * this.vz);
+    var align = 1;
+    if (cs > 0.15) {
+      var md = Math.sqrt(mv * mv + mz * mz);
+      if (md > 0.0001) align = (this.vx * mv + this.vz * mz) / (cs * md);
+      if (!(align > 0)) align = 0;          // NaN-safe: treat as a reversal
+      else if (align > 1) align = 1;
+    } else {
+      align = 0;                            // from rest: the snappy pickup
+    }
+    var rev = P.revBoost || 1.55;
+    accelRate = this.accel * (rev + (1 - rev) * align);
+  } else {
+    accelRate = this.accel * (P.stopBoost || 1.8);
+  }
   var k = Math.min(1, dt * accelRate / this.maxSpeed);
   this.vx = U.lerp(this.vx, mv, k);
   this.vz = U.lerp(this.vz, mz, k);
@@ -166,14 +192,21 @@ LG.Player.prototype.update = function (dt) {
     this.z = U.clamp(this.z, -halfL, halfL);
   }
 
-  // autorotate via movement dir — fast turn so the body (and the ball) points
-  // where the player is heading without feeling sluggish
+  // PHASE 4.1 — facing follows movement with WEIGHT. Small adjustments stay
+  // snappy; big direction changes visibly swing through (turnW slows the
+  // lerp as the error approaches 180°) instead of snapping the body around.
+  // Below ~0.14 m/s the body holds and the idle square-up below takes over.
   var sp = this.vx * this.vx + this.vz * this.vz;
-  if (sp > 0.04) {
+  if (sp > 0.02) {
     var target = Math.atan2(this.vx, this.vz);
     // facing is rotation.y of the model; character model faces +Z at rot 0
-    this.facing = U.angleLerp(this.facing, target, Math.min(1, dt * 16));
+    var da = target - this.facing;
+    da = ((da + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+    var turnW = 1 - 0.45 * Math.min(1, Math.abs(da) / Math.PI);
+    this.facing += da * Math.min(1, dt * (LG.Config.physics.turnRate || 13) * turnW);
   }
+
+  if (!this.hasBall) this.faceBallLoose(dt);
 
   this.phase += dt * (2.2 + sp * 0.55);
   var speedFrac = Math.min(1, Math.sqrt(sp) / this.maxSpeed);
@@ -219,8 +252,6 @@ LG.Player.prototype.update = function (dt) {
     }
   }
 
-  if (!this.hasBall) this.faceBallLoose();
-
   // the ability aura rides with the player — it used to be parked at the world
   // origin, so the glow sat in the middle of the court instead of around the
   // character who actually triggered it
@@ -239,8 +270,20 @@ LG.Player.prototype.update = function (dt) {
   }
 };
 
-LG.Player.prototype.faceBallLoose = function () {
-  // slight lean toward loose ball while idle-ish
+LG.Player.prototype.faceBallLoose = function (dt) {
+  // PHASE 4.1 — nearly still and ball-less: square the body up to the ball.
+  // Presentation only (stopped defenders/keepers read as alert); movement,
+  // aim and kick maths never depend on it, and dt=0 frozen states skip it.
+  if (!dt || this.stun > 0 || this.immovable) return;
+  var sp = this.vx * this.vx + this.vz * this.vz;
+  if (sp > 0.02) return;                       // motion facing owns that band
+  var m = LG.Match;
+  if (!m || !m.ball) return;
+  var dx = m.ball.x - this.x, dz = m.ball.z - this.z;
+  if (dx * dx + dz * dz < 0.04) return;        // already on top of it
+  var da = Math.atan2(dx, dz) - this.facing;
+  da = ((da + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI;
+  this.facing += da * Math.min(1, dt * 3.0);
 };
 
 // The direction this player is ACTUALLY asking to go right now, in world space.

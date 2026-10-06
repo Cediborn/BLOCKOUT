@@ -791,12 +791,21 @@ LG.MatchManager.prototype = {
 
   passTo: function (src, target, opts) {
     var U = LG.Util;
+    var P = LG.Config.physics;
     var ball = this.ball;
     var perfect = LG.Abilities.isPerfectPassReady(src);
     var d = src.distTo(target.x, target.z);
     // contextual power: quick for short, stronger for long — no input gymnastics
     var speed = this.passSpeedFor(d);
-    var vy = perfect ? 0 : 2.2;
+    // PHASE 4.2 — pass loft follows distance: a short pass skims low so it
+    // slides under a lunge; a long diagonal carries the height to clear a
+    // crowd. Perfect passes stay laser-flat. Same curve for the launch and
+    // for ballTravelTime's lead estimate, so the aim point never drifts.
+    var passVy = function (dist) {
+      if (perfect) return 0;
+      return U.clamp(dist * (P.passVyPerM || 0.13), P.passVyMin || 0.7, P.passVyMax || 2.2);
+    };
+    var vy = passVy(d);
     var px = target.x, pz = target.z;
     if (opts && opts.lead) {
       // Meet the runner where they will actually be. The lead TIME comes from
@@ -804,6 +813,7 @@ LG.MatchManager.prototype = {
       // still a fixed straight-line target, so a pass never homes onto anyone.
       // Two passes of the estimate converge (each one re-solves the power).
       for (var it = 0; it < 2; it++) {
+        vy = passVy(src.distTo(px, pz));
         var tGo = this.ballTravelTime(src.distTo(px, pz), speed, vy);
         if (!isFinite(tGo)) tGo = 0.5;
         tGo = U.clamp(tGo, 0, 1.1);                 // a sensible lead, never a chase
@@ -828,7 +838,7 @@ LG.MatchManager.prototype = {
     }
     if (perfect) LG.Abilities.consumePerfectPass(src);
     this.release(src);
-    ball.kick((sx / dd) * speed, perfect ? 0 : 2.2, (sz / dd) * speed);
+    ball.kick((sx / dd) * speed, vy, (sz / dd) * speed);
     src.kickAnim = 1;
     if (perfect) ball._guided = { target: target, settle: 0 };
     // the pass BELONGS to its receiver for a moment: they can take it cleanly
@@ -1279,7 +1289,14 @@ LG.MatchManager.prototype = {
   placeBallOnCarrier: function (p, dt) {
     var ball = this.ball;
     ball.owner = p;
-    var ahead = 0.72;
+    // PHASE 4.2 — carry the ball further ahead at pace. Standing keeps it
+    // tucked at the feet (0.72); each m/s of pace pushes it out toward ~0.92,
+    // so the next touch happens in front of the stride instead of through
+    // your own legs. (A steeper, jog-tight variant of this curve was tried
+    // first — it shifted the tuned match outcomes badly; this gentle ramp
+    // keeps the feel win and the sim suite green.)
+    var sp = Math.sqrt(p.vx * p.vx + p.vz * p.vz);
+    var ahead = 0.72 + Math.min(0.2, Math.max(0, sp - 2) * 0.04);
     var bx = p.x + Math.sin(p.facing) * ahead;
     var bz = p.z + Math.cos(p.facing) * ahead;
     var wantY = ball.r + (p.sprinting || p.active ? 0.05 : 0);
