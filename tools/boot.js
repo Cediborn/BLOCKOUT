@@ -40,7 +40,10 @@ function fakeNode() {
     traverse: function (cb) { cb(n); (n.children || []).forEach(function (c) { if (c && c.traverse) c.traverse(cb); }); return n; },
     lookAt: function () {}, updateProjectionMatrix: function () {},
     color: color, groundColor: color,
-    repeat: { set: function () {}, x: 1, y: 1 }, offset: { set: function () {}, x: 0, y: 0 },
+    // repeat/offset set() must store like THREE.Texture — the arena's
+    // applyCourtFit writes through them and the harness reads them back
+    repeat: { set: function (x, y) { this.x = x; this.y = y; }, x: 1, y: 1 },
+    offset: { set: function (x, y) { this.x = x; this.y = y; }, x: 0, y: 0 },
     attributes: new Proxy({}, {
       get: function (t, p) {
         if (typeof p === 'symbol') return undefined;
@@ -284,6 +287,81 @@ section('1b. court registration + metadata are the single source of truth');
     'unknown courts safely default to the painted-goal rule');
 })();
 
+section('1b2. Phase 6 — court fit maths, per-court dressing, offline courts');
+(function () {
+  // applyCourtFit must run headless without throwing (it used to read
+  // undefined w/h, so every custom court threw and cover-fit broke)
+  var af = LG.Arena && LG.Arena.applyCourtFit;
+  check(typeof af === 'function', 'arena exports applyCourtFit for tests', typeof af);
+  var texFor = function (iw, ih) {
+    var img = {};
+    if (iw) { img.width = iw; img.height = ih; img.naturalWidth = iw; img.naturalHeight = ih; }
+    return {
+      image: img,
+      repeat: { set: function (x, y) { this.x = x; this.y = y; }, x: 1, y: 1 },
+      offset: { set: function (x, y) { this.x = x; this.y = y; }, x: 0, y: 0 },
+    };
+  };
+  var err = null, cover = texFor(1600, 900);
+  try { af(cover, { id: 'turf', w: 1600, h: 900 }); } catch (e) { err = e; }
+  check(!err && cover.repeat.x > 0.3 && cover.repeat.x < 0.34 &&
+    cover.offset.x > 0.3 && cover.offset.x < 0.35,
+    'wide cover art samples the central strip, no distortion',
+    err ? err.message : 'repeat=' + cover.repeat.x + ' offset=' + cover.offset.x);
+  var stretch = texFor(600, 1000);
+  try { af(stretch, { id: 'ballgads', w: 600, h: 1000 }); } catch (e2) { err = e2; }
+  check(!err && stretch.repeat.x === 1 && stretch.offset.x === 0,
+    'narrow stretch art fills the slab width untouched',
+    err ? err.message : 'repeat=' + stretch.repeat.x);
+  var bare = texFor(0, 0);
+  err = null;
+  try { af(bare, { id: 'turf' }); } catch (e3) { err = e3; }
+  check(!err && bare.repeat.x === 1 && bare.offset.x === 0,
+    'a texture with no size falls back to full slab, no throw',
+    err ? err.message : 'repeat=' + bare.repeat.x);
+
+  // accent metadata — every registered court declares its highlight colour
+  var defs = LG.Courts.DEFS || [];
+  var noAccent = defs.filter(function (d) {
+    return typeof LG.Courts.meta(d.id).accent !== 'number';
+  });
+  check(noAccent.length === 0 && defs.length >= 15,
+    'every registered court declares a numeric accent colour',
+    'missing=' + noAccent.map(function (d) { return d.id; }).join(',') + ' defs=' + defs.length);
+  check(LG.Courts.meta('').accent == null,
+    'CLASSIC keeps no accent (no dressing on the procedural pitch)');
+
+  // per-court sideline dressing: deterministic per id, different per court
+  var dr = LG.Arena && LG.Arena.courtDressing;
+  check(typeof dr === 'function', 'arena exports courtDressing for tests', typeof dr);
+  check(dr('').children.length === 0, 'the CLASSIC pitch stays undressed');
+  var sig = function (g) {
+    return g.children.map(function (n) {
+      return n.position.x.toFixed(4) + '/' + n.position.y.toFixed(4) + '/' + n.position.z.toFixed(4);
+    }).join(';');
+  };
+  var a = dr('turf'), b = dr('turf'), c = dr('motherland');
+  check(a.children.length >= 8, 'a custom court gets sideline dressing pieces', a.children.length);
+  check(sig(a) === sig(b), 'dressing is deterministic for the same court id');
+  check(sig(a) !== sig(c), 'different courts get their own dressing signature');
+
+  // offline: the SW ships the new release AND every court artwork
+  var swSrc = fs.readFileSync(path.join(ROOT, 'service-worker.js'), 'utf8');
+  var vm2 = swSrc.match(/blackout-v(\d+)/);
+  var swN = vm2 ? Number(vm2[1]) : 0;
+  check(swN >= 13, 'service worker cache bumped for the Phase 6 release', 'v' + swN);
+  var courtLines = swSrc.split('\n').filter(function (l) { return l.indexOf('./courts/') >= 0; });
+  var missing = [];
+  courtLines.forEach(function (l) {
+    var mm = l.match(/'\.\/courts\/(.+)'\s*,?\s*$/);
+    var f = mm && mm[1].replace(/\\'/g, "'");
+    if (!f || !fs.existsSync(path.join(ROOT, 'courts', f))) missing.push(l.trim());
+  });
+  check(courtLines.length >= 15 && missing.length === 0,
+    'all 15 court artworks are pre-cached for offline play',
+    'entries=' + courtLines.length + ' missing=' + missing.join(','));
+})();
+
 section('2. the menu flow actually advances (one screen, one purpose)');
 var flow = null;
 try {
@@ -439,6 +517,49 @@ try {
     check(hKit != null && aKit != null && hKit !== aKit, 'the two sides are never the same colour',
       hKit && aKit && (hKit.toString(16) + '/' + aKit.toString(16)));
 
+    // Phase 6 — keeper contrast: the shirt stays the kit (asserted above),
+    // but pants + boots keep the keeper's own dark colours so the keeper
+    // reads apart from the outfield at a glance
+    var gkH = vm.home[vm.home.length - 1], gkA = vm.away[vm.away.length - 1];
+    check(!!gkH.isGoalkeeper && !!gkA.isGoalkeeper,
+      'each side still ends with a dedicated goalkeeper');
+    check(gkH.def.palette.pants !== hKit && gkH.def.palette.shoe !== hKit,
+      'home keeper wears contrast pants + boots (shirt only is kit-uniform)',
+      'pants=' + (gkH.def.palette.pants >>> 0).toString(16) +
+      ' shoe=' + (gkH.def.palette.shoe >>> 0).toString(16) +
+      ' kit=' + (hKit >>> 0).toString(16));
+    check(gkA.def.palette.pants !== aKit && gkA.def.palette.shoe !== aKit,
+      'away keeper wears contrast pants + boots (shirt only is kit-uniform)',
+      'pants=' + (gkA.def.palette.pants >>> 0).toString(16) +
+      ' shoe=' + (gkA.def.palette.shoe >>> 0).toString(16) +
+      ' kit=' + (aKit >>> 0).toString(16));
+
+    // Phase 6 — player variety: the roster carries distinct skins + hairs
+    // (tintKit now paints palette.skin onto the split mesh and
+    // palette.hair onto the hair mesh, so squads stop looking identical)
+    var roster = LG.Roster || [];
+    var skins = {}, hairs = {}, noPal = [];
+    roster.forEach(function (d) {
+      if (!d.palette || typeof d.palette.skin !== 'number' || typeof d.palette.hair !== 'number') {
+        noPal.push(d.id);
+      } else { skins[d.palette.skin] = 1; hairs[d.palette.hair] = 1; }
+    });
+    check(noPal.length === 0 && roster.length >= 8,
+      'every roster player declares skin + hair colours',
+      'missing=' + noPal.join(',') + ' roster=' + roster.length);
+    check(Object.keys(skins).length >= 6, 'the roster offers distinct skin tones',
+      Object.keys(skins).length);
+    check(Object.keys(hairs).length >= 6, 'the roster offers distinct hair colours',
+      Object.keys(hairs).length);
+    var allSkins = {}, allHairs = {};
+    vm.all.forEach(function (p) {
+      allSkins[p.def.palette.skin] = 1;
+      allHairs[p.def.palette.hair] = 1;
+    });
+    check(Object.keys(allSkins).length >= 2 && Object.keys(allHairs).length >= 2,
+      'the live squads field more than one skin tone and hair colour',
+      'skins=' + Object.keys(allSkins).length + ' hairs=' + Object.keys(allHairs).length);
+
     // 3) the ball-carrier indicator: 0 with nobody on the ball, exactly 1 with
     //    a carrier, always anchored to that player's WORLD position
     var carriers = [], ci;
@@ -477,6 +598,31 @@ try {
   console.log('  FAIL visibility checks threw  ->  ' + e.message + '\n' + (e.stack || '').split('\n').slice(1, 4).join('\n'));
   FAIL++;
 }
+
+section('3b2. Phase 6 — the street layer stands in the right places');
+(function () {
+  var li = (LG.Living && LG.Living.info) ? LG.Living.info() : null;
+  check(!!li && li.peds > 0 && li.watchers.length >= 8,
+    'walkers + watchers are built', li ? li.peds + ' peds / ' + li.watchers.length + ' watchers' : 'no Living.info()');
+  if (!li) return;
+  check(li.walk === 28, 'pedestrians walk the sidewalk ring, clear of the road', li.walk);
+  check(li.car.rx > 30 && li.car.rx < 36 && li.car.rz > 35 && li.car.rz < 41,
+    'traffic stays inside the road ring lanes', JSON.stringify(li.car));
+  check(li.bike >= 60, 'bikes loop outside the back building rows', li.bike);
+  var onRoad = function (x, z) {
+    return (Math.abs(x) >= 30 && Math.abs(x) <= 36 && Math.abs(z) <= 41) ||
+      (Math.abs(z) >= 35 && Math.abs(z) <= 41 && Math.abs(x) <= 36);
+  };
+  var inCourt = function (x, z) { return Math.abs(x) < 13.5 && Math.abs(z) < 22.5; };
+  var onBleachers = function (x, z) { return Math.abs(x) < 7.6 && Math.abs(z) >= 24 && Math.abs(z) <= 27; };
+  var bad = li.watchers.filter(function (w) {
+    return onRoad(w.x, w.z) || inCourt(w.x, w.z) || onBleachers(w.x, w.z) ||
+      Math.abs(w.x) > 30 || Math.abs(w.z) > 35;
+  });
+  check(bad.length === 0,
+    'every watcher stands on the sidewalk: off the court, off the road, off the bleachers',
+    JSON.stringify(bad));
+})();
 
 section('3c. fullscreen is taken at match start, never mid-tap');
 check(fsCalls === 1, 'starting the match asked for fullscreen once', fsCalls);

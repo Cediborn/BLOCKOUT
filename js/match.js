@@ -263,14 +263,15 @@ LG.MatchManager.prototype = {
         { skin: 0xd99f72, hair: 0x20242c, shirt: 0x2ee65a, trim: 0xffffff, pants: 0x141a12, shoe: 0x171c14 } :
         { skin: 0x8a5a3c, hair: 0x1d2026, shirt: 0xffa62e, trim: 0x2b1500, pants: 0x23201a, shoe: 0x181c22 },
     };
-    // the keeper wears their own side's kit as well (gloves stay the keeper
-    // accent) — a keeper never reads as a member of the other team, and the
-    // high-visibility shirt is what "goalkeeper" is now recognised by
+    // the keeper wears their own side's kit shirt as well (gloves stay the
+    // keeper accent) — a keeper never reads as a member of the other team,
+    // and the high-visibility shirt is what "goalkeeper" is now recognised
+    // by. Pants + boots keep the keeper's own dark contrast colours, so the
+    // keeper is legible against the outfield even when the side's kit is
+    // dark (only the shirt is kit-checked by the uniform assertion).
     var kit = (this.kitColors && this.kitColors[team] != null) ? this.kitColors[team] : null;
     if (kit != null) {
       def.palette.shirt = kit;
-      def.palette.pants = kit;
-      def.palette.shoe = kit;
     }
     var p = new LG.Player(def, team, 3);
     p.isHuman = false;

@@ -228,6 +228,7 @@ LG.RealPlayer = (function () {
         // --- mark the meshes the kit tint owns, then cut the beige mesh's
         // torso out as a jersey panel (see splitShirt)
         var pi, branco = (mbox['Branco'] || [])[0];
+        var marrom = (mbox['Marrom'] || [])[0];
         var preto = mbox['Preto'] || [], gloveL = null;
         for (pi = 0; pi < preto.length; pi++) {
           if (!preto[pi].b) continue;
@@ -237,6 +238,7 @@ LG.RealPlayer = (function () {
         if (helmL && helmL.o) helmL.o.userData.kit = 'helmet';
         if (branco && branco.o) branco.o.userData.kit = 'socks';
         if (gloveL && gloveL.o) gloveL.o.userData.kit = 'gloves';
+        if (marrom && marrom.o) marrom.o.userData.kit = 'hair';
         var splitOk = skinL.o ? splitShirt(skinL.o) : false;
         if (skinL.o && splitOk) {
           skinL.o.userData.kit = 'shirt';
@@ -244,7 +246,7 @@ LG.RealPlayer = (function () {
           // skin colour until tintKit clones index 0 per player)
           if (!Array.isArray(skinL.o.material)) skinL.o.material = [skinL.o.material, skinL.o.material];
         }
-        log('[GLB] kit parts: ' + ['shirt', 'shorts', 'helmet', 'socks', 'gloves'].map(function (key) {
+        log('[GLB] kit parts: ' + ['shirt', 'shorts', 'helmet', 'socks', 'gloves', 'hair'].map(function (key) {
           var hit = '';
           scene.traverse(function (o) { if (!hit && o.userData && o.userData.kit === key) hit = o.name; });
           return key + '=' + (hit || '-');
@@ -379,13 +381,17 @@ LG.RealPlayer = (function () {
   }
 
   // per-player kit colours: materials are shared across clones, so only
-  // the parts that get a team colour are cloned per instance.
+  // the parts that get a team colour are cloned per instance.  Player
+  // variety pass: the split beige mesh also owns skin (index 1) and the
+  // separate hair mesh takes palette.hair, so two players of the same
+  // team can differ in skin/hair, not just kit.
   function tintKit(scene, def) {
     var pal = (def && def.palette) || {};
     var want = {
       shirt: pal.shirt, helmet: pal.shirt,
       shorts: pal.pants, socks: pal.shoe,
-      gloves: def && def.body && def.body.gloves
+      gloves: def && def.body && def.body.gloves,
+      hair: pal.hair
     };
     scene.traverse(function (o) {
       var kit = o.userData && o.userData.kit;
@@ -395,10 +401,14 @@ LG.RealPlayer = (function () {
       try {
         if (kit === 'shirt' && Array.isArray(o.material)) {
           // clones share the master's array object — replace it, then tint
-          // index 0 (the jersey group); index 1 keeps the shared skin
+          // index 0 (the jersey group) and index 1 (this player's skin)
           var arr = o.material.slice();
           arr[0] = arr[0].clone();
           arr[0].color = new THREE.Color(col);
+          if (pal.skin != null && arr.length > 1) {
+            arr[1] = arr[1].clone();
+            arr[1].color = new THREE.Color(pal.skin);
+          }
           o.material = arr;
         } else {
           o.material = (Array.isArray(o.material) ? o.material[0] : o.material).clone();

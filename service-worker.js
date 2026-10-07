@@ -9,7 +9,7 @@
 // every release — that is what makes installed clients pick the new files up.
 // ============================================================
 
-var CACHE_NAME = 'blackout-v12';   // Phase 5 — match-flow polish (pause/resume, full time)
+var CACHE_NAME = 'blackout-v13';   // Phase 6 — content, courts, player variety, world polish
 var ASSETS = [
   './',
   './index.html',
@@ -21,6 +21,21 @@ var ASSETS = [
   './art/posters.jpg',
   './art/stencil.jpg',
   './art/asphalt.jpg',
+  './courts/ANGEL GROUNDS.png',
+  './courts/BALLGADS\'.png',
+  './courts/CARDI.png',
+  './courts/CROW-D.png',
+  './courts/CROW-W.png',
+  './courts/DAEMS LOUNGE.png',
+  './courts/GALAKTIKOS.png',
+  './courts/HEARTSTYLE.png',
+  './courts/LYTE ARENA.png',
+  './courts/MANZIES.png',
+  './courts/MARILYNE.png',
+  './courts/MOTHERLAND.png',
+  './courts/THE RIZIER.png',
+  './courts/TURF.png',
+  './courts/YONALD.png',
   './js/config.js',
   './js/difficulty.js',
   './js/util.js',

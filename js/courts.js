@@ -72,14 +72,28 @@ LG.Courts = (function () {
   //   fit:"cover"      (no distortion, crop sides evenly).
   // NARROW/TALL paintings get fit:"stretch" so their painted goals
   // are not cropped off the sides.
+  //   accent  court-specific highlight colour picked from the artwork
+  //           (sideline dressing: crates, flags) — the arena reads it
+  //           through LG.Courts.meta(id).accent.
   // ------------------------------------------------------------
   var META = {
-    DEFAULT: { paintedGoal: true, fit: 'cover' },
+    DEFAULT: { paintedGoal: true, fit: 'cover', accent: 0x35e0ff },
     _table: {
-      ballgads:   { fit: 'stretch' },
-      daems:      { fit: 'stretch' },
-      galaktikos: { fit: 'stretch' },
-      lyte:       { fit: 'stretch' },
+      ballgads:   { fit: 'stretch', accent: 0xff5a2d },
+      daems:      { fit: 'stretch', accent: 0xc47a30 },
+      galaktikos: { fit: 'stretch', accent: 0x62ff8a },
+      lyte:       { fit: 'stretch', accent: 0x88ddff },
+      angel:      { accent: 0xffd23f },
+      cardi:      { accent: 0xff4d5e },
+      'crow-d':   { accent: 0x35e0ff },
+      'crow-w':   { accent: 0x9adfff },
+      heartstyle: { accent: 0xff6fb5 },
+      manzies:    { accent: 0xff9c1a },
+      marilyne:   { accent: 0xff8ac2 },
+      motherland: { accent: 0x2ee65a },
+      rizier:     { accent: 0xb8312f },
+      turf:       { accent: 0x7ad06a },
+      yonald:     { accent: 0x2f7fd4 },
     },
   };
 
