@@ -74,8 +74,10 @@ LG.Input = (function () {
     if (!k) return;
     // menus/transitions: keys fall through to native behavior (Tab, Space and
     // the arrows keep driving focus/buttons on the results screen) — except
-    // REMATCH, which is read on the results screen and is harmless elsewhere
-    if (!enabled && k !== 'rematch') return;
+    // REMATCH (read on the results screen) and PAUSE (read on the pause
+    // screen, so P/ESC also RESUMES — both are harmless elsewhere; neither is
+    // buffered, so a press that nobody reads dies with the frame)
+    if (!enabled && k !== 'rematch' && k !== 'pause') return;
     if (e.code === 'Tab' || e.code === 'Space' || k === 'up' || k === 'down' || k === 'left' || k === 'right') {
       e.preventDefault();
     }

@@ -722,6 +722,65 @@ section('6. rematch + return to menu keep the session choices (no re-config)');
   check(window.LGMain.getState() === 'match', 'the full flow starts a second match', window.LGMain.getState());
 })();
 
+section('6b. keyboard pause <-> resume, then the full-time whistle announces');
+(function () {
+  var mk = window.LGMain.getMatch();
+  check(!!mk && window.LGMain.getState() === 'match', 'a live match runs before the pause probe',
+    window.LGMain.getState());
+  var careerBefore = LG.Progression.career().matches;
+
+  // PAUSE through the real event — the handler disables the input layer
+  var err = null;
+  try { LG.eventBus.emit('pauseRequested'); } catch (e) { err = e; }
+  check(!err, 'pauseRequested runs clean', err && err.message);
+  check(window.LGMain.getState() === 'paused', 'the game enters the paused state', window.LGMain.getState());
+  check(vis('pause-overlay'), 'the pause overlay shows');
+
+  // gameplay keys must stay dead while paused (a held sprint cannot survive)
+  window.fire('keydown', { code: 'KeyW', preventDefault: function () {} });
+  pump(1);
+  check(!LG.Input.down('sprint'), 'gameplay keys stay blocked while paused',
+    'sprint=' + LG.Input.down('sprint'));
+  check(window.LGMain.getState() === 'paused', 'a stray key does not resume the game');
+  window.fire('keyup', { code: 'KeyW', preventDefault: function () {} });
+
+  // P must read from the DISABLED screen — this was the bug: without it the
+  // pause was a mouse-only trap
+  window.fire('keydown', { code: 'KeyP', preventDefault: function () {} });
+  pump(1);
+  check(window.LGMain.getState() === 'match', 'the next frame resumes the match (P on the pause screen)',
+    window.LGMain.getState());
+  check(!vis('pause-overlay'), 'the pause overlay hides on resume');
+  window.fire('keyup', { code: 'KeyP', preventDefault: function () {} });
+
+  // FULL TIME — the whistle straight through the real loop, announced once
+  var bannerLog = [];
+  var origBanner = LG.HUD.banner;
+  LG.HUD.banner = function (t, c, d) { bannerLog.push(String(t)); return origBanner.apply(this, arguments); };
+  var ftErr = null;
+  try {
+    mk.state = 'PLAY';
+    mk.clock = 0;
+    pump(2);
+  } catch (e) { ftErr = e; }
+  LG.HUD.banner = origBanner;
+  check(!ftErr, 'the full-time frame runs clean', ftErr && (ftErr.message + ' @ ' + (ftErr.stack || '').split('\n')[1]));
+  check(window.LGMain.getState() === 'result', 'the whistle lands on the results screen', window.LGMain.getState());
+  check(bannerLog.indexOf('FULL TIME') >= 0, 'FULL TIME is announced before the board', JSON.stringify(bannerLog));
+  check(mk._finalized, 'the result is finalized exactly once');
+  check(LG.Progression.career().matches === careerBefore + 1, 'exactly one more match reaches the profile',
+    LG.Progression.career().matches);
+
+  // hand the next section a FRESH live match — the real results-screen
+  // REMATCH path (section 7's endMatch probe needs an unfinalized match)
+  var fresh = null, rErr = null;
+  try { LG.eventBus.emit('rematchRequested'); fresh = window.LGMain.getMatch(); } catch (e) { rErr = e; }
+  check(!rErr && !!fresh && fresh !== mk && fresh._finalized === false &&
+    window.LGMain.getState() === 'match',
+    'REMATCH from the results screen starts a fresh live match',
+    rErr ? rErr.message : (window.LGMain.getState() + ' finalized=' + (fresh && fresh._finalized)));
+})();
+
 section('7. progression foundation (career, history, rewards, once-only finalize)');
 (function () {
   var P = LG.Progression;

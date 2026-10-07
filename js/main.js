@@ -765,6 +765,10 @@
       LG.Input.reset();
       LG.Audio.crowdStop();
       LG.HUD.setModeChip('');
+      // PHASE 5.1 — a deliberate ending: one full-time banner over the final
+      // whistle before the board slides in. (Quit paths never get here — the
+      // quitting guard above owns them.)
+      LG.HUD.banner('FULL TIME', r.won === 1 ? 'team1' : r.won === -1 ? 'team2' : '', 1600);
       var endedMatch = match;
       setTimeout(function () {
         if (match !== endedMatch) return; // match was replaced (rematch/quit) while waiting
@@ -1916,6 +1920,13 @@
       LG.Particles.update(dt);
       arenaObj.update(dt);
       if (LG.Living) LG.Living.update(dt);
+    } else if (UIState === 'paused' || (UIState === 'how' && howFromPause)) {
+      // PHASE 5.1 — hold the match camera EXACTLY where it was. Writing the
+      // menu's overhead pose here used to make RESUME snap back to the follow
+      // camera; a frozen pose means pause → resume is seamless. P/ESC also
+      // resumes (the buttons do the same) — the press is edge-read, so one
+      // key = one toggle.
+      if (UIState === 'paused' && LG.Input.pressed('pause')) LG.eventBus.emit('resumeRequested');
     } else {
       // R on the results screen = rematch (the button does the same thing)
       if (UIState === 'result' && LG.Input.pressed('rematch')) LG.eventBus.emit('rematchRequested');

@@ -585,15 +585,19 @@ LG.MatchManager.prototype = {
     h.want.sprint = inp.down('sprint');
 
     if (inp.pressed('pause')) this.bus.emit('pauseRequested');
-    if (inp.pressed('special') && h.meterFull) {
-      h.activateAbility();
-    }
 
     if (this.state !== 'PLAY') {
       h.want.x = h.want.z = 0; h.want.sprint = false;
       // a charge interrupted by a goal/whistle must not misfire on resume
       h.shotCharge = 0; h.wasShooting = false;
+      // PHASE 5.1 — no ability pop during kickoff/goal freezes either: the
+      // press is buffered (special is a BUF_ACTION), so a tap right as play
+      // resumes still lands, and one during the celebration simply expires
       return;
+    }
+
+    if (inp.pressed('special') && h.meterFull) {
+      h.activateAbility();
     }
 
     // CONTEXT-SENSITIVE CONTROLS — one control does both jobs depending on who
@@ -1736,6 +1740,10 @@ LG.MatchManager.prototype = {
     var carrier = this.ownerPlayer();
     var goalEnemy = this.enemyGoal(0);    // home = team 0
     var goalMine = this.myGoal(0);
+    // PHASE 5.3 — decide with the SAME possession read the controls use
+    // (currentPossessionTeam): possessionTeam alone reads -1 for a whole
+    // opponent pass in flight and would score that defender as "loose ball".
+    var posTeam = this.currentPossessionTeam();
     var best = null, bscore = -1e9;
     var i;
 
@@ -1748,15 +1756,23 @@ LG.MatchManager.prototype = {
       // path is a more useful pick than a slow one standing beside the ball
       var pace = Math.max(1, p.maxSpeed * (p.stamina > 0.15 ? 1 : 0.85));
       var tReach = dBall / pace;
+      // PHASE 5.3 — facing: a teammate already LOOKING at the danger is worth
+      // a nudge (turning around costs the switch its edge); never a penalty,
+      // so a sprinting player mid-turn is not unfairly skipped.
+      var dangerX = (carrier && carrier.team === 1) ? carrier.x : ball.x;
+      var dangerZ = (carrier && carrier.team === 1) ? carrier.z : ball.z;
+      var fdx = dangerX - p.x, fdz = dangerZ - p.z;
+      if (posTeam !== 1) { fdx = ball.x - p.x; fdz = ball.z - p.z; }
+      var fl = Math.sqrt(fdx * fdx + fdz * fdz) || 1;
+      var face = (Math.sin(p.facing) * fdx + Math.cos(p.facing) * fdz) / fl;  // -1..1
+      sc += 0.25 * Math.max(0, face);
 
-      if (this.possessionTeam === 1) {
+      if (posTeam === 1) {
         // DEFENDING: get on the threat — soonest to the carrier/ball wins,
         // lightly biased goalside so we don't abandon the goal line.
-        var dangerX = (carrier && carrier.team === 1) ? carrier.x : ball.x;
-        var dangerZ = (carrier && carrier.team === 1) ? carrier.z : ball.z;
-        sc = -(p.distTo(dangerX, dangerZ) / pace) * 1.8;
+        sc -= (p.distTo(dangerX, dangerZ) / pace) * 1.8;
         sc -= p.distTo(goalMine.x, goalMine.z) * 0.08;
-      } else if (this.possessionTeam === 0) {
+      } else if (posTeam === 0) {
         // ATTACKING: grab the carrier right away, otherwise an open, advanced
         // player already heading toward goal.
         if (p.hasBall) sc += 50;
@@ -1765,7 +1781,7 @@ LG.MatchManager.prototype = {
         sc += (goalEnemy.z > 0 ? p.z : -p.z) * 0.4;  // ahead = better
       } else {
         // LOOSE BALL: whoever can actually get there first is the pick.
-        sc = -tReach * 4;
+        sc -= tReach * 4;
       }
 
       if (sc > bscore) { bscore = sc; best = p; }
@@ -1782,8 +1798,6 @@ LG.MatchManager.prototype = {
     }
     this.activatePlayer(best, false);
   },
-
-  showToastInit: function (el) { /* hud owns toasts */ },
 
   // ------------------------------------------------------------
   selectActive: function () {

@@ -123,21 +123,26 @@ LG.HUD = (function () {
   }
 
   // special meter button
+  // PHASE 5.1 — updateSpecial runs every frame of a match: remember what the
+  // DOM was last told and only touch it when the value actually moves (the
+  // ready/active class toggles are free — they never change if unchanged).
+  var spLast = { name: null, fill: -1, border: null };
   function updateSpecial(activePlayer) {
     if (!activePlayer) return;
     var def = LG.Abilities[activePlayer.def.ability];
-    specialName.textContent = def.name;
+    if (spLast.name !== def.name) { spLast.name = def.name; specialName.textContent = def.name; }
     specialBtn.classList.toggle('ready', activePlayer.meterFull && !activePlayer.active);
     specialBtn.classList.toggle('active', !!activePlayer.active);
-    specialFill.style.height = Math.round(activePlayer.meter * 100) + '%';
-    specialBtn.style.borderColor = 'rgba(255,255,255,0.35)';
-    if (activePlayer.active) {
-      specialBtn.style.borderColor = '#' + new THREE.Color(activePlayer.activeColor).getHexString();
-    }
+    var fill = Math.round(activePlayer.meter * 100);
+    if (fill !== spLast.fill) { spLast.fill = fill; specialFill.style.height = fill + '%'; }
+    var border = activePlayer.active
+      ? '#' + new THREE.Color(activePlayer.activeColor).getHexString()
+      : 'rgba(255,255,255,0.35)';
+    if (border !== spLast.border) { spLast.border = border; specialBtn.style.borderColor = border; }
   }
 
   function showSpecialName(abilityName) {
-    if (specialName) specialName.textContent = abilityName;
+    if (specialName) { spLast.name = abilityName; specialName.textContent = abilityName; }
   }
 
   function banner(text, cls, dur) {

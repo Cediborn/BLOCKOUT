@@ -650,6 +650,50 @@ section('4.3 AI shape — no scrum around the ball, possession keeps flowing');
 })();
 
 // ============================================================
+// PHASE 5 — the pause gate: P/ESC must read from the paused screen (which
+// runs with input disabled) or the match is unresumable without the mouse,
+// while gameplay keys stay blocked and the press is never buffered.
+section('4.5 pause key — menu gate lets P/ESC through, gameplay stays locked');
+(function () {
+  var t = { t: 9000 };
+  assert(LG.Input.keyMap('KeyP') === 'pause' && LG.Input.keyMap('Escape') === 'pause',
+    'both P and ESC map to pause', LG.Input.keyMap('KeyP') + '/' + LG.Input.keyMap('Escape'));
+
+  // input disabled = the pause screen; a P press must still land
+  LG.Input.reset(); LG.Input.setEnabled(false); LG.Input.update(t.t += DT);
+  key('keydown', 'KeyP');
+  LG.Input.update(t.t += DT);
+  var sawPause = LG.Input.pressed('pause');
+  key('keyup', 'KeyP');
+  assert(sawPause, 'P reads as PAUSE while input is disabled (resume path)', 'pause=' + sawPause);
+
+  // gameplay keys stay gated in the same state
+  LG.Input.update(t.t += DT);
+  key('keydown', 'KeyW');
+  key('keydown', 'Space');
+  LG.Input.update(t.t += DT);
+  var sawGameplay = LG.Input.down('sprint') || LG.Input.pressed('pass') || LG.Input.pressed('shoot');
+  key('keyup', 'KeyW');
+  key('keyup', 'Space');
+  assert(!sawGameplay, 'gameplay keys stay blocked while paused', 'saw=' + sawGameplay);
+
+  // one-shot: the edge dies with its frame — nothing is buffered for resume
+  key('keydown', 'KeyP');
+  LG.Input.update(t.t += DT);
+  LG.Input.pressed('pause');
+  LG.Input.update(t.t += DT);
+  assert(!LG.Input.pressed('pause'), 'the pause press is edge-read, never buffered');
+
+  // after an explicit resume (re-enable), everything behaves as in play
+  LG.Input.reset(); LG.Input.setEnabled(true); LG.Input.update(t.t += DT);
+  key('keydown', 'KeyP');
+  LG.Input.update(t.t += DT);
+  var livePause = LG.Input.pressed('pause');
+  key('keyup', 'KeyP');
+  assert(livePause, 'P still reads as pause during normal play');
+})();
+
+// ============================================================
 console.log('\n== feelprobe: ' + PASS + ' passed, ' + FAIL + ' failed ==');
 process.exit(FAIL ? 1 : 0);
 

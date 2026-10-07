@@ -10,9 +10,9 @@ LG.AIBrain = function (player) {
   this.actionCd = 0;
   this.desire = Math.random() * 0.3;     // personality: how eager to shoot
   this.dribbleT = Math.random() * 0.8;
-  this.diff = null;                      // this side's difficulty profile
   this.reactT = 0;                       // how long until they read the turnover
   this._lastPoss = null;
+  this._holdSprint = false;              // pacing: release the tank before it empties
 };
 
 LG.AIBrain.prototype = {
@@ -120,7 +120,14 @@ LG.AIBrain.prototype = {
       var tSp = ball.speed();
       sprint = sprint || (tSp > 12 && Math.random() < 0.7);
     }
-    me.want.sprint = sprint;
+    // PHASE 5.4 — AI stamina pacing: releasing SPRINT below 0.15 and only
+    // picking it back up above 0.55 means the tank recovers at the FULL rate
+    // (holding it forever, as the AI used to, halves recovery and leaves the
+    // side jogging through the middle of the match). Hysteresis, so it never
+    // flickers on the threshold; same stamina rules as the human, no cheats.
+    if (me.stamina <= 0.15) this._holdSprint = true;
+    else if (me.stamina >= 0.55) this._holdSprint = false;
+    me.want.sprint = sprint && !this._holdSprint;
   },
 
   // Pull `target` away from teammates (and a free ball) so the side keeps

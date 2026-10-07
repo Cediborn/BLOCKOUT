@@ -2027,6 +2027,142 @@ section('17. game modes + tournament (pure, once-only, no RNG)');
 })();
 
 // ============================================================
+// PHASE 5 — the match LIFECYCLE end to end: kickoff, clock, goal, restart,
+// full time, rematch. Everything runs through the real update() loop; the
+// forced goals park the ball in the net deterministically (no RNG touched).
+section('18. match lifecycle — kickoff, goal, restart, full time (no halftime)');
+(function () {
+  var KNOWN = { IDLE: 1, KICKOFF: 1, PLAY: 1, GOAL: 1, END: 1 };
+  var seen = {};
+  function watch(m) { seen[m.state] = 1; }
+
+  var m = newMatch('blaze');
+  var ends = 0;
+  m.bus.on('matchEnd', function () { ends++; });
+  m.start();
+  var t = { t: 0 };
+  var i;
+
+  // ---- kickoff bookkeeping
+  watch(m);
+  assert(m.state === 'KICKOFF', 'a match opens on the kickoff state', m.state);
+  assert(m.clock === 120, 'the clock opens at exactly 2:00', m.clock);
+  assert(m.score[0] === 0 && m.score[1] === 0, 'the score opens 0-0');
+  assert(m.ball.x === 0 && m.ball.z === 0, 'the ball opens on the centre spot');
+  assert(m.possessionTeam === -1 && !m.ownerPlayer(), 'nobody owns the ball at kickoff');
+  for (i = 0; i < 40; i++) { step(m, 1 / 60, t); watch(m); }
+  assert(m.clock === 120, 'the clock waits for the whistle (kickoff does not burn time)', m.clock);
+  assert(m.state === 'KICKOFF', 'the kickoff freeze holds for its delay', m.state);
+  for (i = 0; i < 120 && m.state === 'KICKOFF'; i++) { step(m, 1 / 60, t); watch(m); }
+  assert(m.state === 'PLAY', 'kickoff ends and normal play begins', m.state);
+  var c0 = m.clock;
+  step(m, 1 / 60, t); watch(m);
+  assert(m.clock < c0 && m.clock >= c0 - 0.06, 'the clock ticks down during play', m.clock);
+
+  // ---- a forced goal: ball parked over the line, whole segment judged
+  var goals = 0;
+  m.bus.on('goal', function () { goals++; });
+  m.all.forEach(function (p) { p.hasBall = false; });
+  m.ball.owner = null;
+  m.ball.reset(0, -(LG.Config.court.length / 2) - 0.3);
+  step(m, 1 / 60, t); watch(m);
+  assert(m.state === 'GOAL', 'a ball over the line triggers the goal state', m.state);
+  assert(m.score[0] === 1 && m.score[1] === 0, 'the score updates to 1-0', m.score.join('-'));
+  assert(goals === 1, 'exactly one goal event fires', goals);
+  var cGoal = m.clock;
+  for (i = 0; i < 90; i++) { step(m, 1 / 60, t); watch(m); }   // 1.5s into the celebration
+  assert(m.state === 'GOAL', 'the celebration freeze holds', m.state);
+  assert(m.clock === cGoal, 'the clock holds through the goal celebration', m.clock);
+  assert(goals === 1 && m.score[0] === 1, 'no duplicate goal while frozen', goals + '/' + m.score.join('-'));
+  for (i = 0; i < 300 && m.state === 'GOAL'; i++) { step(m, 1 / 60, t); watch(m); }
+  assert(m.state === 'KICKOFF', 'the celebration ends on a clean kickoff', m.state);
+  assert(m.ball.x === 0 && m.ball.z === 0 && m.possessionTeam === -1,
+    'the restart puts the ball back on the spot with nobody on it');
+  assert(m.score[0] === 1 && m.score[1] === 0, 'the score survives the restart', m.score.join('-'));
+  assert(m.clock === cGoal, 'the clock stays held until play resumes', m.clock);
+  var vSum = 0;
+  m.all.forEach(function (p) { vSum += Math.abs(p.vx) + Math.abs(p.vz); });
+  assert(vSum === 0, 'nobody carries stale velocity into the restart', vSum);
+
+  // ---- full time: play goes STRAIGHT to the whistle (no halfway state)
+  for (i = 0; i < 200 && m.state !== 'PLAY'; i++) { step(m, 1 / 60, t); watch(m); }
+  assert(m.state === 'PLAY', 'the restart plays out', m.state);
+  m.clock = 0.001;
+  step(m, 1 / 60, t); watch(m);
+  assert(m.state === 'END' && m._finalized, 'the whistle goes directly from play to full time', m.state);
+  assert(ends === 1, 'matchEnd fires exactly once', ends);
+  var bad = Object.keys(seen).filter(function (s) { return !KNOWN[s]; });
+  assert(bad.length === 0, 'no halftime or unknown state ever appears', bad.join(','));
+
+  // ---- rematch: a brand-new manager with a clean slate
+  var m2 = newMatch('blaze');
+  m2.start();
+  assert(m2.score[0] === 0 && m2.score[1] === 0, 'a rematch opens 0-0, not last match\'s score', m2.score.join('-'));
+  assert(m2.clock === 120, 'a rematch opens at 2:00', m2.clock);
+  assert(m2.state === 'KICKOFF', 'a rematch opens on kickoff', m2.state);
+  assert(m2._finalized === false, 'a rematch is not born finalized');
+
+  // ---- goal AT the expiry whistle: the celebration plays, then full time
+  var m3 = newMatch('blaze');
+  m3.start();
+  var t3 = { t: 0 };
+  for (i = 0; i < 300 && m3.state !== 'PLAY'; i++) { step(m3, 1 / 60, t3); watch(m3); }
+  assert(m3.state === 'PLAY', 'the third match reaches play', m3.state);
+  m3.clock = 0.05;
+  m3.all.forEach(function (p) { p.hasBall = false; });
+  m3.ball.owner = null;
+  m3.ball.reset(0, -(LG.Config.court.length / 2) - 0.3);
+  step(m3, 1 / 60, t3); watch(m3);
+  assert(m3.state === 'GOAL' && m3.score[0] === 1, 'a last-second ball still counts', m3.state + ' ' + m3.score.join('-'));
+  assert(m3.clock > 0 && m3.clock <= 0.05, 'the clock freezes for the final celebration', m3.clock);
+  for (i = 0; i < 700 && m3.state !== 'END'; i++) { step(m3, 1 / 60, t3); watch(m3); }
+  assert(m3.state === 'END' && m3._finalized, 'after the celebration, full time follows', m3.state);
+  assert(m3.score[0] === 1 && m3.score[1] === 0, 'the last-second goal is not lost at full time', m3.score.join('-'));
+  bad = Object.keys(seen).filter(function (s) { return !KNOWN[s]; });
+  assert(bad.length === 0, 'still only real match states at the death', bad.join(','));
+})();
+
+// ============================================================
+// PHASE 5.3 — switching agrees with the controls' possession read, and facing
+// breaks a tie between two otherwise-equal defenders.
+section('19. switching — shared possession read + facing tie-break');
+(function () {
+  var m = newMatch();
+  m.start();
+  m.state = 'PLAY';
+  var outfield = m.home.filter(function (p) { return !p.isGoalkeeper; });
+  m.all.forEach(function (p) { place(p, 40, 40); });
+  var carrier = m.away.filter(function (p) { return !p.isGoalkeeper; })[0];
+  place(carrier, 0, -14, Math.PI);
+  giveBall(m, carrier);
+
+  // 1) an opponent PASS IN FLIGHT: release clears possessionTeam to -1, but
+  //    the last kicker keeps the controls' read on team 1 — switchPlayer
+  //    must see the same world the buttons see
+  m.release(carrier);
+  m.ball.owner = null;
+  m.possessionTeam = -1;
+  m.ball.lastKicker = carrier;
+  assert(m.currentPossessionTeam() === 1,
+    'an enemy pass in flight still reads as defending', m.currentPossessionTeam());
+
+  // 2) two equidistant defenders with identical pace: only FACING differs
+  place(outfield[1], -3, -14, Math.PI / 2);   // squared up to the danger
+  place(outfield[2], 3, -14, Math.PI / 2);    // same distance, back turned
+  place(outfield[0], 0, 16, 0);               // nowhere near the play
+  outfield[0].maxSpeed = outfield[1].maxSpeed = outfield[2].maxSpeed = 7;
+  m.active = outfield[0];
+  m.selectActive();
+  m.switchPlayer();
+  assert(m.active === outfield[1],
+    'between two equals, the defender already facing the danger wins', m.active.name);
+  var humans = m.home.filter(function (p) { return p.isHuman; });
+  assert(humans.length === 1 && humans[0] === m.active,
+    'exactly one player is ever human-controlled', humans.length + ' humans');
+  assert(!m.active.isGoalkeeper, 'a manual switch never lands on the keeper');
+})();
+
+// ============================================================
 console.log('\n---------------------------------------------');
 console.log(PASS + ' passed, ' + FAIL + ' failed');
 console.log('---------------------------------------------');
