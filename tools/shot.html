@@ -171,6 +171,86 @@
     }, 1600);
   }
 
+  // ?react=1 — Phase 8: fire a spread of reactions through the REAL
+  // LG.Reactions API over live play and hold them long enough to film.
+  // Keepers + the slowest outfielders are chosen so the mobile-abort rule
+  // (live movement outranks a weak reaction) does not undercut the frame;
+  // anything honestly rejected (kickAnim / cooldown / priority) is logged.
+  // A late REACTTEST released report proves the hand-back returns every
+  // channel to its pre-reaction value instead of sticking.
+  function reactProbe(done) {
+    var LGw = f.contentWindow, LG = LGw && LGw.LG;
+    var m = LG && LG.Match;
+    if (!m || !LG.Reactions) { console.log('REACTTEST no match/module'); done(); return; }
+    var tries = 0;
+    (function waitPlay() {
+      if (m.state !== 'PLAY') {
+        if (++tries > 500) { console.log('REACTTEST never reached PLAY (state=' + m.state + ')'); done(); return; }
+        setTimeout(waitPlay, 40);
+        return;
+      }
+      fire();
+    })();
+
+    function sp(p) { return Math.sqrt((p.vx || 0) * (p.vx || 0) + (p.vz || 0) * (p.vz || 0)); }
+
+    function report(tag) {
+      var lines = ['REACTTEST ' + tag + ' state=' + m.state];
+      var teams = [m.home, m.away];
+      for (var t = 0; t < teams.length; t++) {
+        var arr = teams[t] || [];
+        for (var i = 0; i < arr.length; i++) {
+          var p = arr[i];
+          if (!p || !p._rx) continue;
+          var L = p.model && p.model.limbs, b = p.model && p.model.body;
+          lines.push('REACTTEST   ' + (t ? 'A' : 'H') + i + ' kind=' + p._rx.kind +
+            ' t=' + p._rx.t.toFixed(2) + '/' + p._rx.dur.toFixed(2) +
+            ' armLx=' + (L && L.armL ? L.armL.rotation.x.toFixed(2) : '-') +
+            ' armRx=' + (L && L.armR ? L.armR.rotation.x.toFixed(2) : '-') +
+            ' legLx=' + (L && L.legL ? L.legL.rotation.x.toFixed(2) : '-') +
+            ' pitch=' + (b ? b.rotation.x.toFixed(2) : '-') +
+            ' sp=' + sp(p).toFixed(2));
+        }
+      }
+      lines.forEach(function (ln) { console.log(ln); });
+    }
+
+    function slowest(arr) {
+      return (arr || []).slice()
+        .filter(function (p) { return p && !p.isGoalkeeper; })
+        .sort(function (a, b) { return sp(a) - sp(b); });
+    }
+
+    function fire() {
+      var log = [];
+      function put(kind, p, opts) {
+        if (!p) return;
+        var ok = LG.Reactions.start(p, kind, opts || {});
+        log.push((ok ? '' : 'REJ-') + kind);
+      }
+      var hgk = (m.home || []).filter(function (p) { return p && p.isGoalkeeper; })[0];
+      var agk = (m.away || []).filter(function (p) { return p && p.isGoalkeeper; })[0];
+      var hs = slowest(m.home), as = slowest(m.away);
+      // movement-immune beats (pri >= 50) on the busiest bodies
+      put('save', hgk, { data: { parry: false }, dur: 4 });
+      put('save', agk, { data: { parry: true }, dur: 4 });
+      put('tackle', hs[0], { dur: 4 });
+      put('hit', hs[1], { dur: 4 });
+      put('hit', as[0], { dur: 4 });
+      put('tackle', as[1], { dur: 4 });
+      // weak beats on the stillest players — may honestly abort later
+      put('fatigue', hs[2], { dur: 4 });
+      put('miss', hs[3], { data: { close: true }, dur: 4 });
+      put('matchEnd', as[2], { data: { side: 'lose', gk: false }, dur: 4 });
+      console.log('REACTTEST fired ' + log.join(' '));
+      setTimeout(function () {
+        report('held');
+        done();
+        setTimeout(function () { report('released'); }, 4400);
+      }, 800);
+    }
+  }
+
   // ?goal=1 — let the squads run, then park the ball in the away net so a
   // real goal fires (same checkGoal path the game uses), and sample the
   // whole GOAL window: frozen players must not keep running in place.
@@ -1279,6 +1359,13 @@
                       // goalProbe to park us inside the GOAL window
                       stage('goalprobe');
                       goalProbe(function () { stage('done'); });
+                      return;
+                    }
+                    if (q.react) {
+                      // off 'match' too: the driver must wait for the
+                      // reaction bank to be up on live players
+                      stage('reactprobe');
+                      reactProbe(function () { stage('done'); });
                       return;
                     }
                   }

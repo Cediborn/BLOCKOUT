@@ -36,6 +36,7 @@ LG.MatchManager = function (opts) {
   this._assist = null;        // last same-team pass: { src, target, t }
   this._playTime = 0;         // seconds of real PLAY, for career playTime
   if (LG.Celebration && LG.Celebration.bind) LG.Celebration.bind();
+  if (LG.Reactions && LG.Reactions.attach) LG.Reactions.attach(this);
 
   this.buildRosters();
   this.sceneHooks = {};
@@ -513,6 +514,11 @@ LG.MatchManager.prototype = {
     this.t = (this.t || 0) + dt;
     // last: the marker reflects possession as it stands AFTER this frame
     this.updateCarrierMark();
+    // Phase 8 — the reaction layer poses last, so its write lands after
+    // every mixer update of this frame (the celebration's GOAL contract,
+    // extended to live play). GOAL itself is celebration-owned: update()
+    // stands down there.
+    if (LG.Reactions) LG.Reactions.update(this, dt);
   },
 
   ticks: function (dt) {

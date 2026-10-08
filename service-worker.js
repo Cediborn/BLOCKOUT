@@ -9,7 +9,7 @@
 // every release — that is what makes installed clients pick the new files up.
 // ============================================================
 
-var CACHE_NAME = 'blackout-v14';   // Phase 7 — presentation + audio
+var CACHE_NAME = 'blackout-v15';   // Phase 8 — advanced reactions + animation
 var ASSETS = [
   './',
   './index.html',
@@ -63,6 +63,7 @@ var ASSETS = [
   './js/match.js',
   './js/celebration.js',
   './js/goal-cinematic.js',
+  './js/reactions.js',
   './js/crowd.js',
   './js/hud.js',
   './js/main.js',

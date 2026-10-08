@@ -57,6 +57,9 @@
 //           rainbow bands by bind-pose height: maps y-range -> body part
 //   node tools/shot.js --scale --hidemat Begue --out under.png
 //           hide one GLB material: shows what the layer underneath is
+//   node tools/shot.js --reacttest --settle 1600
+//           Phase 8: fire a spread of reactions through the real API over
+//           live play, hold them for the capture, log every moved channel
 // ============================================================
 var fs = require('fs');
 var path = require('path');
@@ -98,6 +101,7 @@ var PAIRZ = arg('pairz', '');
 var GKPAIR = !!args.includes('--gk');
 var FACE = arg('face', '');
 var GOAL = !!args.includes('--goal');
+var REACT = !!args.includes('--reacttest');
 var CROWD = !!args.includes('--crowd');
 var PARTS = !!args.includes('--parts');
 var BANDS = !!args.includes('--bands');
@@ -285,7 +289,7 @@ async function attempt(n, maxTries, url) {
       if (m.method === 'Runtime.consoleAPICalled') {
         var txt = (m.params.args || []).map(argValue).join(' ');
         log('[console] ' + txt);
-        if (/^STAGE:/.test(txt) || /^STEP/.test(txt) || /^\[?(GLB|RIG)|^\[START\]|^\[CROWD\]|^MATCHDIAG|^GOALFORCE|^GOALSNAP|^CROWDEVT|^CIN|^CROWD|^RIGTEST|^RIGPROBE|^SCALE|^PARTS|^BANDS|^HIDEMAT/.test(txt) || /^SCENE|^RAY|^SWEEP|^TEX|^FIND|^HIDE|^CAM|^HITS/.test(txt)) {
+        if (/^STAGE:/.test(txt) || /^STEP/.test(txt) || /^\[?(GLB|RIG)|^\[START\]|^\[CROWD\]|^MATCHDIAG|^GOALFORCE|^GOALSNAP|^CROWDEVT|^CIN|^CROWD|^RIGTEST|^RIGPROBE|^REACTTEST|^SCALE|^PARTS|^BANDS|^HIDEMAT/.test(txt) || /^SCENE|^RAY|^SWEEP|^TEX|^FIND|^HIDE|^CAM|^HITS/.test(txt)) {
           console.log(txt);
           var st = /^STAGE:(.*)$/.exec(txt);
           if (st) stages.push(st[1]);
@@ -389,6 +393,7 @@ server.listen(0, '127.0.0.1', async function () {
     (GKPAIR ? '&gk=1' : '') +
     (FACE !== '' ? '&face=' + encodeURIComponent(FACE) : '') +
     (GOAL ? '&goal=1' : '') +
+    (REACT ? '&react=1' : '') +
     (CROWD ? '&crowd=1' : '') +
     (PARTS ? '&parts=1' : '') +
     (BANDS ? '&bands=1' : '') +

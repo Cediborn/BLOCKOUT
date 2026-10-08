@@ -150,6 +150,9 @@ LG.Ball.prototype = {
             this.vz -= 2 * vndot * nz;
             LG.Audio.sfx.post();
             LG.Particles.burst(p.x, 0.6, p.z, 0xfff3c0, 8, 3, 3);
+            // Phase 8: woodwork = a near-miss the reaction layer can play.
+            // No RNG, no gameplay — just a signal on the shared bus.
+            if (LG.eventBus && LG.eventBus.emit) LG.eventBus.emit('postHit', { x: p.x, z: p.z });
           }
         }
       }
