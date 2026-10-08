@@ -702,12 +702,17 @@
     bus.on('matchStart', function () {
       LG.HUD.reset(match);
       refreshModeChip();
+      // short match-start beat: the board already shows both teams, this card
+      // holds the freeze — READY, whistle, then the ball goes live
+      LG.Audio.sfx.ready();
+      LG.HUD.banner('READY', '', 900);
     });
     bus.on('clock', function (e) { LG.HUD.setClock(e.t); });
 
     bus.on('goal', function (g) {
       var mine = g.team === 0;
-      LG.HUD.banner(mine ? 'GOAL!' : 'CONCEDED', mine ? 'team1' : 'team2', 1800);
+      var who = g.scorer && g.scorer.name ? String(g.scorer.name).toUpperCase() : '';
+      LG.HUD.banner(mine ? (who ? who + ' SCORES!' : 'GOAL!') : 'CONCEDED', mine ? 'team1' : 'team2', 1800);
       LG.HUD.flash(mine ? 'rgba(236,225,200,0.32)' : 'rgba(193,74,53,0.38)', 300);
       LG.HUD.setScore(g.score[0], g.score[1]);
       if (mine) camCtrl.pulse(0.5);
@@ -718,9 +723,9 @@
     if (LG.GoalCinematic) LG.GoalCinematic.bind(function () { return match; });
 
     bus.on('state', function (s) {
-      if (s.state === 'KICKOFF') {
-        LG.HUD.toast('KICKOFF', 900);
-      }
+      // say KICKOFF the moment the ball is live — during the freeze itself
+      // the READY card (match start) or the GOAL banner already holds the screen
+      if (s.state === 'PLAY') LG.HUD.toast('KICKOFF', 800);
     });
 
     bus.on('abilityReady', function (p) {
@@ -1500,8 +1505,7 @@
 
     showMatchUI(true);
 
-    LG.HUD.reset(match);
-    refreshModeChip();
+    // HUD.reset + mode chip ride the matchStart event below — one reset, not two
     camCtrl.reset();
     camCtrl.pulse(0.6);
     LG.Particles.clear();
@@ -1550,29 +1554,16 @@
     if (on) {
       el.classList.remove('hidden');
       el.classList.remove('leaving');
-      // cancel any leave animation so the panel is fully opaque again
-      var panel = el.querySelector && el.querySelector('.panel');
-      if (panel && panel.getAnimations) {
-        try { panel.getAnimations().forEach(function (a) { a.cancel(); }); } catch (e) {}
-      }
       // force reflow so re-showing the same panel replays paste-in
       if (el.offsetWidth != null) void el.offsetWidth;
     } else {
-      // class flips synchronously (tests + a11y). Exit motion is cosmetic via
-      // the Web Animations API when available — never delays the hide.
+      // class flips synchronously (tests + a11y); the CSS carries the exit —
+      // .overlay.hidden keeps the board laid out so paste-out can play,
+      // then flips visibility. Never delays the hide.
       el.classList.add('leaving');
-      var p = el.querySelector && el.querySelector('.panel');
-      if (p && p.animate) {
-        try {
-          p.animate(
-            [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(6px) scale(0.99)' }],
-            { duration: 180, easing: 'ease', fill: 'forwards' }
-          );
-        } catch (e) {}
-      }
       el.classList.add('hidden');
       clearTimeout(el._hideT);
-      el._hideT = setTimeout(function () { el.classList.remove('leaving'); }, 200);
+      el._hideT = setTimeout(function () { el.classList.remove('leaving'); }, 220);
     }
   }
 

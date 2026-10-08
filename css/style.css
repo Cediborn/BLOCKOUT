@@ -31,6 +31,8 @@
   --hud-line: rgba(230, 217, 180, 0.24);
   --hud-text: var(--offw);
   --btn-size: clamp(52px, 11vmin, 78px);
+  --dur: 140ms;                 /* one speed for every hover / press in the UI */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.3, 1);
 
   --font-display: "Arial Black", "Franklin Gothic Heavy", Impact, "Segoe UI", Arial, sans-serif;
   /* film-grain / concrete dust used on every overlay */
@@ -61,6 +63,13 @@ html, body {
 }
 
 .hidden { display: none !important; }
+
+/* keyboard focus is always visible; mouse clicks stay clean */
+button:focus-visible,
+[role="button"]:focus-visible {
+  outline: 3px solid var(--cyan);
+  outline-offset: 3px;
+}
 
 /* ---------- toast / announcement banners ---------- */
 #announce {
@@ -168,8 +177,8 @@ html, body {
 }
 #pause-btn {
   position: fixed;
-  top: 14px;
-  right: 14px;
+  top: calc(14px + env(safe-area-inset-top, 0px));
+  right: calc(14px + env(safe-area-inset-right, 0px));
   z-index: 30;
   width: 44px; height: 44px;
   border-radius: 4px;
@@ -179,6 +188,7 @@ html, body {
   font-size: 20px;
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(0,0,0,0.45);
+  transition: filter var(--dur) ease, transform var(--dur) ease;
 }
 #pause-btn:active { transform: scale(0.92); }
 
@@ -593,8 +603,16 @@ html, body {
   font-family: var(--font-display);
   color: var(--offw);
   cursor: pointer;
-  transition: border-color 0.12s ease, background 0.12s ease;
+  transition: border-color 0.12s ease, background 0.12s ease, transform var(--dur) var(--ease-out);
 }
+@media (hover: hover) and (pointer: fine) {
+  .mode-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(230, 217, 180, 0.42);
+    background: rgba(20, 20, 19, 0.78);
+  }
+}
+.mode-card:active { transform: translateY(0); }
 .mode-card.selected {
   border-left-color: var(--cyan);
   background: rgba(20, 20, 19, 0.82);
@@ -618,11 +636,12 @@ html, body {
   letter-spacing: 0.14em;
   opacity: 0.6;
 }
-/* focus chip during a match — quiet, top-right away from coins/scoreboard */
+/* focus chip during a match — parked UNDER the pause button (the old
+   top-right spot sat underneath it), still clear of coins/scoreboard */
 #mode-chip {
   position: fixed;
-  top: clamp(8px, 2.2vmin, 18px);
-  right: clamp(8px, 2.2vmin, 18px);
+  top: calc(66px + env(safe-area-inset-top, 0px));
+  right: calc(14px + env(safe-area-inset-right, 0px));
   z-index: 30;
   max-width: min(46vw, 280px);
   padding: 6px 10px;
@@ -851,6 +870,17 @@ html, body {
 .overlay:not(.hidden) .panel { animation: paste-in 0.32s ease both; }
 .overlay.leaving { pointer-events: none; }
 .overlay.leaving .panel { animation: paste-out 0.18s ease both; }
+/* the leave can actually play: hidden keeps the board laid out for the
+   length of paste-out (display:none would cut it dead), then flips
+   visibility. It is click-through and out of the a11y tree the moment the
+   class lands — only the paint lingers for 180ms. */
+.overlay.hidden {
+  display: flex !important;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, visibility 0s linear 0.18s;
+}
 
 /* --- match statistics on the results board --- */
 .match-stats {
@@ -939,6 +969,13 @@ html, body {
   border-top: 2px solid rgba(230, 217, 180, 0.5);
   border-bottom: 2px solid rgba(230, 217, 180, 0.5);
 }
+/* the loading tag breathes while assets stream in — honest, not fake progress */
+#loading-overlay .street-tag { animation: loading-breathe 1.2s ease-in-out infinite; }
+@keyframes loading-breathe { 50% { opacity: 0.45; } }
+body.reduced-motion #loading-overlay .street-tag { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  #loading-overlay .street-tag { animation: none; }
+}
 
 /* ---------- buttons: painted slabs, paper stickers, rust action ---------- */
 .big-btn {
@@ -959,7 +996,7 @@ html, body {
   background: linear-gradient(180deg, #45443f, #2c2c29);
   text-shadow: 0 2px 0 rgba(0,0,0,0.5);
   box-shadow: 0 5px 0 #131312, 0 12px 20px rgba(0,0,0,0.45), inset 0 1px 0 rgba(236, 234, 224, 0.12);
-  transition: transform 0.08s ease, box-shadow 0.08s ease;
+  transition: transform var(--dur) var(--ease-out), box-shadow var(--dur) ease, filter var(--dur) ease;
 }
 .big-btn:active { transform: translateY(4px); box-shadow: 0 1px 0 #131312, 0 4px 10px rgba(0,0,0,0.4); }
 /* primary action: rust-orange paint */
@@ -981,6 +1018,20 @@ html, body {
   min-width: 150px;
 }
 .big-btn.secondary:active { box-shadow: 0 1px 0 #9a9382, 0 4px 10px rgba(0,0,0,0.35); }
+/* hover only where a real pointer lives — thumbs never get sticky hovers */
+@media (hover: hover) and (pointer: fine) {
+  .big-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 7px 0 #131312, 0 16px 24px rgba(0,0,0,0.5), inset 0 1px 0 rgba(236, 234, 224, 0.14);
+  }
+  .big-btn.gold:hover { box-shadow: 0 7px 0 #773a12, 0 16px 24px rgba(0,0,0,0.5); }
+  .big-btn.secondary:hover { box-shadow: 0 7px 0 #9a9382, 0 16px 24px rgba(0,0,0,0.45); }
+  #pause-btn:hover { filter: brightness(1.35); }
+  /* pressing still lands on the board even while hovering */
+  .big-btn:hover:active { transform: translateY(4px); box-shadow: 0 1px 0 #131312, 0 4px 10px rgba(0,0,0,0.4); }
+  .big-btn.gold:hover:active { box-shadow: 0 1px 0 #773a12, 0 4px 10px rgba(0,0,0,0.4); }
+  .big-btn.secondary:hover:active { box-shadow: 0 1px 0 #9a9382, 0 4px 10px rgba(0,0,0,0.35); }
+}
 
 .row-btns { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; }
 /* pre-match navigation: BACK parked left, the rust action parked right —
@@ -1823,8 +1874,13 @@ body.reduced-motion #menu-overlay .menu-rise { animation: none; }
 
 /* reduced motion: real class toggled by Settings + OS preference */
 body.reduced-motion .overlay:not(.hidden) .panel,
+body.reduced-motion .overlay.leaving .panel,
 body.reduced-motion .banner {
   animation: none !important;
+}
+body.reduced-motion .overlay,
+body.reduced-motion .overlay.hidden {
+  transition: none;
 }
 body.reduced-motion #announce .banner {
   transition: none;
@@ -1841,6 +1897,8 @@ body.reduced-motion #special-btn.ready {
 }
 @media (prefers-reduced-motion: reduce) {
   .overlay:not(.hidden) .panel { animation: none; }
+  .overlay.leaving .panel { animation: none; }
+  .overlay, .overlay.hidden { transition: none; }
   #menu-overlay .menu-rise { animation: none; }
   #announce .banner { transition: none; transform: none; }
   .rot-glyph { animation: none; }
@@ -2017,6 +2075,7 @@ body.reduced-motion #now-playing { transition: none; }
   #scoreboard .team .score { font-size: clamp(28px, 6vmin, 44px); }
   #scoreboard .clock { font-size: clamp(24px, 5.5vmin, 38px); min-width: 80px; }
   #pause-btn { width: 52px; height: 52px; font-size: 24px; }
+  #mode-chip { top: calc(74px + env(safe-area-inset-top, 0px)); }
   .big-btn { padding: 18px 40px; font-size: clamp(19px, 4.5vmin, 26px); min-width: 200px; }
   #coin-chip { padding: 8px 16px; font-size: 16px; }
   #special-btn { width: calc(var(--btn-size) + 18px); height: calc(var(--btn-size) + 18px); }

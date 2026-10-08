@@ -162,6 +162,18 @@ LG.Audio = (function () {
     crowdGain.gain.setTargetAtTime(base, t0 + 0.4, 0.32);
   }
 
+  // UI sounds are tiny and can stack fast (hover sweeps, key-repeat clicks):
+  // one per-key gap keeps them from turning into a machine-gun. No RNG —
+  // this only ever reads the clock.
+  var lastAt = {};
+  function gate(key, gapMs) {
+    if (!ctx) return false;
+    var t = ctx.currentTime;
+    if (t - (lastAt[key] || -10) < gapMs / 1000) return false;
+    lastAt[key] = t;
+    return true;
+  }
+
   // ---------- game sounds ----------
   var S = {
     // velocity-aware strike: a soft pass-control touch is a light tap, a
@@ -187,7 +199,13 @@ LG.Audio = (function () {
       blip(1500, longDur || 0.28, 'square', 0.2);
       if (longDur > 0.3) blip(2000, longDur, 'square', 0.12, 0.02);
     },
-    click: function () { blip(700, 0.04, 'square', 0.12); },
+    click: function () { if (gate('c', 30)) blip(700, 0.04, 'square', 0.12); },
+    // menu feedback: a soft tick on hover, a lower tone for BACK navigation,
+    // a two-note dip for pause and a bright pair for the READY card
+    hover: function () { if (gate('h', 70)) blip(1240, 0.03, 'sine', 0.05); },
+    back: function () { if (gate('b', 60)) blip(520, 0.07, 'triangle', 0.11, 0, 330); },
+    pause: function () { if (gate('p', 80)) { blip(520, 0.06, 'triangle', 0.11); blip(392, 0.1, 'triangle', 0.11, 0.07); } },
+    ready: function () { if (gate('r', 120)) { blip(660, 0.07, 'square', 0.12); blip(880, 0.12, 'square', 0.12, 0.08); } },
     save: function () {
       // glove catch: quick scrape + soft thump — clearly not a tackle.
       // No crowdCheer here: crowdCheer samples Math.random() and this path runs
@@ -202,7 +220,7 @@ LG.Audio = (function () {
       crowdCheer(0.85); S.whistle(0.35);
     },
     resultDraw: function () { blip(440, 0.14, 'triangle', 0.14); blip(440, 0.2, 'triangle', 0.12, 0.16); S.whistle(0.4); },
-    resultLose: function () { blip(330, 0.16, 'triangle', 0.14, 0, 280); blip(247, 0.3, 'triangle', 0.12, 0.14, 200); crowd(0.22); },
+    resultLose: function () { blip(330, 0.16, 'triangle', 0.14, 0, 280); blip(247, 0.3, 'triangle', 0.12, 0.14, 200); },
     special: function () {
       blip(300, 0.5, 'sawtooth', 0.2, 0, 1800);
       noiseHit(0.5, 0.3, 900, 0, 'bandpass');
@@ -213,9 +231,11 @@ LG.Audio = (function () {
   };
 
   function unlock() {
+    // gesture gate only: the context starts (and resumes) here. The crowd bed
+    // is deliberately NOT opened — it belongs to the match and is raised by
+    // MatchManager.start(), so the menus stay quiet.
     init(); resume();
     applyVolumes();
-    if (ctx) crowd(0.4);
   }
 
   return {

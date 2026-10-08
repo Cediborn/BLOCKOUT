@@ -34,40 +34,48 @@ LG.HUD = (function () {
   }
 
   function bindButtons() {
+    // pointer hover feedback — one delegated listener covers every control.
+    // Touch is skipped: a tap would double up with the click sound.
+    document.addEventListener('pointerover', function (e) {
+      var t = e && e.target;
+      if (!t || !t.closest || e.pointerType === 'touch') return;
+      var b = t.closest('button, .mode-card, .char-card, .menu-card, .menu-kick, .menu-profile');
+      if (b && !b.disabled) LG.Audio.sfx.hover();
+    }, true);
     // special button handled through Input (shared 'special' edge)
     document.getElementById('btn-rematch').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('rematchRequested'); });
-    document.getElementById('btn-result-menu').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('quitRequested'); });
+    document.getElementById('btn-result-menu').addEventListener('click', function () { LG.Audio.sfx.back(); LG.eventBus.emit('quitRequested'); });
     document.getElementById('btn-resume').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('resumeRequested'); });
-    document.getElementById('btn-quit-menu').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('quitRequested'); });
+    document.getElementById('btn-quit-menu').addEventListener('click', function () { LG.Audio.sfx.back(); LG.eventBus.emit('quitRequested'); });
     document.getElementById('btn-restart').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('rematchRequested'); });
     document.getElementById('btn-pause-how').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('pauseHowRequested'); });
-    document.getElementById('pause-btn').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('pauseRequested'); });
-    document.getElementById('btn-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('menuBackRequested'); });
+    document.getElementById('pause-btn').addEventListener('click', function () { LG.Audio.sfx.pause(); LG.eventBus.emit('pauseRequested'); });
+    document.getElementById('btn-back').addEventListener('click', function () { LG.Audio.sfx.back(); LG.eventBus.emit('menuBackRequested'); });
     document.getElementById('btn-play').addEventListener('click', function () { LG.Audio.unlock(); LG.Audio.sfx.click(); LG.eventBus.emit('playRequested'); });
     document.getElementById('btn-how').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('howRequested'); });
-    document.getElementById('btn-how-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('howBackRequested'); });
+    document.getElementById('btn-how-back').addEventListener('click', function () { LG.Audio.sfx.back(); LG.eventBus.emit('howBackRequested'); });
     document.getElementById('btn-settings').addEventListener('click', function () { LG.Audio.unlock(); LG.Audio.sfx.click(); LG.eventBus.emit('settingsRequested'); });
-    document.getElementById('btn-settings-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('settingsBackRequested'); });
+    document.getElementById('btn-settings-back').addEventListener('click', function () { LG.Audio.sfx.back(); LG.eventBus.emit('settingsBackRequested'); });
     document.getElementById('btn-about').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('aboutRequested'); });
-    document.getElementById('btn-about-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('aboutBackRequested'); });
+    document.getElementById('btn-about-back').addEventListener('click', function () { LG.Audio.sfx.back(); LG.eventBus.emit('aboutBackRequested'); });
     document.getElementById('btn-profile').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('profileRequested'); });
-    document.getElementById('btn-profile-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('profileBackRequested'); });
+    document.getElementById('btn-profile-back').addEventListener('click', function () { LG.Audio.sfx.back(); LG.eventBus.emit('profileBackRequested'); });
     document.getElementById('btn-profile-reset').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('profileResetRequested'); });
     document.getElementById('btn-challenges').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('challengesRequested'); });
-    document.getElementById('btn-challenges-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('challengesBackRequested'); });
+    document.getElementById('btn-challenges-back').addEventListener('click', function () { LG.Audio.sfx.back(); LG.eventBus.emit('challengesBackRequested'); });
     // game mode select
     var modeBack = document.getElementById('btn-mode-back');
-    if (modeBack) modeBack.addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('modeBackRequested'); });
+    if (modeBack) modeBack.addEventListener('click', function () { LG.Audio.sfx.back(); LG.eventBus.emit('modeBackRequested'); });
     var modeGo = document.getElementById('btn-mode-go');
     if (modeGo) modeGo.addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('modeConfirmed'); });
     // challenge match focus pick
     var chPickBack = document.getElementById('btn-challenge-pick-back');
-    if (chPickBack) chPickBack.addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('challengePickBackRequested'); });
+    if (chPickBack) chPickBack.addEventListener('click', function () { LG.Audio.sfx.back(); LG.eventBus.emit('challengePickBackRequested'); });
     var chPickGo = document.getElementById('btn-challenge-pick-go');
     if (chPickGo) chPickGo.addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('challengePickConfirmed'); });
     // tournament
     var tBack = document.getElementById('btn-tournament-back');
-    if (tBack) tBack.addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('tournamentBackRequested'); });
+    if (tBack) tBack.addEventListener('click', function () { LG.Audio.sfx.back(); LG.eventBus.emit('tournamentBackRequested'); });
     var tStart = document.getElementById('btn-tournament-start');
     if (tStart) tStart.addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('tournamentStartRequested'); });
     // mode-aware results actions
@@ -79,11 +87,11 @@ LG.HUD = (function () {
     if (startBtn) startBtn.addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('startMatchRequested'); });
     // linear pre-match flow: STAR -> STYLE -> COURT -> MATCH SETUP
     document.getElementById('btn-select-go').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('selectConfirmed'); });
-    document.getElementById('btn-style-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('styleBackRequested'); });
+    document.getElementById('btn-style-back').addEventListener('click', function () { LG.Audio.sfx.back(); LG.eventBus.emit('styleBackRequested'); });
     document.getElementById('btn-style-go').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('styleConfirmed'); });
-    document.getElementById('btn-court-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('courtBackRequested'); });
+    document.getElementById('btn-court-back').addEventListener('click', function () { LG.Audio.sfx.back(); LG.eventBus.emit('courtBackRequested'); });
     document.getElementById('btn-court-go').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('courtConfirmed'); });
-    document.getElementById('btn-setup-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('setupBackRequested'); });
+    document.getElementById('btn-setup-back').addEventListener('click', function () { LG.Audio.sfx.back(); LG.eventBus.emit('setupBackRequested'); });
 
     // difficulty picker: the buttons only carry the choice, the match flow in
     // main.js owns what happens next
@@ -98,7 +106,7 @@ LG.HUD = (function () {
       })(levels[i], document.getElementById('diff-' + levels[i]));
     }
     document.getElementById('btn-diff-go').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('difficultyConfirmed'); });
-    document.getElementById('btn-diff-back').addEventListener('click', function () { LG.Audio.sfx.click(); LG.eventBus.emit('difficultyBackRequested'); });
+    document.getElementById('btn-diff-back').addEventListener('click', function () { LG.Audio.sfx.back(); LG.eventBus.emit('difficultyBackRequested'); });
   }
 
   function setTeamNames(home, away) {

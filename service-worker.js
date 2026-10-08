@@ -9,7 +9,7 @@
 // every release — that is what makes installed clients pick the new files up.
 // ============================================================
 
-var CACHE_NAME = 'blackout-v13';   // Phase 6 — content, courts, player variety, world polish
+var CACHE_NAME = 'blackout-v14';   // Phase 7 — presentation + audio
 var ASSETS = [
   './',
   './index.html',
