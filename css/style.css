@@ -1307,6 +1307,68 @@ body.reduced-motion #loading-overlay .street-tag { animation: none; }
   font-weight: bold;
 }
 
+/* player style — GEAR: outfit / hair / accessory / skin pickers */
+.gear-block {
+  max-width: 900px;
+  margin: clamp(12px, 2.4vmin, 22px) auto 0;
+}
+.gear-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 10px;
+}
+.gear-label {
+  flex: 0 0 84px;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: rgba(236, 234, 224, 0.65);
+  text-align: right;
+}
+.gear-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1 1 auto;
+}
+.gear-btn {
+  padding: 6px 9px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: #1d1d1a;
+  text-align: center;
+  background: linear-gradient(180deg, rgba(236, 232, 219, 0.92), rgba(226, 220, 205, 0.92));
+  border: 2px solid rgba(20, 20, 19, 0.5);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.35);
+  transition: transform 0.1s ease, border-color 0.1s ease;
+}
+.gear-btn:hover { transform: translateY(-2px); border-color: rgba(20, 20, 19, 0.85); }
+.gear-btn.selected {
+  border-color: var(--cyan);
+  box-shadow: 0 0 0 2px rgba(20, 200, 216, 0.7), 0 3px 8px rgba(0, 0, 0, 0.45);
+  background: linear-gradient(180deg, rgba(243, 240, 230, 0.98), rgba(233, 228, 214, 0.98));
+}
+.gear-btn.tone { color: #14140f; text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35); }
+.gear-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+}
+.gear-foot .kit-note { margin-top: 0; text-align: left; flex: 1 1 auto; }
+.small-btn { padding: 8px 14px; font-size: 12px; }
+.gear-line {
+  margin-top: 6px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: rgba(236, 234, 224, 0.55);
+  text-align: center;
+}
+.style-preview { flex-direction: column; }
+
 /* court picker — 3 tidy columns on a phone, 4 on landscape/desktop.
    auto-fill is avoided on purpose: wide screens must never stretch into an
    awkward 5-across row just because there is room. */

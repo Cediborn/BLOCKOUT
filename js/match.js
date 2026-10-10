@@ -261,8 +261,8 @@ LG.MatchManager.prototype = {
       ability: null,
       body: { wide: 1.15, tall: 1.06, gloves: team === 0 ? 0xffffff : 0x1a1e26 },
       palette: team === 0 ?
-        { skin: 0xd99f72, hair: 0x20242c, shirt: 0x2ee65a, trim: 0xffffff, pants: 0x141a12, shoe: 0x171c14 } :
-        { skin: 0x8a5a3c, hair: 0x1d2026, shirt: 0xffa62e, trim: 0x2b1500, pants: 0x23201a, shoe: 0x181c22 },
+        { skin: 0xc89060, hair: 0x20242c, shirt: 0x2ee65a, trim: 0xffffff, pants: 0x141a12, shoe: 0x171c14 } :
+        { skin: 0x9c7048, hair: 0x1d2026, shirt: 0xffa62e, trim: 0x2b1500, pants: 0x23201a, shoe: 0x181c22 },
     };
     // the keeper wears their own side's kit shirt as well (gloves stay the
     // keeper accent) — a keeper never reads as a member of the other team,

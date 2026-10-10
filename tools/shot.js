@@ -92,6 +92,8 @@ var RIGTEST = !!args.includes('--rigtest');
 var RIGPROBE = !!args.includes('--rigprobe');
 var GLBTEST = !!args.includes('--glbtest');
 var GLBPOSE = arg('glbpose', 'idle');
+var GLBCAM = arg('glbcam', '');
+var GLBLOOK = arg('glblook', '');
 var GLB0 = !!args.includes('--glb0');
 var CLOSEUP = !!args.includes('--closeup');
 var SCALE = !!args.includes('--scale');
@@ -384,6 +386,8 @@ server.listen(0, '127.0.0.1', async function () {
     (RIGPROBE ? '&rigprobe=1' : '') +
     (GLBTEST ? '&glbtest=1' : '') +
     (GLBTEST ? '&glbpose=' + encodeURIComponent(GLBPOSE) : '') +
+    (GLBTEST && GLBCAM ? '&glbcam=' + encodeURIComponent(GLBCAM) : '') +
+    (GLBTEST && GLBLOOK ? '&glblook=' + encodeURIComponent(GLBLOOK) : '') +
     (GLB0 ? '&glb=0' : '') +
     (CLOSEUP ? '&closeup=1' : '') +
     (SCALE ? '&scale=1' : '') +

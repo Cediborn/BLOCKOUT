@@ -821,6 +821,16 @@
         }
         setTimeout(go, 150); return;
       }
+      var look = String(q.glblook || '');
+      if (look && LG.Cosmetics && LG.Cosmetics.set) {
+        var kv = {};
+        look.split(',').forEach(function (p) {
+          var i = p.indexOf('=');
+          if (i > 0) kv[p.slice(0, i)] = p.slice(i + 1);
+        });
+        LG.Cosmetics.set('blaze', kv);
+        console.log('GLBTEST look=' + JSON.stringify(kv));
+      }
       var def = LG.Roster[0];
       var m;
       try { m = LG.RealPlayer.build(def); }
@@ -870,15 +880,35 @@
         }).join(' '));
 
       var cam = dbg.camera;
+      var camMode = String(q.glbcam || '');
       function pin() {
-        cam.position.set(2.4, 1.5, 2.8);
-        cam.lookAt(0, 1.0, 0);
-        if (Math.abs(cam.fov - 45) > 0.01) { cam.fov = 45; cam.updateProjectionMatrix(); }
+        if (camMode === 'face') {
+          cam.position.set(0.78, 2.32, 1.35);
+          cam.lookAt(0, 2.10, 0.40);
+        } else if (camMode === 'facefront') {
+          cam.position.set(0.06, 2.16, 1.55);
+          cam.lookAt(0, 2.14, 0.45);
+        } else {
+          cam.position.set(2.4, 1.5, 2.8);
+          cam.lookAt(0, 1.0, 0);
+        }
+        var fv = camMode ? 28 : 45;
+        if (Math.abs(cam.fov - fv) > 0.01) { cam.fov = fv; cam.updateProjectionMatrix(); }
         cam.updateMatrixWorld(true);
       }
       try {
         var r = dbg.renderer, orig = r.render;
-        r.render = function (sc, cm) { pin(); return orig.call(r, sc, cm); };
+        var loggedPin = false;
+        r.render = function (sc, cm) {
+          pin();
+          if (!loggedPin) {
+            loggedPin = true;
+            console.log('GLBTEST pin mode=' + camMode + ' pos=' +
+              cam.position.toArray().map(function (n) { return n.toFixed(2); }).join(',') +
+              ' fov=' + cam.fov);
+          }
+          return orig.call(r, sc, cm);
+        };
       } catch (e) { console.log('GLBTEST:renderwrap ' + e.message); }
 
       // ?glbpose=scan — walk every retargeted clip frame by frame and print
@@ -966,6 +996,108 @@
           ' vis=' + w.document.visibilityState + ' pvis=' + document.visibilityState +
           ' animateChar glb=' + watcher.glb + ' proc=' + watcher.proc +
           ' state=' + JSON.stringify(m.anim.state()) + ' ' + moved);
+        try {
+            var heads = [], mcount = 0, reds = [];
+            var sceneHead = null, sceneChest = null;
+            m.group.traverse(function (o) {
+              if (o.isBone && /^Head/i.test(o.name) && !sceneHead) sceneHead = o;
+              if (o.isBone && /^Chest/i.test(o.name) && !sceneChest) sceneChest = o;
+            });
+          m.group.traverse(function (o) {
+            if (o.isBone && /^Head/i.test(o.name)) {
+              var p = o.getWorldPosition(new THREEx.Vector3());
+              heads.push(o.name + '@' + p.toArray().map(function (n) { return n.toFixed(2); }).join(','));
+            }
+            if (o.isSkinnedMesh && o.skeleton && o.geometry.attributes.skinIndex) {
+              var posA = o.geometry.attributes.position;
+              var si = o.geometry.attributes.skinIndex;
+              var sw = o.geometry.attributes.skinWeight;
+              var best = -1, bestY = -1e9;
+              for (var vi = 0; vi < posA.count; vi++) {
+                var vy = posA.getY(vi);
+                if (vy > bestY) { bestY = vy; best = vi; }
+              }
+              var idx4 = [si.getX(best), si.getY(best), si.getZ(best), si.getW(best)];
+              var w4 = [sw.getX(best), sw.getY(best), sw.getZ(best), sw.getW(best)];
+              var bnames = [];
+              for (var ki = 0; ki < 4; ki++) {
+                if (w4[ki] > 0.01 && o.skeleton.bones[idx4[ki]]) {
+                  bnames.push(o.skeleton.bones[idx4[ki]].name + ':' + w4[ki].toFixed(2));
+                }
+              }
+              console.log('GLBTEST skinTop localY=' + bestY.toFixed(3) + ' weightedTo=' + bnames.join(',') +
+                ' sameHead=' + (o.skeleton.bones.indexOf(sceneHead) >= 0));
+            }
+              if (o.isMesh) {
+                mcount++;
+                var mat0 = o.material;
+                var col = mat0 && mat0.color ? mat0.color.getHex() : -1;
+                if (o.parent === sceneHead) {
+                  o.geometry.computeBoundingBox();
+                  var bb = o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld);
+                  console.log('GLBTEST headchild col=' + (col >>> 0).toString(16) +
+                    ' verts=' + o.geometry.attributes.position.count + ' bb=' + fmtBox(bb));
+                }
+                if (o.parent === sceneChest) {
+                  o.geometry.computeBoundingBox();
+                  var bb2 = o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld);
+                  console.log('GLBTEST chestchild col=' + (col >>> 0).toString(16) +
+                    ' verts=' + o.geometry.attributes.position.count + ' bb=' + fmtBox(bb2));
+                }
+              }
+          });
+          console.log('GLBTEST heads=' + heads.join(' | ') + ' meshes=' + mcount + ' reds=' + reds.length);
+          console.log('GLBTEST boxNow=' + fmtBox(LG.RealPlayer.box(true)));
+          try {
+            var vb = new THREEx.Vector3(), outB = new THREEx.Box3(), anyV = false;
+            m.group.updateMatrixWorld(true);
+            m.group.traverse(function (o) {
+              if (!o.isSkinnedMesh || !o.geometry.attributes.position) return;
+              var pa = o.geometry.attributes.position;
+              var stp = Math.max(1, Math.ceil(pa.count / 4000));
+              for (var ii = 0; ii < pa.count; ii += stp) {
+                vb.fromBufferAttribute(pa, ii);
+                if (o.boneTransform) o.boneTransform(ii, vb);
+                vb.applyMatrix4(o.matrixWorld);
+                outB.expandByPoint(vb);
+                anyV = true;
+              }
+            });
+            if (anyV) console.log('GLBTEST displayBox=' + fmtBox(outB));
+          } catch (e) { console.log('GLBTEST displayErr ' + e.message); }
+          try {
+            var hb = new THREEx.Vector3();
+            if (sceneHead) sceneHead.getWorldPosition(hb);
+            var fv = new THREEx.Vector3();
+            var fy0 = 1e9, fy1 = -1e9, fz0 = 1e9, fz1 = -1e9;
+            var nose = null, slices = {};
+            m.group.updateMatrixWorld(true);
+            m.group.traverse(function (o) {
+              if (!o.isSkinnedMesh || !o.geometry.attributes.position) return;
+              var pa = o.geometry.attributes.position;
+              var stp = Math.max(1, Math.ceil(pa.count / 6000));
+              for (var ii = 0; ii < pa.count; ii += stp) {
+                fv.fromBufferAttribute(pa, ii);
+                if (o.boneTransform) o.boneTransform(ii, fv);
+                fv.applyMatrix4(o.matrixWorld);
+                if (fv.y < hb.y - 0.05 || fv.y > hb.y + 0.62) continue;
+                if (fv.y < fy0) fy0 = fv.y;
+                if (fv.y > fy1) fy1 = fv.y;
+                if (fv.z < fz0) fz0 = fv.z;
+                if (fv.z > fz1) fz1 = fv.z;
+                var sl = (Math.round(fv.y * 20) / 20).toFixed(2);
+                if (slices[sl] == null || fv.z > slices[sl]) slices[sl] = fv.z;
+                if (!nose || fv.z > nose.z) nose = { x: fv.x, y: fv.y, z: fv.z };
+              }
+            });
+            var slKeys = Object.keys(slices).sort(function (a, b) { return Number(a) - Number(b); });
+            console.log('GLBTEST faceSkin headBone=[' + hb.toArray().map(function (n) { return n.toFixed(2); }).join(',') + ']' +
+              ' y=[' + fy0.toFixed(3) + ',' + fy1.toFixed(3) + '] z=[' + fz0.toFixed(3) + ',' + fz1.toFixed(3) + ']' +
+              ' nose=' + (nose ? '[' + nose.x.toFixed(3) + ',' + nose.y.toFixed(3) + ',' + nose.z.toFixed(3) + ']' : '?') +
+              ' frontByY=' + slKeys.map(function (k) { return k + ':' + slices[k].toFixed(2); }).join(' '));
+          } catch (e) { console.log('GLBTEST faceSkinErr ' + e.message); }
+          for (var ri = 0; ri < reds.length; ri++) console.log('GLBTEST cosmesh ' + reds[ri]);
+        } catch (e) { console.log('GLBTEST cosprobe ' + e.message); }
         stage('done');
       }, 900);
     })();

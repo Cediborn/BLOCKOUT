@@ -129,6 +129,9 @@ LG.Models = (function () {
   var HAIR_STYLE = ['spiky', 'cap', 'mohawk', 'short', 'afro', 'curly', 'ponytail', 'buzz'];
 
   function buildCharacter(def) {
+    if (LG.Cosmetics && LG.Cosmetics.resolve) {
+      try { def = LG.Cosmetics.resolve(def); } catch (e) { }
+    }
     // skinned rig (Phase 2) is the shipped default — the procedural body
     // stays as the fallback for tests, older browsers and any rig build
     // failure. Roster palettes are required: js/living.js asks this

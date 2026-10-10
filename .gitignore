@@ -1,1 +1,10 @@
 Reference images/
+tools/shot*.png
+tools/shot*.png.log
+tools/shot*.txt
+3d/*.fbx
+3d/*.zip
+environment/
+lock.js
+new courts/
+ref 3/

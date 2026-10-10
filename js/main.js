@@ -576,6 +576,7 @@
       UIState = 'style';
       buildColorGrid();
       buildAwayColorGrid();
+      buildGearGrid();
       showOverlay('select-overlay', false);
       showOverlay('style-overlay', true);
     });
@@ -1841,6 +1842,74 @@
     } else {
       preview.innerHTML = '<div class="preview-label">' + name + ' — ' + outfitColor.label + ' KIT</div>';
     }
+    if (LG.Cosmetics) {
+      var cat = LG.Cosmetics.catalog();
+      var g = LG.Cosmetics.get(selectedId);
+      preview.innerHTML += '<div class="gear-line">' +
+        LG.Cosmetics.labelOf(cat.outfits, g.outfit) + ' · ' +
+        LG.Cosmetics.labelOf(cat.hairs, g.hair) + ' · ' +
+        LG.Cosmetics.labelOf(cat.accessories, g.accessory) + '</div>';
+    }
+  }
+
+  function buildGearGrid() {
+    if (!LG.Cosmetics) return;
+    var cat = LG.Cosmetics.catalog();
+    function fill(gridId, list, current, apply) {
+      var grid = document.getElementById(gridId);
+      if (!grid) return;
+      grid.innerHTML = '';
+      for (var i = 0; i < list.length; i++) {
+        (function (entry) {
+          var btn = document.createElement('div');
+          btn.className = 'gear-btn' + (entry.id === current ? ' selected' : '');
+          btn.textContent = entry.label;
+          if (entry.color != null) {
+            btn.className += ' tone';
+            btn.style.background = '#' + (entry.color >>> 0).toString(16).padStart(6, '0');
+          }
+          btn.addEventListener('click', function () {
+            apply(entry.id);
+            buildGearGrid();
+            LG.Audio.sfx.click();
+          });
+          grid.appendChild(btn);
+        })(list[i]);
+      }
+    }
+    var c = LG.Cosmetics.get(selectedId);
+    fill('gear-outfit', cat.outfits, c.outfit, function (id) {
+      LG.Cosmetics.set(selectedId, { outfit: id });
+      refreshStylePreview();
+    });
+    fill('gear-hair', cat.hairs, c.hair, function (id) {
+      LG.Cosmetics.set(selectedId, { hair: id });
+      refreshStylePreview();
+    });
+    fill('gear-accessory', cat.accessories, c.accessory, function (id) {
+      LG.Cosmetics.set(selectedId, { accessory: id });
+      refreshStylePreview();
+    });
+    fill('gear-skin', cat.skins, c.skin, function (id) {
+      LG.Cosmetics.set(selectedId, { skin: id });
+      refreshStylePreview();
+    });
+    var resetBtn = document.getElementById('btn-gear-reset');
+    if (resetBtn && !resetBtn._gearBound) {
+      resetBtn._gearBound = 1;
+      resetBtn.addEventListener('click', function () {
+        LG.Cosmetics.reset(selectedId);
+        buildGearGrid();
+        refreshStylePreview();
+        var note = document.getElementById('gear-note');
+        if (note) {
+          note.className = 'kit-note';
+          note.textContent = 'GEAR RESET TO DEFAULT';
+        }
+        LG.Audio.sfx.click();
+      });
+    }
+    refreshStylePreview();
   }
 
   // Apply outfit colors to a player definition (returns a new palette)

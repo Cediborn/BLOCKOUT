@@ -232,7 +232,7 @@ global.console.error = global.console.error;
 // ---------------- load the real code ----------------
 var SRC = ['js/config.js', 'js/difficulty.js', 'js/util.js', 'js/audio.js', 'js/challenges.js', 'js/progression.js', 'js/modes.js', 'js/tournament.js', 'js/settings.js',
   'js/menu-music.js',
-  'js/input.js', 'js/particles.js', 'js/courts.js', 'js/models.js', 'js/crowd.js', 'js/rig.js', 'js/ball.js', 'js/player.js', 'js/arena.js', 'js/abilities.js',
+  'js/input.js', 'js/particles.js', 'js/courts.js', 'js/models.js', 'js/cosmetics.js', 'js/crowd.js', 'js/rig.js', 'js/ball.js', 'js/player.js', 'js/arena.js', 'js/abilities.js',
   'js/ai.js', 'js/keeper.js', 'js/camera.js', 'js/lighting.js', 'js/match.js', 'js/celebration.js', 'js/goal-cinematic.js', 'js/reactions.js', 'js/hud.js', 'js/main.js', 'js/living.js'];
 
 section('1. scripts parse + boot (as a phone)');
@@ -412,6 +412,27 @@ try {
   check(vis('style-overlay') && !vis('select-overlay'), 'CONTINUE opens PLAYER STYLE');
   check(elements['color-grid'] && elements['color-grid'].children.length > 0, 'your kit colors build');
   check(elements['away-color-grid'] && elements['away-color-grid'].children.length > 0, 'the opponent kit colors build');
+  check(!!window.LG.Cosmetics, 'the cosmetics module loads');
+  (function () {
+    if (!window.LG.Cosmetics) return;
+    var cat = LG.Cosmetics.catalog();
+    check(cat.outfits.length >= 8 && cat.hairs.length >= 8 && cat.accessories.length >= 6 && cat.skins.length >= 6,
+      'the gear catalog is complete (8 outfits, 8 hairstyles, 6 accessories, 6 skin tones)',
+      'outfits=' + cat.outfits.length + ' hairs=' + cat.hairs.length +
+      ' acc=' + cat.accessories.length + ' skins=' + cat.skins.length);
+    check(elements['gear-outfit'] && elements['gear-outfit'].children.length === cat.outfits.length,
+      'the outfit picker builds one button per design',
+      String(elements['gear-outfit'] ? elements['gear-outfit'].children.length : -1));
+    check(elements['gear-hair'] && elements['gear-hair'].children.length === cat.hairs.length,
+      'the hair picker builds one button per style',
+      String(elements['gear-hair'] ? elements['gear-hair'].children.length : -1));
+    check(elements['gear-accessory'] && elements['gear-accessory'].children.length === cat.accessories.length,
+      'the accessory picker builds one button per option',
+      String(elements['gear-accessory'] ? elements['gear-accessory'].children.length : -1));
+    check(elements['gear-skin'] && elements['gear-skin'].children.length === cat.skins.length,
+      'the skin picker builds one button per tone',
+      String(elements['gear-skin'] ? elements['gear-skin'].children.length : -1));
+  })();
 
   // kits: grid = [REGULAR/DEFAULT, RED, BLUE, YELLOW, ...]
   elements['color-grid'].children[1].fire('click');        // YOUR KIT = RED
@@ -426,6 +447,31 @@ try {
   elements['color-grid'].children[2].fire('click');        // YOUR KIT = BLUE -> rogue must move
   sel = window.LGMain.getSelections();
   check(sel.homeKit === 'blue' && sel.awayKit && sel.awayKit !== 'blue', 'the two kits can never match', JSON.stringify(sel));
+
+  (function () {
+    if (!window.LG.Cosmetics) return;
+    var rosterBefore = JSON.stringify({ stats: LG.Roster[0].stats, ability: LG.Roster[0].ability, palette: LG.Roster[0].palette });
+    var defOut = LG.Cosmetics.resolve(LG.Roster[0]);
+    check(defOut !== LG.Roster[0] && !!defOut.__cos, 'resolve hands back a decorated copy, never the roster entry itself');
+    check(JSON.stringify({ stats: LG.Roster[0].stats, ability: LG.Roster[0].ability, palette: LG.Roster[0].palette }) === rosterBefore,
+      'resolve never mutates the roster (stats, ability and kit colors stay put)');
+    check(defOut.ability === LG.Roster[0].ability && defOut.stats === LG.Roster[0].stats,
+      'cosmetics never touch abilities or stats');
+    var defNoId = LG.Cosmetics.resolve({ palette: { skin: 1 } });
+    check(defNoId && !defNoId.__cos, 'defs without an id pass through untouched (crowd figures)');
+    LG.Cosmetics.set('blaze', { outfit: 'track', hair: 'afro' });
+    var raw = localStorage.getItem('blockout.cosmetics.v1');
+    check(!!raw && raw.indexOf('"track"') >= 0 && raw.indexOf('"afro"') >= 0, 'gear saves to localStorage', raw);
+    check(LG.Cosmetics.get('blaze').outfit === 'track' && LG.Cosmetics.get('blaze').hair === 'afro',
+      'gear reads back after save', JSON.stringify(LG.Cosmetics.get('blaze')));
+    LG.Cosmetics.set('blaze', { outfit: 'not-a-design' });
+    check(LG.Cosmetics.get('blaze').outfit !== 'not-a-design', 'an unknown outfit id is refused');
+    LG.Cosmetics.reset('blaze');
+    check(LG.Cosmetics.get('blaze').outfit === 'hoody' && LG.Cosmetics.get('blaze').hair === 'natural',
+      'reset gear returns blaze to the default look', JSON.stringify(LG.Cosmetics.get('blaze')));
+    raw = localStorage.getItem('blockout.cosmetics.v1');
+    check(!raw || raw.indexOf('"track"') < 0, 'the reset cleared the saved gear', raw);
+  })();
 
   elements['btn-style-back'].fire('click');
   check(vis('select-overlay') && !vis('style-overlay'), 'PLAYER STYLE BACK returns to PICK YOUR STAR');

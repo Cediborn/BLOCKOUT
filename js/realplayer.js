@@ -1232,6 +1232,7 @@ LG.RealPlayer = (function () {
   function build(def) {
     if (!ready()) return null;
     try {
+      if (LG.Cosmetics && LG.Cosmetics.resolve) def = LG.Cosmetics.resolve(def);
       var w0 = nowMs();
       var scene = cloneRig(src.scene);
       var w1 = nowMs();
@@ -1280,6 +1281,10 @@ LG.RealPlayer = (function () {
         skinned: true,
         glb: true
       };
+      if (LG.Cosmetics && LG.Cosmetics.decorate) {
+        try { LG.Cosmetics.decorate(m, def); }
+        catch (e) { warn('[GLB] cosmetics: ' + ((e && e.message) || e)); }
+      }
       m.anim = controller(m);
       var w3 = nowMs();
       log('[GLB] build ms: clone=' + (w1 - w0).toFixed(1) +

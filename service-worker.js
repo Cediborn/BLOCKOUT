@@ -9,7 +9,7 @@
 // every release — that is what makes installed clients pick the new files up.
 // ============================================================
 
-var CACHE_NAME = 'blackout-v15';   // Phase 8 — advanced reactions + animation
+var CACHE_NAME = 'blackout-v16';   // Phase 9.1 — character identity + streetwear
 var ASSETS = [
   './',
   './index.html',
@@ -50,6 +50,7 @@ var ASSETS = [
   './js/particles.js',
   './js/courts.js',
   './js/models.js',
+  './js/cosmetics.js',
   './js/rig.js',
   './js/realplayer.js',
   './js/ball.js',
